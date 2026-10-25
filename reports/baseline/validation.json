@@ -1,0 +1,1175 @@
+{
+  "data_sha256": {
+    "train": "adef4de05783391cef598098b8886221bf4d8f28d9e296d74f94e8cf66a72ea7",
+    "validation": "1cdd5f3189ba4241f5bb2399f33dac47f6b38e21a04819aa0c07900d1e29e0a8"
+  },
+  "environment": {
+    "dependencies": "stdlib only",
+    "python": "3.11.17"
+  },
+  "evidence_scope": "demo_only",
+  "fitted": false,
+  "limitations": [
+    "Synthetic rule labels only; no independent hiring outcomes or real-world quality claim.",
+    "No model fitting or tuning; this is engineering validation, not a release gate.",
+    "Timing is observational and varies between runs; scores and metrics are deterministic."
+  ],
+  "manifest_sha256": "81bde9b3a96ecdf6a970ee4a04bb1c2ea06c3af6da4123c1471cf94a780ef0f9",
+  "metrics": {
+    "cutoff": 10,
+    "elapsed_seconds": 0.00022250006441026926,
+    "eligible_group_count": 12,
+    "eligible_group_ids": [
+      "demo-v1-v0005",
+      "demo-v1-v0017",
+      "demo-v1-v0021",
+      "demo-v1-v0022",
+      "demo-v1-v0025",
+      "demo-v1-v0029",
+      "demo-v1-v0033",
+      "demo-v1-v0036",
+      "demo-v1-v0042",
+      "demo-v1-v0054",
+      "demo-v1-v0056",
+      "demo-v1-v0058"
+    ],
+    "empty_group_count": 0,
+    "group_count": 12,
+    "groups": [
+      {
+        "candidate_count": 20,
+        "k": 10,
+        "ndcg_at_10": 1.0,
+        "positive_count": 5,
+        "ranking": [
+          {
+            "candidate_id": "demo-v1-c0005-002",
+            "score": 0.30434782608695654
+          },
+          {
+            "candidate_id": "demo-v1-c0005-004",
+            "score": 0.30434782608695654
+          },
+          {
+            "candidate_id": "demo-v1-c0005-001",
+            "score": 0.24
+          },
+          {
+            "candidate_id": "demo-v1-c0005-000",
+            "score": 0.21739130434782608
+          },
+          {
+            "candidate_id": "demo-v1-c0005-003",
+            "score": 0.2
+          },
+          {
+            "candidate_id": "demo-v1-c0005-010",
+            "score": 0.13636363636363635
+          },
+          {
+            "candidate_id": "demo-v1-c0005-011",
+            "score": 0.125
+          },
+          {
+            "candidate_id": "demo-v1-c0005-015",
+            "score": 0.125
+          },
+          {
+            "candidate_id": "demo-v1-c0005-018",
+            "score": 0.12
+          },
+          {
+            "candidate_id": "demo-v1-c0005-016",
+            "score": 0.08695652173913043
+          },
+          {
+            "candidate_id": "demo-v1-c0005-005",
+            "score": 0.08333333333333333
+          },
+          {
+            "candidate_id": "demo-v1-c0005-009",
+            "score": 0.08333333333333333
+          },
+          {
+            "candidate_id": "demo-v1-c0005-013",
+            "score": 0.045454545454545456
+          },
+          {
+            "candidate_id": "demo-v1-c0005-007",
+            "score": 0.041666666666666664
+          },
+          {
+            "candidate_id": "demo-v1-c0005-019",
+            "score": 0.04
+          },
+          {
+            "candidate_id": "demo-v1-c0005-006",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0005-008",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0005-012",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0005-014",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0005-017",
+            "score": 0.0
+          }
+        ],
+        "reason": null,
+        "recall_at_10": 1.0,
+        "status": "defined",
+        "vacancy_id": "demo-v1-v0005"
+      },
+      {
+        "candidate_count": 20,
+        "k": 10,
+        "ndcg_at_10": 1.0,
+        "positive_count": 5,
+        "ranking": [
+          {
+            "candidate_id": "demo-v1-c0017-001",
+            "score": 0.2916666666666667
+          },
+          {
+            "candidate_id": "demo-v1-c0017-002",
+            "score": 0.2916666666666667
+          },
+          {
+            "candidate_id": "demo-v1-c0017-004",
+            "score": 0.2916666666666667
+          },
+          {
+            "candidate_id": "demo-v1-c0017-003",
+            "score": 0.2608695652173913
+          },
+          {
+            "candidate_id": "demo-v1-c0017-000",
+            "score": 0.22727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0017-006",
+            "score": 0.13636363636363635
+          },
+          {
+            "candidate_id": "demo-v1-c0017-019",
+            "score": 0.13636363636363635
+          },
+          {
+            "candidate_id": "demo-v1-c0017-005",
+            "score": 0.125
+          },
+          {
+            "candidate_id": "demo-v1-c0017-011",
+            "score": 0.09090909090909091
+          },
+          {
+            "candidate_id": "demo-v1-c0017-014",
+            "score": 0.09090909090909091
+          },
+          {
+            "candidate_id": "demo-v1-c0017-008",
+            "score": 0.08695652173913043
+          },
+          {
+            "candidate_id": "demo-v1-c0017-015",
+            "score": 0.08333333333333333
+          },
+          {
+            "candidate_id": "demo-v1-c0017-010",
+            "score": 0.08
+          },
+          {
+            "candidate_id": "demo-v1-c0017-018",
+            "score": 0.08
+          },
+          {
+            "candidate_id": "demo-v1-c0017-007",
+            "score": 0.045454545454545456
+          },
+          {
+            "candidate_id": "demo-v1-c0017-016",
+            "score": 0.041666666666666664
+          },
+          {
+            "candidate_id": "demo-v1-c0017-009",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0017-012",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0017-013",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0017-017",
+            "score": 0.0
+          }
+        ],
+        "reason": null,
+        "recall_at_10": 1.0,
+        "status": "defined",
+        "vacancy_id": "demo-v1-v0017"
+      },
+      {
+        "candidate_count": 20,
+        "k": 10,
+        "ndcg_at_10": 1.0,
+        "positive_count": 5,
+        "ranking": [
+          {
+            "candidate_id": "demo-v1-c0021-003",
+            "score": 0.3181818181818182
+          },
+          {
+            "candidate_id": "demo-v1-c0021-004",
+            "score": 0.2916666666666667
+          },
+          {
+            "candidate_id": "demo-v1-c0021-000",
+            "score": 0.2727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0021-002",
+            "score": 0.2727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0021-001",
+            "score": 0.24
+          },
+          {
+            "candidate_id": "demo-v1-c0021-011",
+            "score": 0.13636363636363635
+          },
+          {
+            "candidate_id": "demo-v1-c0021-013",
+            "score": 0.13043478260869565
+          },
+          {
+            "candidate_id": "demo-v1-c0021-019",
+            "score": 0.13043478260869565
+          },
+          {
+            "candidate_id": "demo-v1-c0021-008",
+            "score": 0.12
+          },
+          {
+            "candidate_id": "demo-v1-c0021-016",
+            "score": 0.08333333333333333
+          },
+          {
+            "candidate_id": "demo-v1-c0021-007",
+            "score": 0.08
+          },
+          {
+            "candidate_id": "demo-v1-c0021-017",
+            "score": 0.043478260869565216
+          },
+          {
+            "candidate_id": "demo-v1-c0021-010",
+            "score": 0.041666666666666664
+          },
+          {
+            "candidate_id": "demo-v1-c0021-005",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0021-006",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0021-009",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0021-012",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0021-014",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0021-015",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0021-018",
+            "score": 0.0
+          }
+        ],
+        "reason": null,
+        "recall_at_10": 1.0,
+        "status": "defined",
+        "vacancy_id": "demo-v1-v0021"
+      },
+      {
+        "candidate_count": 20,
+        "k": 10,
+        "ndcg_at_10": 1.0,
+        "positive_count": 5,
+        "ranking": [
+          {
+            "candidate_id": "demo-v1-c0022-001",
+            "score": 0.2727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0022-000",
+            "score": 0.24
+          },
+          {
+            "candidate_id": "demo-v1-c0022-002",
+            "score": 0.24
+          },
+          {
+            "candidate_id": "demo-v1-c0022-003",
+            "score": 0.22727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0022-004",
+            "score": 0.22727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0022-007",
+            "score": 0.13043478260869565
+          },
+          {
+            "candidate_id": "demo-v1-c0022-013",
+            "score": 0.13043478260869565
+          },
+          {
+            "candidate_id": "demo-v1-c0022-008",
+            "score": 0.125
+          },
+          {
+            "candidate_id": "demo-v1-c0022-014",
+            "score": 0.125
+          },
+          {
+            "candidate_id": "demo-v1-c0022-011",
+            "score": 0.09090909090909091
+          },
+          {
+            "candidate_id": "demo-v1-c0022-016",
+            "score": 0.08695652173913043
+          },
+          {
+            "candidate_id": "demo-v1-c0022-017",
+            "score": 0.08333333333333333
+          },
+          {
+            "candidate_id": "demo-v1-c0022-018",
+            "score": 0.08333333333333333
+          },
+          {
+            "candidate_id": "demo-v1-c0022-006",
+            "score": 0.045454545454545456
+          },
+          {
+            "candidate_id": "demo-v1-c0022-009",
+            "score": 0.045454545454545456
+          },
+          {
+            "candidate_id": "demo-v1-c0022-010",
+            "score": 0.045454545454545456
+          },
+          {
+            "candidate_id": "demo-v1-c0022-005",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0022-012",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0022-015",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0022-019",
+            "score": 0.0
+          }
+        ],
+        "reason": null,
+        "recall_at_10": 1.0,
+        "status": "defined",
+        "vacancy_id": "demo-v1-v0022"
+      },
+      {
+        "candidate_count": 20,
+        "k": 10,
+        "ndcg_at_10": 1.0,
+        "positive_count": 5,
+        "ranking": [
+          {
+            "candidate_id": "demo-v1-c0025-004",
+            "score": 0.2727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0025-000",
+            "score": 0.24
+          },
+          {
+            "candidate_id": "demo-v1-c0025-002",
+            "score": 0.22727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0025-003",
+            "score": 0.22727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0025-001",
+            "score": 0.2
+          },
+          {
+            "candidate_id": "demo-v1-c0025-005",
+            "score": 0.13636363636363635
+          },
+          {
+            "candidate_id": "demo-v1-c0025-007",
+            "score": 0.125
+          },
+          {
+            "candidate_id": "demo-v1-c0025-015",
+            "score": 0.125
+          },
+          {
+            "candidate_id": "demo-v1-c0025-013",
+            "score": 0.12
+          },
+          {
+            "candidate_id": "demo-v1-c0025-016",
+            "score": 0.09090909090909091
+          },
+          {
+            "candidate_id": "demo-v1-c0025-009",
+            "score": 0.08695652173913043
+          },
+          {
+            "candidate_id": "demo-v1-c0025-010",
+            "score": 0.08695652173913043
+          },
+          {
+            "candidate_id": "demo-v1-c0025-017",
+            "score": 0.08695652173913043
+          },
+          {
+            "candidate_id": "demo-v1-c0025-018",
+            "score": 0.08333333333333333
+          },
+          {
+            "candidate_id": "demo-v1-c0025-006",
+            "score": 0.043478260869565216
+          },
+          {
+            "candidate_id": "demo-v1-c0025-011",
+            "score": 0.04
+          },
+          {
+            "candidate_id": "demo-v1-c0025-008",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0025-012",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0025-014",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0025-019",
+            "score": 0.0
+          }
+        ],
+        "reason": null,
+        "recall_at_10": 1.0,
+        "status": "defined",
+        "vacancy_id": "demo-v1-v0025"
+      },
+      {
+        "candidate_count": 20,
+        "k": 10,
+        "ndcg_at_10": 1.0,
+        "positive_count": 5,
+        "ranking": [
+          {
+            "candidate_id": "demo-v1-c0029-000",
+            "score": 0.2727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0029-003",
+            "score": 0.24
+          },
+          {
+            "candidate_id": "demo-v1-c0029-001",
+            "score": 0.20833333333333334
+          },
+          {
+            "candidate_id": "demo-v1-c0029-002",
+            "score": 0.20833333333333334
+          },
+          {
+            "candidate_id": "demo-v1-c0029-004",
+            "score": 0.20833333333333334
+          },
+          {
+            "candidate_id": "demo-v1-c0029-007",
+            "score": 0.125
+          },
+          {
+            "candidate_id": "demo-v1-c0029-013",
+            "score": 0.09090909090909091
+          },
+          {
+            "candidate_id": "demo-v1-c0029-006",
+            "score": 0.08695652173913043
+          },
+          {
+            "candidate_id": "demo-v1-c0029-011",
+            "score": 0.08695652173913043
+          },
+          {
+            "candidate_id": "demo-v1-c0029-015",
+            "score": 0.08333333333333333
+          },
+          {
+            "candidate_id": "demo-v1-c0029-012",
+            "score": 0.08
+          },
+          {
+            "candidate_id": "demo-v1-c0029-009",
+            "score": 0.045454545454545456
+          },
+          {
+            "candidate_id": "demo-v1-c0029-018",
+            "score": 0.045454545454545456
+          },
+          {
+            "candidate_id": "demo-v1-c0029-016",
+            "score": 0.043478260869565216
+          },
+          {
+            "candidate_id": "demo-v1-c0029-017",
+            "score": 0.043478260869565216
+          },
+          {
+            "candidate_id": "demo-v1-c0029-005",
+            "score": 0.041666666666666664
+          },
+          {
+            "candidate_id": "demo-v1-c0029-008",
+            "score": 0.04
+          },
+          {
+            "candidate_id": "demo-v1-c0029-014",
+            "score": 0.04
+          },
+          {
+            "candidate_id": "demo-v1-c0029-010",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0029-019",
+            "score": 0.0
+          }
+        ],
+        "reason": null,
+        "recall_at_10": 1.0,
+        "status": "defined",
+        "vacancy_id": "demo-v1-v0029"
+      },
+      {
+        "candidate_count": 20,
+        "k": 10,
+        "ndcg_at_10": 1.0,
+        "positive_count": 5,
+        "ranking": [
+          {
+            "candidate_id": "demo-v1-c0033-000",
+            "score": 0.30434782608695654
+          },
+          {
+            "candidate_id": "demo-v1-c0033-001",
+            "score": 0.30434782608695654
+          },
+          {
+            "candidate_id": "demo-v1-c0033-003",
+            "score": 0.22727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0033-004",
+            "score": 0.22727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0033-002",
+            "score": 0.21739130434782608
+          },
+          {
+            "candidate_id": "demo-v1-c0033-014",
+            "score": 0.125
+          },
+          {
+            "candidate_id": "demo-v1-c0033-006",
+            "score": 0.12
+          },
+          {
+            "candidate_id": "demo-v1-c0033-009",
+            "score": 0.12
+          },
+          {
+            "candidate_id": "demo-v1-c0033-012",
+            "score": 0.12
+          },
+          {
+            "candidate_id": "demo-v1-c0033-005",
+            "score": 0.09090909090909091
+          },
+          {
+            "candidate_id": "demo-v1-c0033-019",
+            "score": 0.09090909090909091
+          },
+          {
+            "candidate_id": "demo-v1-c0033-015",
+            "score": 0.08695652173913043
+          },
+          {
+            "candidate_id": "demo-v1-c0033-017",
+            "score": 0.08695652173913043
+          },
+          {
+            "candidate_id": "demo-v1-c0033-011",
+            "score": 0.08333333333333333
+          },
+          {
+            "candidate_id": "demo-v1-c0033-007",
+            "score": 0.08
+          },
+          {
+            "candidate_id": "demo-v1-c0033-008",
+            "score": 0.041666666666666664
+          },
+          {
+            "candidate_id": "demo-v1-c0033-010",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0033-013",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0033-016",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0033-018",
+            "score": 0.0
+          }
+        ],
+        "reason": null,
+        "recall_at_10": 1.0,
+        "status": "defined",
+        "vacancy_id": "demo-v1-v0033"
+      },
+      {
+        "candidate_count": 20,
+        "k": 10,
+        "ndcg_at_10": 1.0,
+        "positive_count": 5,
+        "ranking": [
+          {
+            "candidate_id": "demo-v1-c0036-000",
+            "score": 0.3181818181818182
+          },
+          {
+            "candidate_id": "demo-v1-c0036-002",
+            "score": 0.2727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0036-003",
+            "score": 0.2727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0036-004",
+            "score": 0.2608695652173913
+          },
+          {
+            "candidate_id": "demo-v1-c0036-001",
+            "score": 0.25
+          },
+          {
+            "candidate_id": "demo-v1-c0036-005",
+            "score": 0.12
+          },
+          {
+            "candidate_id": "demo-v1-c0036-006",
+            "score": 0.08
+          },
+          {
+            "candidate_id": "demo-v1-c0036-007",
+            "score": 0.043478260869565216
+          },
+          {
+            "candidate_id": "demo-v1-c0036-009",
+            "score": 0.043478260869565216
+          },
+          {
+            "candidate_id": "demo-v1-c0036-012",
+            "score": 0.043478260869565216
+          },
+          {
+            "candidate_id": "demo-v1-c0036-016",
+            "score": 0.043478260869565216
+          },
+          {
+            "candidate_id": "demo-v1-c0036-017",
+            "score": 0.043478260869565216
+          },
+          {
+            "candidate_id": "demo-v1-c0036-018",
+            "score": 0.04
+          },
+          {
+            "candidate_id": "demo-v1-c0036-008",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0036-010",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0036-011",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0036-013",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0036-014",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0036-015",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0036-019",
+            "score": 0.0
+          }
+        ],
+        "reason": null,
+        "recall_at_10": 1.0,
+        "status": "defined",
+        "vacancy_id": "demo-v1-v0036"
+      },
+      {
+        "candidate_count": 20,
+        "k": 10,
+        "ndcg_at_10": 1.0,
+        "positive_count": 5,
+        "ranking": [
+          {
+            "candidate_id": "demo-v1-c0042-004",
+            "score": 0.28
+          },
+          {
+            "candidate_id": "demo-v1-c0042-002",
+            "score": 0.25
+          },
+          {
+            "candidate_id": "demo-v1-c0042-001",
+            "score": 0.24
+          },
+          {
+            "candidate_id": "demo-v1-c0042-000",
+            "score": 0.22727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0042-003",
+            "score": 0.22727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0042-015",
+            "score": 0.13636363636363635
+          },
+          {
+            "candidate_id": "demo-v1-c0042-017",
+            "score": 0.13636363636363635
+          },
+          {
+            "candidate_id": "demo-v1-c0042-007",
+            "score": 0.125
+          },
+          {
+            "candidate_id": "demo-v1-c0042-018",
+            "score": 0.125
+          },
+          {
+            "candidate_id": "demo-v1-c0042-008",
+            "score": 0.12
+          },
+          {
+            "candidate_id": "demo-v1-c0042-005",
+            "score": 0.09090909090909091
+          },
+          {
+            "candidate_id": "demo-v1-c0042-006",
+            "score": 0.09090909090909091
+          },
+          {
+            "candidate_id": "demo-v1-c0042-014",
+            "score": 0.045454545454545456
+          },
+          {
+            "candidate_id": "demo-v1-c0042-019",
+            "score": 0.045454545454545456
+          },
+          {
+            "candidate_id": "demo-v1-c0042-016",
+            "score": 0.041666666666666664
+          },
+          {
+            "candidate_id": "demo-v1-c0042-009",
+            "score": 0.04
+          },
+          {
+            "candidate_id": "demo-v1-c0042-011",
+            "score": 0.04
+          },
+          {
+            "candidate_id": "demo-v1-c0042-010",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0042-012",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0042-013",
+            "score": 0.0
+          }
+        ],
+        "reason": null,
+        "recall_at_10": 1.0,
+        "status": "defined",
+        "vacancy_id": "demo-v1-v0042"
+      },
+      {
+        "candidate_count": 20,
+        "k": 10,
+        "ndcg_at_10": 1.0,
+        "positive_count": 5,
+        "ranking": [
+          {
+            "candidate_id": "demo-v1-c0054-000",
+            "score": 0.2727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0054-001",
+            "score": 0.2608695652173913
+          },
+          {
+            "candidate_id": "demo-v1-c0054-003",
+            "score": 0.2608695652173913
+          },
+          {
+            "candidate_id": "demo-v1-c0054-004",
+            "score": 0.24
+          },
+          {
+            "candidate_id": "demo-v1-c0054-002",
+            "score": 0.21739130434782608
+          },
+          {
+            "candidate_id": "demo-v1-c0054-007",
+            "score": 0.13043478260869565
+          },
+          {
+            "candidate_id": "demo-v1-c0054-008",
+            "score": 0.13043478260869565
+          },
+          {
+            "candidate_id": "demo-v1-c0054-009",
+            "score": 0.13043478260869565
+          },
+          {
+            "candidate_id": "demo-v1-c0054-012",
+            "score": 0.13043478260869565
+          },
+          {
+            "candidate_id": "demo-v1-c0054-019",
+            "score": 0.09090909090909091
+          },
+          {
+            "candidate_id": "demo-v1-c0054-006",
+            "score": 0.08333333333333333
+          },
+          {
+            "candidate_id": "demo-v1-c0054-014",
+            "score": 0.08
+          },
+          {
+            "candidate_id": "demo-v1-c0054-018",
+            "score": 0.045454545454545456
+          },
+          {
+            "candidate_id": "demo-v1-c0054-010",
+            "score": 0.043478260869565216
+          },
+          {
+            "candidate_id": "demo-v1-c0054-017",
+            "score": 0.043478260869565216
+          },
+          {
+            "candidate_id": "demo-v1-c0054-011",
+            "score": 0.041666666666666664
+          },
+          {
+            "candidate_id": "demo-v1-c0054-005",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0054-013",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0054-015",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0054-016",
+            "score": 0.0
+          }
+        ],
+        "reason": null,
+        "recall_at_10": 1.0,
+        "status": "defined",
+        "vacancy_id": "demo-v1-v0054"
+      },
+      {
+        "candidate_count": 20,
+        "k": 10,
+        "ndcg_at_10": 1.0,
+        "positive_count": 5,
+        "ranking": [
+          {
+            "candidate_id": "demo-v1-c0056-002",
+            "score": 0.2916666666666667
+          },
+          {
+            "candidate_id": "demo-v1-c0056-001",
+            "score": 0.2727272727272727
+          },
+          {
+            "candidate_id": "demo-v1-c0056-000",
+            "score": 0.24
+          },
+          {
+            "candidate_id": "demo-v1-c0056-004",
+            "score": 0.20833333333333334
+          },
+          {
+            "candidate_id": "demo-v1-c0056-003",
+            "score": 0.2
+          },
+          {
+            "candidate_id": "demo-v1-c0056-018",
+            "score": 0.13043478260869565
+          },
+          {
+            "candidate_id": "demo-v1-c0056-019",
+            "score": 0.12
+          },
+          {
+            "candidate_id": "demo-v1-c0056-010",
+            "score": 0.08333333333333333
+          },
+          {
+            "candidate_id": "demo-v1-c0056-011",
+            "score": 0.08333333333333333
+          },
+          {
+            "candidate_id": "demo-v1-c0056-013",
+            "score": 0.08333333333333333
+          },
+          {
+            "candidate_id": "demo-v1-c0056-007",
+            "score": 0.045454545454545456
+          },
+          {
+            "candidate_id": "demo-v1-c0056-009",
+            "score": 0.045454545454545456
+          },
+          {
+            "candidate_id": "demo-v1-c0056-014",
+            "score": 0.045454545454545456
+          },
+          {
+            "candidate_id": "demo-v1-c0056-005",
+            "score": 0.043478260869565216
+          },
+          {
+            "candidate_id": "demo-v1-c0056-015",
+            "score": 0.043478260869565216
+          },
+          {
+            "candidate_id": "demo-v1-c0056-016",
+            "score": 0.04
+          },
+          {
+            "candidate_id": "demo-v1-c0056-006",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0056-008",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0056-012",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0056-017",
+            "score": 0.0
+          }
+        ],
+        "reason": null,
+        "recall_at_10": 1.0,
+        "status": "defined",
+        "vacancy_id": "demo-v1-v0056"
+      },
+      {
+        "candidate_count": 20,
+        "k": 10,
+        "ndcg_at_10": 1.0,
+        "positive_count": 5,
+        "ranking": [
+          {
+            "candidate_id": "demo-v1-c0058-001",
+            "score": 0.2916666666666667
+          },
+          {
+            "candidate_id": "demo-v1-c0058-000",
+            "score": 0.2608695652173913
+          },
+          {
+            "candidate_id": "demo-v1-c0058-004",
+            "score": 0.2608695652173913
+          },
+          {
+            "candidate_id": "demo-v1-c0058-002",
+            "score": 0.25
+          },
+          {
+            "candidate_id": "demo-v1-c0058-003",
+            "score": 0.20833333333333334
+          },
+          {
+            "candidate_id": "demo-v1-c0058-016",
+            "score": 0.13043478260869565
+          },
+          {
+            "candidate_id": "demo-v1-c0058-010",
+            "score": 0.125
+          },
+          {
+            "candidate_id": "demo-v1-c0058-007",
+            "score": 0.09090909090909091
+          },
+          {
+            "candidate_id": "demo-v1-c0058-011",
+            "score": 0.09090909090909091
+          },
+          {
+            "candidate_id": "demo-v1-c0058-013",
+            "score": 0.08333333333333333
+          },
+          {
+            "candidate_id": "demo-v1-c0058-006",
+            "score": 0.08
+          },
+          {
+            "candidate_id": "demo-v1-c0058-014",
+            "score": 0.045454545454545456
+          },
+          {
+            "candidate_id": "demo-v1-c0058-019",
+            "score": 0.041666666666666664
+          },
+          {
+            "candidate_id": "demo-v1-c0058-005",
+            "score": 0.04
+          },
+          {
+            "candidate_id": "demo-v1-c0058-008",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0058-009",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0058-012",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0058-015",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0058-017",
+            "score": 0.0
+          },
+          {
+            "candidate_id": "demo-v1-c0058-018",
+            "score": 0.0
+          }
+        ],
+        "reason": null,
+        "recall_at_10": 1.0,
+        "status": "defined",
+        "vacancy_id": "demo-v1-v0058"
+      }
+    ],
+    "ndcg_at_10": 1.0,
+    "recall_at_10": 1.0,
+    "status": "defined",
+    "unevaluated_group_count": 0,
+    "zero_positive_group_count": 0,
+    "zero_positive_group_fraction": 0.0
+  },
+  "model_version": "jaccard-v1",
+  "partition": "validation",
+  "partition_inventory_sha256": {
+    "train": "9e8783069da312e16dee67ef8520ec4c03eb293879a961f873db10ab3f8514c6",
+    "validation": "58be58f4ff9a0c7276f038bf21415cdb1e47c78d174c9360624ee72ccd3c17a8"
+  },
+  "read_partitions": [
+    "train",
+    "validation"
+  ],
+  "schema_version": 1,
+  "source_sha256": {
+    "src/ats_mlops/data/dataset.py": "4c86731bffef1a480220c702665cc4f90be79fc2687ccfe32058f2b62b08e105",
+    "src/ats_mlops/evaluation/baseline.py": "d555f6a813cf800b4834602978da190e322b6889048aef621d3e8811f5a86b59",
+    "src/ats_mlops/evaluation/ranking.py": "63f8223ee68cb1136d8e1a7a8ced5a652306940b914acbcb46b31e92dcbffb0b",
+    "src/ats_mlops/model/baseline.py": "8678b6e5ea970f591de43bb59616c76cb8489cca24f415d62c13458d50e4cd84"
+  },
+  "split_sha256": "66dba1736330ac0868887924989d94252e959b61bc71ca11465836b9b204da5d",
+  "split_sha256_source": "admitted_manifest_reference; split_bytes_not_read",
+  "test_read": false,
+  "tie_break": "candidate_id ascending",
+  "tokenizer": "NFKC, whitespace collapse, Unicode casefold, Unicode word token sets",
+  "train_rows_verified": 720,
+  "validation_rows_verified": 240
+}
