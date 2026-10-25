@@ -10,6 +10,7 @@ import platform
 import sys
 
 from ats_mlops.runner import CompatibilityError, run_compatibility
+from ats_mlops.data import DataError, audit_manifest, generate_dataset
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -22,10 +23,22 @@ def main(argv: list[str] | None = None) -> int:
     runner.add_argument("--git-sha", required=True)
     runner.add_argument("--run-id", required=True)
     runner.add_argument("--expected-lock-sha256")
+    data = commands.add_parser("data")
+    data_commands = data.add_subparsers(dest="data_command", required=True)
+    generate = data_commands.add_parser("generate")
+    generate.add_argument("--config", type=Path, default=Path("configs/data.json"))
+    generate.add_argument("--manifest", type=Path, default=Path("data_manifest.json"))
+    generate.add_argument("--output-dir", type=Path, default=Path("data"))
+    audit = data_commands.add_parser("audit")
+    audit.add_argument("--manifest", type=Path, default=Path("data_manifest.json"))
     commands.add_parser("environment")
     args = parser.parse_args(argv)
     try:
-        if args.command == "compatibility-run":
+        if args.command == "data":
+            report = (generate_dataset(args.config, args.manifest, args.output_dir)
+                      if args.data_command == "generate" else audit_manifest(args.manifest))
+            print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+        elif args.command == "compatibility-run":
             print(run_compatibility(args.git_sha, args.run_id, args.expected_lock_sha256))
         elif args.command == "compatibility-worker":
             from ats_mlops.compatibility import run_worker
@@ -44,7 +57,9 @@ def main(argv: list[str] | None = None) -> int:
                              sort_keys=True))
         return 0
     except Exception as exc:
-        kind = exc.kind if isinstance(exc, CompatibilityError) else "compatibility_failed"
+        kind = (str(exc) if isinstance(exc, DataError) else
+                exc.kind if isinstance(exc, CompatibilityError) else "data_invalid" if args.command == "data"
+                else "compatibility_failed")
         print(kind, file=sys.stderr)
         return 1
 

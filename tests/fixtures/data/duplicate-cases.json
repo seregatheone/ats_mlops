@@ -1,0 +1,9 @@
+{
+  "base": "Python SQL Docker Linux Kafka Redis Java Scala Rust Go",
+  "same_tokens": "GO, rust Scala JAVA redis kafka LINUX docker sql PYTHON!!!",
+  "near": "Python SQL Docker Linux Kafka Redis Java Scala Rust Go Terraform",
+  "different": "Python SQL Docker Linux Kafka Redis Java Scala Ansible Pytest",
+  "transitive_a": "a b c d e f g h i j k l m n o p q r s t",
+  "transitive_b": "a b c d e f g h i j k l m n o p q r s t u",
+  "transitive_c": "b c d e f g h i j k l m n o p q r s t u v"
+}

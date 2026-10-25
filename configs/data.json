@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "generator": "synthetic-skills-v1",
+  "namespace": "demo-v1",
+  "seed": 20261026,
+  "vacancy_groups": 60,
+  "candidates_per_group": 20,
+  "positives_per_group": 5,
+  "near_duplicate_jaccard": 0.9,
+  "split_ratios": {"train": 0.6, "validation": 0.2, "test": 0.2}
+}
