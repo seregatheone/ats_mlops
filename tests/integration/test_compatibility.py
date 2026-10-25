@@ -54,7 +54,7 @@ class CompatibilityRunner:
             "status": "running",
             "started_at": dt.datetime.now(dt.timezone.utc).isoformat(),
             "checks": {name: "not_run" for name in (
-                "builds", "airflow_api", "local_executor", "positive_dag",
+                "builds", "services_startup", "airflow_api", "local_executor", "positive_dag",
                 "positive_report", "serving_predictions", "serving_metadata",
                 "serving_no_source_mount", "negative_dag", "lock_mismatch",
                 "cleanup",
@@ -268,10 +268,12 @@ class CompatibilityRunner:
             self.compose_attempted = True
             self.dc("config", "--quiet")
             # serving and auth-init share the MLflow image built by this step.
-            for service in ("minio", "mlflow", "airflow"):
+            for service in ("postgres", "minio", "mlflow", "airflow"):
                 self.dc("build", service, timeout=self.build_timeout)
             checks[active_check] = "passed"
+            active_check = "services_startup"
             self.dc("up", "-d", "postgres", "minio", "mlflow", "airflow", timeout=self.service_timeout)
+            checks[active_check] = "passed"
             active_check = "airflow_api"
             airflow = self.base_url("airflow", 8080)
             self.wait_for("Airflow API authentication", lambda: self.authenticate(airflow), self.service_timeout)

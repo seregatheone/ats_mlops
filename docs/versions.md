@@ -45,6 +45,10 @@ ATS_RUN_COMPATIBILITY=1 python3 -m unittest discover -s tests/integration -p tes
 4. Prediction из отдельного serving-контейнера без bind mount исходного репозитория и без S3/registry credentials.
 5. Отрицательный DAG с несовпадающим lock hash: ошибка до worker, без успешного training report.
 
+Отдельный unit regression использует настоящий временный Git-репозиторий и разные файлы checkout/image lock без expected-hash override. Он подтверждает, что основное сравнение файлов блокирует worker; удаление этого сравнения делает тест красным.
+
+Первый Docker-прогон дошёл до startup и обнаружил отказ исполнения PostgreSQL init-скрипта из host bind mount. В исправленной fixture bootstrap копируется в собственный образ от закреплённого PostgreSQL с режимом 0644; служебные credentials остаются только в runtime environment. Неуспешный прогон и успешная очистка сохранены в локальных evidence.
+
 Сохраняются очищенные от секретов отчёты и диагностические логи в `.local/compat/<run_id>/`. В `finally` удаляются только контейнеры/volumes уникального тестового проекта; чужие контейнеры и образы не удаляются. Это временная compatibility инфраструктура, а не постоянный контур T-4. Root credentials MinIO используются только в её генерируемой синтетической фикстуре; постоянное разграничение DVC/MLflow выполняется в T-4.
 
 ## Первичные источники
