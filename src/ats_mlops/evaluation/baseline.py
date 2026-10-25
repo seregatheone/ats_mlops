@@ -25,9 +25,6 @@ def validation_report(manifest_path: Path) -> dict:
     manifest_path = manifest_path.resolve()
     manifest = load_manifest(manifest_path)
     split_artifact = manifest["artifacts"]["split_lists"]
-    split_hash = _hash(manifest_path.parent / split_artifact["path"])
-    if split_hash != split_artifact["sha256"]:
-        raise DataError("split_artifact_sha256_mismatch")
     train = load_partition(manifest_path, "train")
     validation = load_partition(manifest_path, "validation")
     metrics = evaluate_ranking(validation, score_rows(validation),
@@ -43,8 +40,12 @@ def validation_report(manifest_path: Path) -> dict:
         "read_partitions": ["train", "validation"], "test_read": False,
         "train_rows_verified": len(train), "validation_rows_verified": len(validation),
         "manifest_sha256": _hash(manifest_path),
-        "split_sha256": split_hash,
-        "split_inventory_sha256": hashlib.sha256(canonical_json(manifest["splits"])).hexdigest(),
+        "split_sha256": split_artifact["sha256"],
+        "split_sha256_source": "admitted_manifest_reference; split_bytes_not_read",
+        "partition_inventory_sha256": {
+            name: hashlib.sha256(canonical_json(manifest["splits"][name])).hexdigest()
+            for name in ("train", "validation")
+        },
         "data_sha256": {name: manifest["artifacts"][name]["sha256"] for name in ("train", "validation")},
         "source_sha256": {name: _hash(ROOT / name) for name in sources},
         "environment": {"python": platform.python_version(), "dependencies": "stdlib only"},

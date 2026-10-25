@@ -17,7 +17,7 @@
   "manifest_sha256": "81bde9b3a96ecdf6a970ee4a04bb1c2ea06c3af6da4123c1471cf94a780ef0f9",
   "metrics": {
     "cutoff": 10,
-    "elapsed_seconds": 0.00029095797799527645,
+    "elapsed_seconds": 0.00022250006441026926,
     "eligible_group_count": 12,
     "eligible_group_ids": [
       "demo-v1-v0005",
@@ -1150,6 +1150,10 @@
   },
   "model_version": "jaccard-v1",
   "partition": "validation",
+  "partition_inventory_sha256": {
+    "train": "9e8783069da312e16dee67ef8520ec4c03eb293879a961f873db10ab3f8514c6",
+    "validation": "58be58f4ff9a0c7276f038bf21415cdb1e47c78d174c9360624ee72ccd3c17a8"
+  },
   "read_partitions": [
     "train",
     "validation"
@@ -1157,12 +1161,12 @@
   "schema_version": 1,
   "source_sha256": {
     "src/ats_mlops/data/dataset.py": "4c86731bffef1a480220c702665cc4f90be79fc2687ccfe32058f2b62b08e105",
-    "src/ats_mlops/evaluation/baseline.py": "78eaaca23b63454ba69d6ede1e0ab2027e69125f622f84ecc0f078563c2f254f",
+    "src/ats_mlops/evaluation/baseline.py": "d555f6a813cf800b4834602978da190e322b6889048aef621d3e8811f5a86b59",
     "src/ats_mlops/evaluation/ranking.py": "63f8223ee68cb1136d8e1a7a8ced5a652306940b914acbcb46b31e92dcbffb0b",
     "src/ats_mlops/model/baseline.py": "8678b6e5ea970f591de43bb59616c76cb8489cca24f415d62c13458d50e4cd84"
   },
-  "split_inventory_sha256": "72666e37a9ed8a28913860a99cbb2565dc01086cf5b414ceb93b971dfec6ced4",
   "split_sha256": "66dba1736330ac0868887924989d94252e959b61bc71ca11465836b9b204da5d",
+  "split_sha256_source": "admitted_manifest_reference; split_bytes_not_read",
   "test_read": false,
   "tie_break": "candidate_id ascending",
   "tokenizer": "NFKC, whitespace collapse, Unicode casefold, Unicode word token sets",

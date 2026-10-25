@@ -50,11 +50,12 @@ PYTHONPATH=src python -m unittest discover -s tests/unit -p test_ranking_metrics
 
 В чистом checkout сначала восстановите детерминированные данные по
 [карточке T-3](../../docs/data-card.md). Baseline CLI проверяет manifest,
-SHA256 split metadata и только train/validation bytes/inventory/classes,
+ссылку на допущенный SHA256 split metadata и только train/validation bytes/inventory/classes,
 затем оценивает validation. Он не вызывает полный audit и не открывает
-source/corpus/test. Train нужен только для проверки допущенного входа,
+source/corpus/test/split. Train нужен только для проверки допущенного входа,
 никаких fit или настройки на validation нет. В сохранённом отчёте есть
-SHA256 manifest, файла split, канонической split inventory, train/validation
+SHA256 manifest, ссылочный SHA256 split (уже проверенный при admission T-3),
+канонических inventory только train/validation, train/validation
 и исходников, а также версия Python. Исходники идентифицируются содержимым,
 поэтому отчёт не требует самоссылочного Git commit hash. Изменяется только
 наблюдаемое `elapsed_seconds`; scores, cohort и метрики детерминированы.
@@ -64,8 +65,9 @@ SHA256 manifest, файла split, канонической split inventory, tra
 `sha256:d51880bb52f2178c9434fd0b92a32052a1e935865a006072b5f1c146a2ab0597`.
 Все команды выполнялись с Docker `--network none`, без новых зависимостей.
 Перед actual baseline CLI файл `data/test.jsonl` был удалён. Unit guard
-дополнительно запрещает открытия test/source/corpus при формировании отчёта.
+дополнительно запрещает открытия test/source/corpus/split при формировании отчёта.
 После восстановления manifest остался побайтно идентичным tracked версии.
-Focused suite: 14 PASS; полный unit suite: 32 PASS. Negative fixture CLI
-с повреждённым validation и split даёт exit 1 до scoring; undefined даёт 2.
+Focused suite: 14 PASS; полный unit suite: 32 PASS. После уточнения границы
+metadata IO повторены 4 report-теста, остальные проверки не менялись. Negative fixture CLI
+с повреждённым validation даёт exit 1 до scoring; undefined даёт 2.
 Временные fixture names и elapsed time не являются исследовательскими данными.

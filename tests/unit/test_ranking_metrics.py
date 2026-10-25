@@ -130,11 +130,12 @@ class BaselineReportTests(unittest.TestCase):
 
         def guarded(path, *args, **kwargs):
             seen.append(path.name)
-            if path.name in ("test.jsonl", "corpus.jsonl", "source.jsonl"):
+            if path.name in ("test.jsonl", "corpus.jsonl", "source.jsonl", "split.json"):
                 raise AssertionError(f"forbidden data read: {path}")
             return original(path, *args, **kwargs)
 
-        (self.root / "data/test.jsonl").unlink()
+        for name in ("test.jsonl", "corpus.jsonl", "source.jsonl", "split.json"):
+            (self.root / "data" / name).unlink()
         with patch.object(Path, "open", guarded):
             report = validation_report(self.manifest)
         self.assertEqual(report["metrics"]["status"], "defined")
@@ -157,13 +158,15 @@ class BaselineReportTests(unittest.TestCase):
             scorer.assert_not_called()
         self.assertFalse((self.root / "out.json").exists())
 
-    def test_corrupt_split_metadata_is_rejected_before_scoring(self):
-        with (self.root / "data/split.json").open("a") as stream:
-            stream.write("\n")
-        with patch("ats_mlops.evaluation.baseline.score_rows") as scorer:
-            self.assertEqual(main(["--manifest", str(self.manifest), "--output", str(self.root / "out.json")]), 1)
-            scorer.assert_not_called()
-        self.assertFalse((self.root / "out.json").exists())
+    def test_split_reference_and_requested_inventory_hashes_are_explicit(self):
+        manifest = json.loads(self.manifest.read_text())
+        report = validation_report(self.manifest)
+        self.assertEqual(report["split_sha256"], manifest["artifacts"]["split_lists"]["sha256"])
+        self.assertEqual(report["split_sha256_source"], "admitted_manifest_reference; split_bytes_not_read")
+        self.assertEqual(set(report["partition_inventory_sha256"]), {"train", "validation"})
+        for name in ("train", "validation"):
+            content = (json.dumps(manifest["splits"][name], ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode()
+            self.assertEqual(report["partition_inventory_sha256"][name], hashlib.sha256(content).hexdigest())
 
     def test_cli_writes_report_and_undefined_is_nonzero(self):
         output = self.root / "out.json"
