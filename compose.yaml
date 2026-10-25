@@ -94,7 +94,7 @@ services:
       timeout: 3s
       start_period: 30s
       retries: 40
-    mem_limit: 1536m
+    mem_limit: 2g
 
   storage-check:
     <<: *ml-image

@@ -73,8 +73,12 @@ class StorageRunner:
                 assert not bindings, "PostgreSQL must not publish a host port"
             for entries in bindings.values():
                 assert entries and all(item["HostIp"] == "127.0.0.1" for item in entries)
+            assert not container["State"]["OOMKilled"], "core container was OOM-killed"
+            assert container["RestartCount"] == 0, "core container silently restarted"
             summary[service] = {"host_bindings": bindings,
-                                "image_id": container["Image"]}
+                                "image_id": container["Image"],
+                                "oom_killed": container["State"]["OOMKilled"],
+                                "restart_count": container["RestartCount"]}
         self.report["network"] = summary
         self.report["checks"]["loopback_only_no_database_host_port"] = True
 
@@ -103,6 +107,7 @@ class StorageRunner:
             self.phase("verify")
             self.phase("security")
             self.report["checks"]["down_up_retained"] = True
+            self.assert_network_boundaries()
             ids = self.command(self.compose + ["ps", "-q"]).splitlines()
             self.report["resource_sample"] = self.command(["docker", "stats", "--no-stream", "--format", "{{json .}}", *ids]).splitlines()
             self.report["outcome"] = "passed"

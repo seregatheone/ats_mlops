@@ -11,7 +11,7 @@ python3 scripts/bootstrap_core.py up
 python3 scripts/bootstrap_core.py status
 ```
 
-Первый `up` собирает образы; MinIO server/client собираются из upstream исходников с ограничением двух Go workers. ML venv и Airflow venv разделены, core использует только ML image. Docker должен иметь свободную память для лимитов core: PostgreSQL 512 MiB, MinIO 1 GiB, MLflow 1.5 GiB; это лимиты, не измеренное потребление.
+Первый `up` собирает образы; MinIO server/client собираются из upstream исходников с ограничением двух Go workers. ML venv и Airflow venv разделены, core использует только ML image. Docker должен иметь свободную память для лимитов core: PostgreSQL 512 MiB, MinIO 1 GiB, MLflow 2 GiB; это лимиты, не измеренное потребление. Первый успешный smoke показал MLflow 1.499 GiB при лимите 1.5 GiB, поэтому предел увеличен до 2 GiB и проверен повторно. При добавлении Airflow и observability нужно учитывать суммарный запас Docker VM; эти сервисы пока не входят в core.
 
 Генератор создаёт случайные credentials в игнорируемом `.local/core/core.env` (0600), каталог имеет режим 0700. Повторный запуск сохраняет их. Не заменяйте файл при существующих volumes: PostgreSQL применяет init-скрипт только к пустому каталогу, а существующие пользователи должны сохранять прежние пароли. Для переноса стенда нужны и volumes, и приватная конфигурация. Не публикуйте `docker compose config`, `docker inspect`, полный env или MinIO root credentials: они доступны доверенному локальному владельцу Docker. Для проверки конфигурации используйте `config --quiet`.
 
