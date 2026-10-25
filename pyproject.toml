@@ -13,3 +13,6 @@ ats-mlops = "ats_mlops.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"ats_mlops.data" = ["expectations/*.json"]

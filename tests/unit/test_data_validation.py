@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 
 from ats_mlops.cli import main
 from ats_mlops.data.dataset import audit_manifest, load_partition, canonical_json, generate_dataset, prepare_dataset, generate_rows, sha256
-from ats_mlops.data.validate import ValidationError, require_valid, validate_dataset
+from ats_mlops.data.validate import GX_ROOT, ValidationError, require_valid, validate_dataset
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -42,6 +42,10 @@ class DataValidationTests(unittest.TestCase):
 
     def admission(self):
         return validate_dataset(self.manifest, self.reports)
+
+    def test_gx_configuration_is_a_python_package_resource(self):
+        self.assertEqual(json.loads((GX_ROOT / "pairs.json").read_text())["name"], "ats_pairs_v1")
+        self.assertEqual(json.loads((GX_ROOT / "checkpoint.json").read_text())["suite"], "pairs.json")
 
     def test_real_gx_checkpoint_passes_and_persists_private_reports(self):
         report = self.admission()

@@ -1,8 +1,12 @@
 # Data quality boundary (GX 1.24.1)
 
+The single source of truth is packaged in
+[`src/ats_mlops/data/expectations/`](../src/ats_mlops/data/expectations/).
 `pairs.json` is a real Great Expectations suite. `checkpoint.json` defines the
 checkpoint instantiated by `ats_mlops.data.validate`: ephemeral pandas source,
 whole-dataframe batch definition, stored suite, validation definition, checkpoint.
+The JSON files ship in the wheel and are loaded with `importlib.resources`, so
+validation also works in the src-only runtime image and outside a checkout.
 All 17 expectations run on raw JSONL rows before `clean_rows` can remove an exact
 duplicate pair. Schema/type predicates are explicit derived columns; the
 expectations evaluate them in GX. The relevance predicate distinguishes integers

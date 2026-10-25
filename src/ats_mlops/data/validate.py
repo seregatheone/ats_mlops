@@ -7,6 +7,7 @@ receipt bound to the exact manifest, then validates only requested split bytes.
 from __future__ import annotations
 
 from collections import Counter
+from importlib.resources import files
 import json
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from ats_mlops.data.dataset import (
 )
 
 
-GX_ROOT = Path(__file__).resolve().parents[3] / "great_expectations"
+GX_ROOT = files("ats_mlops.data").joinpath("expectations")
 REPORT_SCHEMA = 1
 
 
