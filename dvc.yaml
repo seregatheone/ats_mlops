@@ -5,14 +5,10 @@ stages:
       - ../source/src/ats_mlops
       - ../source/requirements-ml.lock
       - ../source/requirements-build.lock
-      - ../source/dvc.yaml
       - pipeline-inputs.json
       - dataset-binding.json
       - data_manifest.json
       - admission/data-admission.json
-      - data/train.jsonl.dvc
-      - data/validation.jsonl.dvc
-      - data/split.json.dvc
       - data/train.jsonl
       - data/validation.jsonl
     outs:

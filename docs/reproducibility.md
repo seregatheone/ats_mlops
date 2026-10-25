@@ -64,6 +64,12 @@ admitted input metadata. `dvc.yaml` в workspace должен совпадать
 `params.yaml` допускает явные model/search overrides, smoke и evaluation params.
 Основной search budget остаётся 20; smoke задаётся отдельным bool и означает 2.
 
+DVC запрещает `dvc.yaml` и `*.dvc` как file dependencies. Recipe и actual pointer
+bytes поэтому привязаны declared `pipeline-inputs.json`/`dataset-binding.json`,
+проверяются preflight/stages; сам DVC объявляет реальные train/validation byte
+dependencies. Изменение admitted metadata требует нового bundle, а не отдельного
+ручного редактирования pointer. Обёртка отвергает такую подмену до cache decision.
+
 Validate сверяет actual workspace pointers с admitted binding и выполняет
 training-mode `require_valid`. Prepare материализует возвращённые canonical
 train/validation rows с сохранением manifest-relative paths, копирует неизменённые
@@ -76,6 +82,10 @@ Train запускает T8 study в новом пустом staging/report dire
 Перезапись существующего stage output прямой командой отвергается. DVC управляет
 удалением своих outs перед повторным выполнением; worker публикует новый staging
 directory атомарно. Study не мутируется и не переиспользуется как новая попытка.
+До tune/fit дополнительно сверяются exact prepared model/search/fit-params/feature
+snapshot bytes с текущими effective params и manifest/admission hashes с binding.
+Такая же проверка выполняется до evaluate; подмена даже другим valid bundle
+не может незаметно дойти до fit.
 
 Evaluate использует exact final model, общий scorer/evaluator и prepared rows.
 Проверяет selected-config/data/model hashes, сохраняет scores/ranks, metrics,

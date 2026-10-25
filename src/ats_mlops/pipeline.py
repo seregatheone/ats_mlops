@@ -247,6 +247,22 @@ def classify_repro(returncode: int, events: dict) -> str:
     return "failed" if returncode else "new_training" if "train" in events else "cache_hit"
 
 
+def verify_prepared(workspace: Path, source_root: Path, binding: dict) -> dict:
+    """Reject substituted configs or another valid admitted dataset before fit."""
+    from ats_mlops.features.pairs import FEATURE_CONTRACT
+
+    prepared = workspace / "artifacts/prepared"
+    expected = parameters(workspace, source_root)
+    if (file_hash(prepared / "data_manifest.json") != binding["manifest_sha256"]
+            or file_hash(prepared / "admission.json") != binding["admission_sha256"]
+            or (prepared / "fit-params.json").read_bytes() != canonical_json(expected)
+            or (prepared / "model.json").read_bytes() != canonical_json(expected["model"])
+            or (prepared / "search.json").read_bytes() != canonical_json(expected["search"])
+            or (prepared / "feature-contract.json").read_bytes() != canonical_json(FEATURE_CONTRACT)):
+        raise ValueError("prepared_snapshot_mismatch")
+    return expected
+
+
 def stage(name: str, workspace: Path, source_root: Path) -> dict:
     """Real stages publish fresh generated outputs; old immutable studies stay intact."""
     from ats_mlops.data.dataset import load_manifest
@@ -296,9 +312,7 @@ def stage(name: str, workspace: Path, source_root: Path) -> dict:
             from ats_mlops.model.training import train
 
             prepared = artifacts / "prepared"
-            fit_params = read_json(prepared / "fit-params.json")
-            if fit_params != parameters(workspace, source_root):
-                raise ValueError("prepared_params_changed")
+            fit_params = verify_prepared(workspace, source_root, binding)
             study = tune(prepared / "data_manifest.json", staging / "study", admission_report=prepared / "admission.json",
                          config_path=prepared / "model.json", search_path=prepared / "search.json",
                          source_root=source_root, image_identity=spec["image"], smoke=fit_params["smoke"])
@@ -338,8 +352,7 @@ def evaluate(workspace, source_root, output, source, binding):
     from ats_mlops.model.scoring import pair_frame, score_rows
 
     prepared, training = workspace / "artifacts/prepared", workspace / "artifacts/training"
-    if parameters(workspace, source_root) != read_json(prepared / "fit-params.json"):
-        raise ValueError("prepared_params_changed")
+    verify_prepared(workspace, source_root, binding)
     record = read_json(training / "final/run_manifest.json")
     study = read_json(training / "study/study.json")
     if (record["git_sha"] != source["git_sha"] or study["outcome"] != "passed"
@@ -390,14 +403,22 @@ def evaluate(workspace, source_root, output, source, binding):
 def reproduce(workspace: Path, source_root: Path, *, force=False) -> dict:
     """Audit ordinary DVC without changing its skip or run-cache behavior."""
     workspace, source_root = workspace.resolve(), source_root.resolve()
-    context(workspace, source_root)
     invocation = uuid.uuid4().hex
-    env = os.environ.copy()
-    env.update({"ATS_PIPELINE_INVOCATION": invocation, "ATS_ML_PYTHON": sys.executable,
-                "PYTHONPATH": str(source_root / "src"), "PYTHONDONTWRITEBYTECODE": "1"})
     command = [str(Path(sys.executable).parent / "dvc"), "repro"]
     if force:
         command.extend(["-f", "--no-run-cache"])
+    try:
+        context(workspace, source_root)
+    except Exception as error:
+        result = {"schema_version": 1, "invocation": invocation, "command": ["dvc", *command[1:]],
+                  "exit_code": 1, "outcome": "failed", "events": {}, "preflight": {
+                      "error_type": type(error).__name__, "retryable": isinstance(error, OSError),
+                      "reason": str(error) if re.fullmatch(r"[a-z_]+", str(error)) else "preflight_failed"}}
+        write_json(workspace / ".local/repro" / (invocation + ".json"), result)
+        return result
+    env = os.environ.copy()
+    env.update({"ATS_PIPELINE_INVOCATION": invocation, "ATS_ML_PYTHON": sys.executable,
+                "PYTHONPATH": str(source_root / "src"), "PYTHONDONTWRITEBYTECODE": "1"})
     process = subprocess.run(command, cwd=workspace, env=env, text=True, capture_output=True)
     events_dir = workspace / ".local/executions" / invocation
     events = {path.stem: read_json(path) for path in events_dir.glob("*.json")}

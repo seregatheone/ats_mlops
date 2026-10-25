@@ -50,6 +50,13 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "new_bundle_directory_required"):
             pipeline.create_bundle(ROOT, ROOT / "configs/data.json", self.bundle)
 
+    def test_real_dvc_accepts_recipe_and_declared_dependencies(self):
+        pipeline.run_command(["dvc", "init", "--no-scm", "-q"], cwd=self.workspace)
+        shutil.copyfile(ROOT / "dvc.yaml", self.workspace / "dvc.yaml")
+        graph = pipeline.run_command(["dvc", "dag", "--dot"], cwd=self.workspace)
+        self.assertIn("validate", graph)
+        self.assertIn("evaluate", graph)
+
     def test_manifest_paths_and_symlinks_cannot_escape_root(self):
         for relative in ("../secret", "/tmp/secret", "data/../../secret", ""):
             with self.subTest(relative=relative), self.assertRaisesRegex(ValueError, "unsafe_artifact_path"):
@@ -129,6 +136,33 @@ class PipelineTests(unittest.TestCase):
         write_json(self.workspace / "params.yaml", params)
         with self.assertRaisesRegex(ValueError, "unknown_parameter"):
             pipeline.parameters(self.workspace, ROOT)
+
+    def test_swapped_prepared_snapshots_rejected_by_actual_stage_before_fit(self):
+        with patch("ats_mlops.pipeline.context", return_value=({"git_sha": "a" * 40}, {})):
+            pipeline.stage("prepare", self.workspace, ROOT)
+        prepared = self.workspace / "artifacts/prepared"
+        for name in ("model.json", "search.json", "data_manifest.json", "admission.json"):
+            path = prepared / name
+            original = path.read_bytes()
+            document = json.loads(original)
+            if name == "model.json":
+                document["seed"] += 1
+            elif name == "search.json":
+                document["sampler_seed"] += 1
+            elif name == "data_manifest.json":
+                document["generator"]["config"]["namespace"] = "foreign-valid-bundle"
+            else:
+                document["manifest_sha256"] = "0" * 64
+            path.write_bytes(canonical_json(document))
+            with self.subTest(snapshot=name), \
+                    patch("ats_mlops.pipeline.context", return_value=({"git_sha": "a" * 40}, {})), \
+                    patch.object(Pipeline, "fit") as pipeline_fit, \
+                    patch.object(LogisticRegression, "fit") as classifier_fit:
+                with self.assertRaisesRegex(ValueError, "prepared_snapshot_mismatch"):
+                    pipeline.stage("train", self.workspace, ROOT)
+                pipeline_fit.assert_not_called()
+                classifier_fit.assert_not_called()
+            path.write_bytes(original)
 
     def test_cache_classification_uses_execution_events_not_restored_run_ids(self):
         self.assertEqual(pipeline.classify_repro(0, {}), "cache_hit")

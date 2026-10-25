@@ -18,9 +18,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def command(args, *, cwd=None, env=None):
+def command(args, *, cwd=None, env=None, allow_failure=False):
     process = subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True)
-    if process.returncode:
+    if process.returncode and not allow_failure:
         raise AssertionError(f"command failed ({process.returncode}): {args[0]}\n{process.stdout[-2500:]}\n{process.stderr[-4000:]}")
     return process.stdout.strip()
 
@@ -71,7 +71,7 @@ class RecomputeIntegrationTests(unittest.TestCase):
         credentials = Path(os.environ["ATS_DVC_ENV_FILE"])
         self.assertTrue(credentials.is_file())
 
-        def worker(run, *args, credentials_file=False):
+        def worker(run, *args, credentials_file=False, allow_failure=False):
             base = ["docker", "run", "--rm", "--network", "ats-core_default", "--user", "0:0",
                     "--cpus", "1", "--memory", "1536m", "-e", "PYTHONPATH=/run/source/src",
                     "-e", "ATS_ML_PYTHON=/opt/ml-venv/bin/python", "-e", "PYTHONDONTWRITEBYTECODE=1",
@@ -80,7 +80,7 @@ class RecomputeIntegrationTests(unittest.TestCase):
                     "-v", f"{run}:/run", "-v", f"{run / 'source'}:/run/source:ro", "-w", "/run/workspace"]
             if credentials_file:
                 base.extend(["--env-file", str(credentials)])
-            return command([*base, "--entrypoint", "/opt/ml-venv/bin/python", identity["id"], *args])
+            return command([*base, "--entrypoint", "/opt/ml-venv/bin/python", identity["id"], *args], allow_failure=allow_failure)
 
         transfer = """
 import json,subprocess,sys
@@ -110,11 +110,11 @@ print(json.dumps(sorted(r.info.run_id for r in c.search_runs([e.experiment_id],m
         def run_ids():
             return read_output(worker(runs[0], "-c", count_script).splitlines()[-1])
 
-        def repro(run, force=False):
+        def repro(run, force=False, expect_failure=False):
             args = ["-m", "ats_mlops", "pipeline", "repro", "--workspace", ".", "--source-root", "../source"]
             if force:
                 args.append("--force")
-            return read_output(worker(run, *args).splitlines()[-1])
+            return read_output(worker(run, *args, allow_failure=expect_failure).splitlines()[-1])
 
         baseline_ids = run_ids()
         forced = []
@@ -167,7 +167,7 @@ print(json.dumps(sorted(r.info.run_id for r in c.search_runs([e.experiment_id],m
         self.assertEqual(len(set(after_model) - set(after_forced)), 1)
         raw = runs[0] / "workspace/data/train.jsonl"
         raw.write_bytes(raw.read_bytes() + b"\n")
-        invalid = repro(runs[0])
+        invalid = repro(runs[0], expect_failure=True)
         self.assertEqual(invalid["outcome"], "failed")
         self.assertNotIn("train", invalid["events"])
         self.assertEqual(run_ids(), after_model)
