@@ -6,7 +6,7 @@
 - [x] T-1 — Постановка и протокол
 - [x] T-2 — Каркас и совместимость
 - [x] T-3 — Данные и разбиение
-- [ ] T-4 — MinIO и MLflow
+- [x] T-4 — MinIO и MLflow
 - [ ] T-5 — Качество данных
 - [ ] T-6 — Baseline и метрики
 - [ ] T-7 — Модель и происхождение
@@ -26,6 +26,8 @@
 
 ## Learnings
 <!-- Добавлять наблюдения по мере выполнения задач. -->
+
+- T-4: persistent core сохраняет DVC data, run/artifact/Registry model после restart и down/up; S3 bucket/SQL role/Host negative probes прошли. Реальный smoke 49.032 s, cleanup 0; независимая приёмка VERIFIED. MLflow limit 2 GiB после измерения, warm sample 1.689 GiB, OOM/restarts 0; это не capacity benchmark. Свидетельства docs/runbook.md и reports/storage/t4.json.
 
 - T-3: 1 200 синтетических пар/60 компонентов, split 36/12/12 групп; source/config/test hashes закреплены. Шесть настоящих DVC pointers, восстановление и чистый offline checkout проверены. Независимые 18 unit и 23 adversarial проверки прошли в Python 3.11. Scoped loader train/validation не читает test; свидетельства docs/data-card.md и reports/data-audit.json.
 
