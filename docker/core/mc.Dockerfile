@@ -16,5 +16,6 @@ COPY --from=build /out/mc /usr/local/bin/mc
 COPY --from=source /src/LICENSE /usr/share/licenses/mc/LICENSE
 COPY --chmod=0644 docker/core/minio-init.sh /opt/core/minio-init.sh
 COPY configs/storage/policies/ /opt/core/policies/
+RUN chmod 0755 /opt/core
 USER 10001:10001
 ENTRYPOINT ["/bin/sh", "/opt/core/minio-init.sh"]

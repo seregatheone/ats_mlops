@@ -42,7 +42,8 @@ class StorageRunner:
 
     def command(self, args: list[str], *, timeout: int = 60, check: bool = True) -> str:
         self.log_number += 1
-        result = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=timeout, check=False)
+        result = subprocess.run(args, cwd=ROOT, env=os.environ | self.values,
+                                capture_output=True, text=True, timeout=timeout, check=False)
         output = result.stdout + result.stderr
         for key in bootstrap.SECRET_KEYS:
             output = output.replace(self.values[key], "<redacted>")
@@ -117,6 +118,9 @@ class StorageRunner:
                 remaining[kind] = self.command(["docker", kind, "ls", "-q", "--filter", f"label=com.docker.compose.project={self.project}"]).splitlines()
             self.report["remaining_resources"] = remaining
             self.report["checks"]["cleanup"] = not any(remaining.values())
+            if any(remaining.values()):
+                self.report["outcome"] = "failed"
+                self.report["error_type"] = "CleanupError"
             self.report["timings_seconds"]["total"] = round(time.monotonic() - started, 3)
             self.save()
             if any(remaining.values()):
