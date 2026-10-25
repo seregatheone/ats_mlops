@@ -344,10 +344,17 @@ class CompatibilityRunner:
             if self.compose_attempted:
                 try:
                     self.capture_metadata()
-                    logs = self.dc("logs", "--no-color", "--tail", "200", timeout=30, check=False)
+                    logs = self.dc("logs", "--no-color", "--tail", "1200", timeout=30, check=False)
                     (self.state_dir / "services.log").write_text(logs + "\n", encoding="utf-8")
                     if self.evidence["status"] == "failed":
-                        print("Last service logs (sanitized):\n" + "\n".join(logs.splitlines()[-40:]), flush=True)
+                        errors = [line for line in logs.splitlines() if any(
+                            word in line for word in (
+                                "Error:", "Exception:", "Traceback", "[error",
+                                "Permission denied", "Read-only file system",
+                            )
+                        )]
+                        relevant = errors[-30:] if errors else logs.splitlines()[-15:]
+                        print("Service diagnostics (sanitized):\n" + "\n".join(relevant), flush=True)
                 except Exception as exc:
                     self.evidence["diagnostics_error"] = self.redact(str(exc))
                 try:

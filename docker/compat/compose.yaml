@@ -127,7 +127,7 @@ services:
     command: standalone
     volumes:
       - ${ATS_SOURCE_REPO:?required}:/source:ro
-      - auth:/auth:ro
+      - auth:/auth
       - work:/work
       - artifacts:/artifacts
     ports:
