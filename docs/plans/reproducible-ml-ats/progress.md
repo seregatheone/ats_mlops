@@ -7,7 +7,7 @@
 - [x] T-2 — Каркас и совместимость
 - [x] T-3 — Данные и разбиение
 - [x] T-4 — MinIO и MLflow
-- [ ] T-5 — Качество данных
+- [x] T-5 — Качество данных
 - [x] T-6 — Baseline и метрики
 - [ ] T-7 — Модель и происхождение
 - [ ] T-8 — Optuna
@@ -26,6 +26,8 @@
 
 ## Learnings
 <!-- Добавлять наблюдения по мере выполнения задач. -->
+
+- T-5: real GX admission проверяет source до dedup; training preflight возвращает точные проверенные train/validation rows и требует полный bound receipt. JSON/Markdown без текстов/PII; 35 unit и независимый installed-wheel positive/negative smoke PASS. Исправлены два P2: manifest TOCTOU и недоступные после установки GX configs. Реальный fit guard проверяется в T-7, T-5 его выполнение не заявляет.
 
 - T-6: Jaccard и общий NDCG@10/Recall@10 evaluator проверены ручным примером и независимым oracle. Zero-positive/empty/undefined/ties/invalid scores покрыты; baseline читает только train/validation. 32 unit и 35 независимых checks PASS в Python 3.11, validation report: 12 групп, обе метрики 1.0. Это упрощённая синтетика demo_only, не качество найма.
 
