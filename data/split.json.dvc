@@ -1,0 +1,5 @@
+outs:
+- md5: 1eba484d5071c180af23b330da125560
+  size: 162085
+  hash: md5
+  path: split.json
