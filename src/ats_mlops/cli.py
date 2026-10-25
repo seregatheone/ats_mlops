@@ -14,6 +14,11 @@ from ats_mlops.data import DataError, audit_manifest, generate_dataset
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["pipeline"]:
+        from ats_mlops.pipeline import main as pipeline_main
+
+        return pipeline_main(argv[1:])
     parser = argparse.ArgumentParser(prog="ats-mlops")
     commands = parser.add_subparsers(dest="command", required=True)
     worker = commands.add_parser("compatibility-worker")
@@ -37,6 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     validate.add_argument("--mode", choices=("admission", "training"), default="admission")
     validate.add_argument("--admission-report", type=Path)
     commands.add_parser("environment")
+    commands.add_parser("pipeline", help="immutable-source DVC pipeline; use pipeline --help")
     args = parser.parse_args(argv)
     try:
         if args.command == "data" and args.data_command == "validate":
