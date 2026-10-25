@@ -103,6 +103,6 @@ Text-only reports: [checks](../reports/training/checks.json),
 [validation](../reports/training/validation.json),
 [training guard](../reports/training/data-training.json),
 [admission](../reports/training/data-admission.json).
-Полный скачанный model directory и input reference fixture сохранены локально в
-`/private/tmp/ats-issue-8-evidence-20261026/training/` и в persistent MLflow model
-artifact (fixture отдельно в локальном evidence). Они не добавляются в Git.
+Полный model directory сохранён в persistent MLflow по указанной точной Registry
+version; скачанная копия и input reference fixture остаются в локальном evidence
+оператора вне Git. Публикуемые текстовые свидетельства приведены выше.
