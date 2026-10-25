@@ -29,7 +29,7 @@ descriptor в этот inventory не входит. Последующий init/
 отдельна от demo-v1. Произвольный feedback schema пока не поддержан T5 и не
 объявляется поддержанным этим DAG.
 
-## Init и обычный repro
+## Init и audited repro
 
 На host достаточно stdlib Python и Git; ML imports отложены до stages. Image JSON
 содержит resolved `id`, reference, repo_digests, os и architecture из реального
@@ -54,7 +54,8 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export MLFLOW_TRACKING_URI=http://mlflow:5000
 cd /run/workspace
 dvc dag
-dvc repro
+dvc status --json
+python -m ats_mlops pipeline repro --workspace . --source-root ../source
 ```
 
 Старый `/opt/project/src` из cached image и workspace/src не используются.
@@ -93,7 +94,11 @@ vocabulary/IDF, transformed-feature hashes и `pipeline_manifest.json`.
 
 ## Cache-hit, provenance и ошибки
 
-Для машинной audit receipt обычный DVC вызывается тонкой обёрткой:
+Обязательный операторский вход — тонкая обёртка `pipeline repro`: она выполняет
+source/metadata preflight **до** решения DVC об использовании cache и сохраняет
+machine-readable audit receipt. Низкоуровневый raw `dvc repro` сам по себе не
+обещает этот preflight, если все commands пропущены из cache. `dvc dag/status`
+остаются диагностикой. Обычный DVC вызывается внутри обёртки:
 
 ```sh
 python -m ats_mlops pipeline repro --workspace . --source-root ../source
@@ -186,8 +191,8 @@ invalid data затем завершились failed без нового fit/ru
 оба locks/dags/statuses/studies и score/metric reports.
 Публичные ASCII DAG copies имеют удалённый правый whitespace padding; исходный
 stdout сохранён в external evidence.
-Полные private model/data artifacts и invocation logs находятся в
-`/private/tmp/ats-issue-10-evidence-20261026/`; failed attempt — в соседнем
-`ats-issue-10-evidence-failed-recipe-20261026/`. Результаты моделей также доступны
+Полные private model/data artifacts, invocation logs и failed-recipe attempt
+сохранены оператором во внешнем evidence directory, переданном через
+`ATS_RECOMPUTE_EVIDENCE_DIR`. Результаты моделей также доступны
 через exact persistent Registry versions. Model downloads/caches/raw data в Git
 не добавлены. Сохранённый root `dvc.lock` взят из successful workspace B.

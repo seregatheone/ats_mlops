@@ -3,7 +3,7 @@
   "executable_git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2",
   "first_attempt": {
     "outcome": "failed_before_stages",
-    "raw_evidence": "/private/tmp/ats-issue-10-evidence-failed-recipe-20261026",
+    "raw_evidence": "external failed-recipe attempt retained by operator",
     "reason": "DVC forbids dvc.yaml and .dvc filenames as file dependencies",
     "source_git_sha": "b53b0324e08dc7e96bbb1a47393ef608ba7dc687",
     "training_runs_created": 0
