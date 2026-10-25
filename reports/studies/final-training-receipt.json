@@ -1,0 +1,25 @@
+{
+  "evidence_scope": "demo_only",
+  "final_run_manifest_sha256": "8f56a69b34d7ed411da7c2923b0719db2231a51dfa835d9a77241b8f3378f392",
+  "limitations": [
+    "Synthetic rule labels; demo_only engineering evidence.",
+    "No independent hiring outcomes or real-world hiring quality claim.",
+    "Validation only; no release gate and no test evaluation."
+  ],
+  "mlflow": {
+    "exact_uri": "models:/ats-pair-ranking/3",
+    "experiment_id": "2",
+    "model_name": "ats-pair-ranking",
+    "model_version": "3",
+    "run_id": "42a8ece3ae394e0a8cc550f87ac9fff4",
+    "source": "models:/m-df301aea0868448dbfa203c10185952b"
+  },
+  "model_sha256": "fb7d5fa0aebf6ca978539edf3076c191c2231d7c0f035636c787d38e5ad575be",
+  "outcome": "passed",
+  "reserved_files_unavailable": true,
+  "same_validation_inventory": true,
+  "schema_version": 1,
+  "selected_config_sha256": "419940d636fcf5aeb74569dc7eb32c95d933a1612039f169f3bc63191a192aa1",
+  "study_sha256": "82e0ea623e97f1f88c437bb17926f7beb3bf811fa77648b02b1381d30fc7c170",
+  "training_git_sha": "0c7f600e8f581d6cfc04260d5320e12f2581e5b9"
+}
