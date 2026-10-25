@@ -1,0 +1,171 @@
+# Use --project-directory at the repository root. Fixtures and volumes are disposable.
+x-ml-image: &ml-image
+  image: ${COMPOSE_PROJECT_NAME}-ml:fixture
+  build:
+    context: .
+    dockerfile: docker/runtime.Dockerfile
+    target: ml_runtime
+
+x-storage-env: &storage-env
+  AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?required}
+  AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?required}
+  AWS_DEFAULT_REGION: us-east-1
+  MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+  MLFLOW_TRACKING_URI: http://mlflow:5000
+  BENTOML_DO_NOT_TRACK: "true"
+
+services:
+  postgres:
+    image: postgres:18.3-alpine@sha256:54451ecb8ab38c24c3ec123f2fd501303a3a1856a5c66e98cecf2460d5e1e9d7
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      MLFLOW_DB_PASSWORD: ${MLFLOW_DB_PASSWORD:?required}
+      AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD:?required}
+    volumes:
+      - db:/var/lib/postgresql
+      - ./docker/compat/postgres-init.sh:/docker-entrypoint-initdb.d/10-databases.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    mem_limit: 512m
+
+  minio:
+    image: ${COMPOSE_PROJECT_NAME}-minio:fixture
+    build:
+      context: .
+      dockerfile: docker/minio.Dockerfile
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+    volumes:
+      - objects:/data
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/minio/health/ready', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    mem_limit: 1g
+
+  mlflow:
+    <<: *ml-image
+    environment:
+      <<: *storage-env
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+    command:
+      - /opt/ml-venv/bin/mlflow
+      - server
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+      - --backend-store-uri
+      - postgresql+psycopg2://mlflow:${MLFLOW_DB_PASSWORD:?required}@postgres:5432/mlflow
+      - --artifacts-destination
+      - s3://ats-compat-mlflow
+      - --allowed-hosts
+      - mlflow,mlflow:5000,localhost,localhost:5000,127.0.0.1,127.0.0.1:5000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, /opt/ml-venv/bin/python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 30
+    mem_limit: 1536m
+
+  auth-init:
+    <<: *ml-image
+    user: "0:0"
+    command: [/opt/ml-venv/bin/python, /opt/compat/init_auth.py]
+    volumes:
+      - ${ATS_COMPAT_AUTH_FILE:?required}:/run/bootstrap/passwords.json:ro
+      - auth:/auth
+      - work:/work
+      - artifacts:/artifacts
+    restart: "no"
+
+  airflow:
+    image: ${COMPOSE_PROJECT_NAME}-airflow:fixture
+    build:
+      context: .
+      dockerfile: docker/runtime.Dockerfile
+      target: airflow_runtime
+    environment:
+      <<: *storage-env
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:?required}@postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__PARALLELISM: "2"
+      AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "1"
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?required}
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: compat:admin
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /auth/passwords.json
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://localhost:8080/execution/
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:?required}
+      AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: "3"
+      AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: "3"
+      ATS_SOURCE_REPO: /source
+      ATS_WORK_ROOT: /work
+      ATS_ML_PYTHON: /opt/ml-venv/bin/python
+      ATS_ML_LOCK_FILE: /opt/requirements-ml.lock
+      ATS_BENTO_TAG_FILE: /artifacts/compat/bento_model_tag.txt
+      BENTOML_HOME: /artifacts/bento
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+    command: standalone
+    volumes:
+      - ${ATS_SOURCE_REPO:?required}:/source:ro
+      - auth:/auth:ro
+      - work:/work
+      - artifacts:/artifacts
+    ports:
+      - "127.0.0.1::8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+      auth-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/v2/monitor/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      start_period: 60s
+      retries: 40
+    mem_limit: 3g
+
+  serving:
+    image: ${COMPOSE_PROJECT_NAME}-ml:fixture
+    environment:
+      BENTOML_HOME: /artifacts/bento
+      ATS_BENTO_TAG_FILE: /artifacts/compat/bento_model_tag.txt
+      BENTOML_DO_NOT_TRACK: "true"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+    command: [/opt/ml-venv/bin/python, /opt/compat/serve.py]
+    volumes:
+      - artifacts:/artifacts:ro
+    ports:
+      - "127.0.0.1::3000"
+    depends_on:
+      auth-init:
+        condition: service_completed_successfully
+    mem_limit: 1g
+
+volumes:
+  db:
+  objects:
+  auth:
+  work:
+  artifacts:
