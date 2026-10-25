@@ -31,9 +31,21 @@ def main(argv: list[str] | None = None) -> int:
     generate.add_argument("--output-dir", type=Path, default=Path("data"))
     audit = data_commands.add_parser("audit")
     audit.add_argument("--manifest", type=Path, default=Path("data_manifest.json"))
+    validate = data_commands.add_parser("validate")
+    validate.add_argument("--manifest", type=Path, default=Path("data_manifest.json"))
+    validate.add_argument("--report-dir", type=Path, default=Path("reports"))
+    validate.add_argument("--mode", choices=("admission", "training"), default="admission")
+    validate.add_argument("--admission-report", type=Path)
     commands.add_parser("environment")
     args = parser.parse_args(argv)
     try:
+        if args.command == "data" and args.data_command == "validate":
+            from ats_mlops.data.validate import validate_dataset
+
+            report = validate_dataset(args.manifest, args.report_dir, mode=args.mode,
+                                      admission_report=args.admission_report)
+            print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+            return 0 if report["outcome"] == "passed" else 1
         if args.command == "data":
             report = (generate_dataset(args.config, args.manifest, args.output_dir)
                       if args.data_command == "generate" else audit_manifest(args.manifest))

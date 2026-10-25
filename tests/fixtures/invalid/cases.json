@@ -1,0 +1,10 @@
+[
+  {"name": "missing_field", "remove": "candidate_text", "reason": "invalid_row_schema"},
+  {"name": "null_text", "field": "candidate_text", "value": null, "reason": "missing_field_or_null"},
+  {"name": "empty_text", "field": "candidate_text", "value": "   !!!   ", "reason": "empty_text"},
+  {"name": "duplicate_pair", "duplicate": true, "reason": "duplicate_pair"},
+  {"name": "relevance_range", "field": "relevance", "value": 2, "reason": "invalid_relevance"},
+  {"name": "relevance_bool", "field": "relevance", "value": true, "reason": "invalid_relevance"},
+  {"name": "relevance_float", "field": "relevance", "value": 1.0, "reason": "invalid_relevance"},
+  {"name": "relevance_string", "field": "relevance", "value": "1", "reason": "invalid_relevance"}
+]

@@ -1,0 +1,7 @@
+{
+  "name": "ats_data_quality",
+  "result_format": "BOOLEAN_ONLY",
+  "actions": [],
+  "validation_definition": "ats_pairs",
+  "suite": "pairs.json"
+}
