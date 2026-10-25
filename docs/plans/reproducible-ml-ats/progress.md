@@ -9,7 +9,7 @@
 - [x] T-4 — MinIO и MLflow
 - [x] T-5 — Качество данных
 - [x] T-6 — Baseline и метрики
-- [ ] T-7 — Модель и происхождение
+- [x] T-7 — Модель и происхождение
 - [ ] T-8 — Optuna
 - [ ] T-9 — DVC DAG
 - [ ] T-10 — Airflow
@@ -26,6 +26,8 @@
 
 ## Learnings
 <!-- Добавлять наблюдения по мере выполнения задач. -->
+
+- T-7: Pipeline fit только на проверенных in-memory train rows; реальный guard блокирует Pipeline/LR fit на плохом входе. MLflow exact version ats-pair-ranking/2 и lineage проверены; native/pyfunc в отдельных isolated контейнерах без checkout дали 240 совпадающих scores. 57 unit, 24 независимых model checks и 31 provenance/portability checks PASS. Удаление code ломает fresh load; reports/training и docs/training.md сохраняют actual source SHA 5823d425, demo_only.
 
 - T-5: real GX admission проверяет source до dedup; training preflight возвращает точные проверенные train/validation rows и требует полный bound receipt. JSON/Markdown без текстов/PII; 35 unit и независимый installed-wheel positive/negative smoke PASS. Исправлены два P2: manifest TOCTOU и недоступные после установки GX configs. Реальный fit guard проверяется в T-7, T-5 его выполнение не заявляет.
 
