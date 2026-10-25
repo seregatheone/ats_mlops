@@ -137,7 +137,9 @@ def security() -> dict:
             assert "password authentication failed" in str(exc)
         else:
             raise AssertionError("SQL invalid credentials unexpectedly succeeded")
-    bad_host = request.Request("http://mlflow:5000/health", headers={"Host": "untrusted.invalid"})
+    # MLflow deliberately exempts /health from host validation. Probe a real API.
+    bad_host = request.Request("http://mlflow:5000/api/2.0/mlflow/experiments/get?experiment_id=0",
+                               headers={"Host": "untrusted.invalid"})
     try:
         request.urlopen(bad_host, timeout=10)
     except error.HTTPError as exc:

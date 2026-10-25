@@ -112,7 +112,8 @@ class StorageRunner:
             self.command(self.compose + ["logs", "--no-color", "--tail", "100"], check=False)
             raise
         finally:
-            self.command(self.compose + ["down", "--volumes", "--remove-orphans"], timeout=90, check=False)
+            self.command(self.compose + ["--profile", "check", "down", "--volumes", "--remove-orphans"],
+                         timeout=90, check=False)
             remaining = {}
             for kind in ("container", "volume", "network"):
                 remaining[kind] = self.command(["docker", kind, "ls", "-q", "--filter", f"label=com.docker.compose.project={self.project}"]).splitlines()
