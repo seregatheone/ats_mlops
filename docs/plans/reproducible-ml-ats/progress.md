@@ -4,7 +4,7 @@
 
 ## Status
 - [x] T-1 — Постановка и протокол
-- [ ] T-2 — Каркас и совместимость
+- [x] T-2 — Каркас и совместимость
 - [ ] T-3 — Данные и разбиение
 - [ ] T-4 — MinIO и MLflow
 - [ ] T-5 — Качество данных
@@ -26,6 +26,8 @@
 
 ## Learnings
 <!-- Добавлять наблюдения по мере выполнения задач. -->
+
+- T-2: MinIO community собран из проверенного source commit; PostgreSQL init включён в image, Airflow auth store требует writable внутреннего volume. Реальный LocalExecutor/GX/DVC/MLflow/Bento smoke и cleanup прошли; отчёт reports/compatibility/t2.json. Отрицательный lock guard дополнительно проверен реальной Git unit fixture.
 
 ## Execution
 

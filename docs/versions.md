@@ -1,6 +1,6 @@
 # Версии и проверка совместимости T-2
 
-Дата: 26.10.2026. Целевая среда: Linux arm64, CPython 3.11, Debian Bookworm. **Resolver пройден; Docker smoke пока не завершён.** Метаданные и синтаксические проверки не считаются доказательством совместного исполнения.
+Дата: 26.10.2026. Целевая среда: Linux arm64, CPython 3.11, Debian Bookworm. **Resolver и реальный Docker smoke пройдены.** Итоговый compatibility run проверил все 12 условий, включая cleanup, на коде `dcd5f7c17079663af630f29b02a88e03d9c8ec4c`.
 
 ## Зафиксированные входы
 
@@ -61,4 +61,8 @@ ATS_RUN_COMPATIBILITY=1 python3 -m unittest discover -s tests/integration -p tes
 - [MinIO source](https://github.com/minio/minio/tree/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a) — community исходники, условия и версия сборки.
 - [uv 0.5.9 platform mapping](https://github.com/astral-sh/uv/blob/0.5.9/crates/uv-configuration/src/target_triple.rs) — явное разрешение Linux/glibc target.
 
-Результаты Docker smoke будут зафиксированы после фактического исполнения. Полные модели и итоговые эксперименты диплома на этом этапе не создаются.
+## Результат исполнения
+
+[Сохранённый отчёт](../reports/compatibility/t2.json) связывает revision и lock hash с реальными исходами LocalExecutor, GX, DVC, MLflow, отдельного Bento service и отрицательного DAG. Полный run занял 45,687 секунды при уже подготовленных кешах образов; это диагностическое время compatibility fixture, не результат эксперимента E-2 или измерение обучения ATS-модели. Первые неуспешные прогоны и их исправления сохранены в локальной истории evidence.
+
+Unit regression с реальным Git checkout/image lock mismatch также прошёл. Полные модели ранжирования и итоговые эксперименты диплома на этом этапе не создавались.
