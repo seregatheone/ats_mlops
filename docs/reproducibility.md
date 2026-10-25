@@ -183,8 +183,10 @@ invalid data затем завершились failed без нового fit/ru
 [полная квитанция integration](../reports/recompute/evidence.json),
 [A manifest](../reports/recompute/a/pipeline_manifest.json),
 [B manifest](../reports/recompute/b/pipeline_manifest.json),
-оба locks/dags/statuses/studies и score/metric reports. Полные private model/data
-artifacts и invocation logs находятся в
+оба locks/dags/statuses/studies и score/metric reports.
+Публичные ASCII DAG copies имеют удалённый правый whitespace padding; исходный
+stdout сохранён в external evidence.
+Полные private model/data artifacts и invocation logs находятся в
 `/private/tmp/ats-issue-10-evidence-20261026/`; failed attempt — в соседнем
 `ats-issue-10-evidence-failed-recipe-20261026/`. Результаты моделей также доступны
 через exact persistent Registry versions. Model downloads/caches/raw data в Git
