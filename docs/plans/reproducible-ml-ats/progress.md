@@ -8,7 +8,7 @@
 - [x] T-3 — Данные и разбиение
 - [x] T-4 — MinIO и MLflow
 - [ ] T-5 — Качество данных
-- [ ] T-6 — Baseline и метрики
+- [x] T-6 — Baseline и метрики
 - [ ] T-7 — Модель и происхождение
 - [ ] T-8 — Optuna
 - [ ] T-9 — DVC DAG
@@ -26,6 +26,8 @@
 
 ## Learnings
 <!-- Добавлять наблюдения по мере выполнения задач. -->
+
+- T-6: Jaccard и общий NDCG@10/Recall@10 evaluator проверены ручным примером и независимым oracle. Zero-positive/empty/undefined/ties/invalid scores покрыты; baseline читает только train/validation. 32 unit и 35 независимых checks PASS в Python 3.11, validation report: 12 групп, обе метрики 1.0. Это упрощённая синтетика demo_only, не качество найма.
 
 - T-4: persistent core сохраняет DVC data, run/artifact/Registry model после restart и down/up; S3 bucket/SQL role/Host negative probes прошли. Реальный smoke 49.032 s, cleanup 0; независимая приёмка VERIFIED. MLflow limit 2 GiB после измерения, warm sample 1.689 GiB, OOM/restarts 0; это не capacity benchmark. Свидетельства docs/runbook.md и reports/storage/t4.json.
 
