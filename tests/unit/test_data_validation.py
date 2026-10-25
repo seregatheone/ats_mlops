@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from ats_mlops.cli import main
-from ats_mlops.data.dataset import canonical_json, generate_dataset, prepare_dataset, generate_rows, sha256
+from ats_mlops.data.dataset import audit_manifest, load_partition, canonical_json, generate_dataset, prepare_dataset, generate_rows, sha256
 from ats_mlops.data.validate import ValidationError, require_valid, validate_dataset
 
 
@@ -181,6 +181,55 @@ class DataValidationTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             self.assertEqual(main(["data", "validate", "--mode", "training", "--manifest", str(self.manifest),
                                    "--report-dir", str(self.reports), "--admission-report", str(self.receipt)]), 0)
+
+    def test_manifest_swap_between_hash_and_load_cannot_use_old_receipt(self):
+        self.assertEqual(self.admission()["outcome"], "passed")
+        original_read = Path.read_bytes
+        swapped = False
+
+        def swap_after_hash(path):
+            nonlocal swapped
+            content = original_read(path)
+            if path == self.manifest and not swapped:
+                swapped = True
+                document = json.loads(content)
+                document["cleaning"]["input_rows"] += 1
+                path.write_bytes(canonical_json(document))
+            return content
+
+        with patch.object(Path, "read_bytes", swap_after_hash):
+            with self.assertRaisesRegex(ValidationError, "manifest_changed_during_validation"):
+                require_valid(self.manifest, self.reports, admission_report=self.receipt)
+        self.assertTrue(swapped)
+
+    def test_late_manifest_swap_during_admission_cannot_create_passed_receipt(self):
+        def swap_after_audit(path):
+            result = audit_manifest(path)
+            document = json.loads(path.read_text())
+            document["cleaning"]["input_rows"] += 1
+            path.write_bytes(canonical_json(document))
+            return result
+
+        with patch("ats_mlops.data.validate.audit_manifest", swap_after_audit):
+            report = self.admission()
+        self.assertEqual(report["outcome"], "rejected")
+        self.assertIn("manifest_changed_during_validation", report["reasons"])
+        self.assertEqual(json.loads(self.receipt.read_text())["outcome"], "rejected")
+
+    def test_late_manifest_swap_during_training_cannot_return_rows(self):
+        self.assertEqual(self.admission()["outcome"], "passed")
+
+        def swap_after_load(path, partition, **kwargs):
+            rows = load_partition(path, partition, **kwargs)
+            if partition == "validation":
+                document = json.loads(path.read_text())
+                document["cleaning"]["input_rows"] += 1
+                path.write_bytes(canonical_json(document))
+            return rows
+
+        with patch("ats_mlops.data.validate.load_partition", swap_after_load):
+            with self.assertRaisesRegex(ValidationError, "manifest_changed_during_validation"):
+                require_valid(self.manifest, self.reports, admission_report=self.receipt)
 
     def test_gx_engine_failure_is_fail_closed_and_does_not_echo_exception_data(self):
         with patch("ats_mlops.data.validate._gx_validate", side_effect=RuntimeError("private-text-sentinel")):

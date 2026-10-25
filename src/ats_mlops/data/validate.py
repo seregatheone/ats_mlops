@@ -143,9 +143,12 @@ def _validate(manifest_path: Path, report_dir: Path, mode: str,
     try:
         if mode not in {"admission", "training"}:
             raise DataError("unknown_validation_mode")
-        report["manifest_sha256"] = sha256(manifest_path.read_bytes())
+        manifest_bytes = manifest_path.read_bytes()
+        report["manifest_sha256"] = sha256(manifest_bytes)
         report["config_hashes"] = _config_hashes()
         manifest = load_manifest(manifest_path)
+        if manifest != json.loads(manifest_bytes):
+            raise DataError("manifest_changed_during_validation")
         if mode == "training":
             if admission_report is None or not admission_report.is_file():
                 raise DataError("admission_receipt_required")
@@ -175,6 +178,8 @@ def _validate(manifest_path: Path, report_dir: Path, mode: str,
         if not report["reasons"]:
             if mode == "admission":
                 audit_manifest(manifest_path)
+            if manifest_path.read_bytes() != manifest_bytes:
+                raise DataError("manifest_changed_during_validation")
             report["outcome"] = "passed"
     except DataError as exc:
         report["reasons"].append(str(exc))
