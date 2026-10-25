@@ -62,7 +62,7 @@ services:
       DVC_SECRET_ACCESS_KEY: ${DVC_SECRET_ACCESS_KEY:?required}
       MLFLOW_ACCESS_KEY_ID: ${MLFLOW_ACCESS_KEY_ID:?required}
       MLFLOW_SECRET_ACCESS_KEY: ${MLFLOW_SECRET_ACCESS_KEY:?required}
-    tmpfs: [/tmp:uid=10001,gid=10001,mode=0700]
+    tmpfs: ["/tmp:uid=10001,gid=10001,mode=0700"]
     read_only: true
     depends_on:
       minio: {condition: service_healthy}
