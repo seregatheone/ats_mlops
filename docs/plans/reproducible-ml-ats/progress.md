@@ -10,7 +10,7 @@
 - [x] T-5 — Качество данных
 - [x] T-6 — Baseline и метрики
 - [x] T-7 — Модель и происхождение
-- [ ] T-8 — Optuna
+- [x] T-8 — Optuna
 - [ ] T-9 — DVC DAG
 - [ ] T-10 — Airflow
 - [ ] T-11 — Gate кандидата
@@ -26,6 +26,8 @@
 
 ## Learnings
 <!-- Добавлять наблюдения по мере выполнения задач. -->
+
+- T-8: seeded sequential Optuna выполнила smoke 2 и основную серию 20 trials; все COMPLETE/NDCG1.0 на demo_only validation, tie выбирает trial0. Selected C1/max_features2000 применены отдельным final training run, exact Registry version3. Immutable study→selected config→final receipt hashes и live MLflow binding проверены; 68 accumulated unit PASS. Trial models не регистрируются, test не использовался, улучшение реального найма не заявляется.
 
 - T-7: Pipeline fit только на проверенных in-memory train rows; реальный guard блокирует Pipeline/LR fit на плохом входе. MLflow exact version ats-pair-ranking/2 и lineage проверены; native/pyfunc в отдельных isolated контейнерах без checkout дали 240 совпадающих scores. 57 unit, 24 независимых model checks и 31 provenance/portability checks PASS. Удаление code ломает fresh load; reports/training и docs/training.md сохраняют actual source SHA 5823d425, demo_only.
 
