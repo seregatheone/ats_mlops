@@ -156,3 +156,36 @@ MLflow runs), evaluation-only и model-param invalidation, invalid data до fit
 Model-param проверка создаёт дополнительный обычный run в существующем workspace;
 это не третий независимый forced recompute. Skip не является PASS. Все свидетельства
 остаются synthetic `demo_only`: они не подтверждают качество реального найма.
+
+## Actual gate, 2026-10-26
+
+Исполняемый source `0601a5ae2d6728a0ebad3c4bbd5829a7254186d2` был clean и опубликован
+до actual gate. Поздний generated-lock/docs/evidence commit не заменяет этот SHA.
+Полная unit suite: 79 PASS, включая 11 pipeline cases; actual integration: 1 PASS
+за 76.344 s. Cached runtime image:
+`sha256:574c48deb107cba3f0bdc982d3aa0ab1500de58ab1694052bb92efbcab13ec91`.
+
+Две fresh пары выполнили exact `dvc repro -f --no-run-cache`, study20 и отдельный
+final fit: `models:/ats-pair-ranking/4` (run
+`418211bd1ce84cf1bdbbef4f372b1fb4`) и `/5` (run
+`d267ecd265bc405a8d6497865823e883`). Prepared hashes, vocabulary/IDF, transformed
+feature hashes и ranks совпали; scores/metrics прошли `atol=1e-6,rtol=1e-5`.
+Unchanged, удалённый training-output restore и evaluation-only change дали
+cache_hit без новых runs. Обычное изменение model max_iter создало version6;
+invalid data затем завершились failed без нового fit/run. Current workspace A
+оставлен с этим отрицательным входом; `snapshots/a` хранит первый successful run.
+
+Первый attempt на `b53b032` остановился до stages/fit из-за запрета DVC-file deps.
+Эта декларация исправлена; независимо найденная prepared-config подмена также
+закрыта before-fit checks и regression fit spies = 0 до окончательного gate.
+
+Сохранены [checks](../reports/recompute/checks.json),
+[полная квитанция integration](../reports/recompute/evidence.json),
+[A manifest](../reports/recompute/a/pipeline_manifest.json),
+[B manifest](../reports/recompute/b/pipeline_manifest.json),
+оба locks/dags/statuses/studies и score/metric reports. Полные private model/data
+artifacts и invocation logs находятся в
+`/private/tmp/ats-issue-10-evidence-20261026/`; failed attempt — в соседнем
+`ats-issue-10-evidence-failed-recipe-20261026/`. Результаты моделей также доступны
+через exact persistent Registry versions. Model downloads/caches/raw data в Git
+не добавлены. Сохранённый root `dvc.lock` взят из successful workspace B.

@@ -1,0 +1,272 @@
+{
+  "after_forced_run_ids": [
+    "418211bd1ce84cf1bdbbef4f372b1fb4",
+    "d267ecd265bc405a8d6497865823e883"
+  ],
+  "after_model_change_run_ids": [
+    "418211bd1ce84cf1bdbbef4f372b1fb4",
+    "5a9bd806b00b4f3e86bee3b215b077e2",
+    "d267ecd265bc405a8d6497865823e883"
+  ],
+  "baseline_run_ids": [],
+  "bundle_sha256": "60ba187ff38f2f12705a75d00811eaef746fa452dcb4ff985cf3d0e8b087ea81",
+  "comparison": {
+    "feature_hashes_vocabulary_idf": "equal",
+    "prepared_hashes": "equal",
+    "ranks": "equal",
+    "scores_metrics": "within atol=1e-6,rtol=1e-5"
+  },
+  "dvc_minio": [
+    {
+      "minio_selective_pull": true,
+      "reserved_bytes_absent": true
+    },
+    {
+      "minio_selective_pull": true,
+      "reserved_bytes_absent": true
+    }
+  ],
+  "evaluation_only": {
+    "command": [
+      "dvc",
+      "repro"
+    ],
+    "dvc_lock_sha256": "a68165a5b42bbce1f2c160a0ad9145ed6456317b1abe8bcae9e2abdff0fc26f7",
+    "events": {
+      "evaluate": {
+        "executed": true,
+        "git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2",
+        "outcome": "passed",
+        "output": "artifacts/evaluation",
+        "stage": "evaluate"
+      }
+    },
+    "exit_code": 0,
+    "invocation": "e66b42172adc40f3be9832d11dea3466",
+    "outcome": "cache_hit",
+    "pipeline_manifest_sha256": "c00db426eb7b967c4fa32b382c188c42a180679b09f005cd7de02c2c40bcea0e",
+    "schema_version": 1,
+    "source_git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2"
+  },
+  "evidence_scope": "demo_only",
+  "forced": [
+    {
+      "command": [
+        "dvc",
+        "repro",
+        "-f",
+        "--no-run-cache"
+      ],
+      "dvc_lock_sha256": "d48673a6a1a6b8b45b00f984d7dee0076ad528b47c599128b1c37edb742c6411",
+      "events": {
+        "evaluate": {
+          "executed": true,
+          "git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2",
+          "outcome": "passed",
+          "output": "artifacts/evaluation",
+          "stage": "evaluate"
+        },
+        "prepare": {
+          "executed": true,
+          "git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2",
+          "outcome": "passed",
+          "output": "artifacts/prepared",
+          "stage": "prepare"
+        },
+        "train": {
+          "executed": true,
+          "git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2",
+          "mlflow": {
+            "exact_uri": "models:/ats-pair-ranking/4",
+            "experiment_id": "3",
+            "model_name": "ats-pair-ranking",
+            "model_version": "4",
+            "run_id": "418211bd1ce84cf1bdbbef4f372b1fb4",
+            "source": "models:/m-1c99dce1f4f74b349485a4c9686c2cb0"
+          },
+          "outcome": "passed",
+          "output": "artifacts/training",
+          "stage": "train"
+        },
+        "validate": {
+          "executed": true,
+          "git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2",
+          "outcome": "passed",
+          "output": "artifacts/validation",
+          "stage": "validate"
+        }
+      },
+      "exit_code": 0,
+      "invocation": "6cb920c7c6164eabaa6114048825d278",
+      "outcome": "new_training",
+      "pipeline_manifest_sha256": "165c1924923f1163c87fbbb8e5918a74960d063f49758337d18c17956f4a666c",
+      "schema_version": 1,
+      "source_git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2"
+    },
+    {
+      "command": [
+        "dvc",
+        "repro",
+        "-f",
+        "--no-run-cache"
+      ],
+      "dvc_lock_sha256": "b3b99fed0cd44d2308aa4eb4f336c9000337247d68251d1213d28625b4952e5b",
+      "events": {
+        "evaluate": {
+          "executed": true,
+          "git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2",
+          "outcome": "passed",
+          "output": "artifacts/evaluation",
+          "stage": "evaluate"
+        },
+        "prepare": {
+          "executed": true,
+          "git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2",
+          "outcome": "passed",
+          "output": "artifacts/prepared",
+          "stage": "prepare"
+        },
+        "train": {
+          "executed": true,
+          "git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2",
+          "mlflow": {
+            "exact_uri": "models:/ats-pair-ranking/5",
+            "experiment_id": "3",
+            "model_name": "ats-pair-ranking",
+            "model_version": "5",
+            "run_id": "d267ecd265bc405a8d6497865823e883",
+            "source": "models:/m-c9986186955f4b2ebe8024473dda0bcf"
+          },
+          "outcome": "passed",
+          "output": "artifacts/training",
+          "stage": "train"
+        },
+        "validate": {
+          "executed": true,
+          "git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2",
+          "outcome": "passed",
+          "output": "artifacts/validation",
+          "stage": "validate"
+        }
+      },
+      "exit_code": 0,
+      "invocation": "9ff45d5f5eca4b63a13c50e8d6fd55ac",
+      "outcome": "new_training",
+      "pipeline_manifest_sha256": "80b4dc2ab361128c6a3fdfdc6b9a09b6ebb78096d31776cf2409692720a942eb",
+      "schema_version": 1,
+      "source_git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2"
+    }
+  ],
+  "image": {
+    "architecture": "arm64",
+    "id": "sha256:574c48deb107cba3f0bdc982d3aa0ab1500de58ab1694052bb92efbcab13ec91",
+    "os": "linux",
+    "reference": "ats-core-ml:t4",
+    "repo_digests": [
+      "ats-core-ml@sha256:574c48deb107cba3f0bdc982d3aa0ab1500de58ab1694052bb92efbcab13ec91"
+    ]
+  },
+  "invalid_data": {
+    "command": [
+      "dvc",
+      "repro"
+    ],
+    "dvc_lock_sha256": "4317cec44b4f231cb1d5e82bd424329d94c1bbed2ab87104ad414da1068fcbc7",
+    "events": {
+      "failure-validate": {
+        "error_type": "ValueError",
+        "executed": true,
+        "reason": "admitted_bundle_metadata_changed",
+        "remote_commit_uncertain": false,
+        "retryable": false,
+        "stage": "failure-validate"
+      }
+    },
+    "exit_code": 255,
+    "invocation": "7e32c4ad61054a83b79a82117fe10f78",
+    "outcome": "failed",
+    "pipeline_manifest_sha256": "35ae6a6f620f40d687aa874772b922479d415d9aa7e3d3b270f2bddb74ad9428",
+    "schema_version": 1,
+    "source_git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2"
+  },
+  "limitations": [
+    "Synthetic demo_only engineering evidence; no real hiring quality claim.",
+    "Two fresh forced runs; the third independent E1 run is deferred.",
+    "Full dvc status lists absent reserved standalone outputs; pipeline status is separately recorded."
+  ],
+  "model_changed": {
+    "command": [
+      "dvc",
+      "repro"
+    ],
+    "dvc_lock_sha256": "4317cec44b4f231cb1d5e82bd424329d94c1bbed2ab87104ad414da1068fcbc7",
+    "events": {
+      "evaluate": {
+        "executed": true,
+        "git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2",
+        "outcome": "passed",
+        "output": "artifacts/evaluation",
+        "stage": "evaluate"
+      },
+      "prepare": {
+        "executed": true,
+        "git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2",
+        "outcome": "passed",
+        "output": "artifacts/prepared",
+        "stage": "prepare"
+      },
+      "train": {
+        "executed": true,
+        "git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2",
+        "mlflow": {
+          "exact_uri": "models:/ats-pair-ranking/6",
+          "experiment_id": "3",
+          "model_name": "ats-pair-ranking",
+          "model_version": "6",
+          "run_id": "5a9bd806b00b4f3e86bee3b215b077e2",
+          "source": "models:/m-84d7f86a72a8488286ae41d73a83a2db"
+        },
+        "outcome": "passed",
+        "output": "artifacts/training",
+        "stage": "train"
+      }
+    },
+    "exit_code": 0,
+    "invocation": "fb31c31cfd7c4d87bbc063475f7d54d0",
+    "outcome": "new_training",
+    "pipeline_manifest_sha256": "35ae6a6f620f40d687aa874772b922479d415d9aa7e3d3b270f2bddb74ad9428",
+    "schema_version": 1,
+    "source_git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2"
+  },
+  "outcome": "passed",
+  "restored": {
+    "command": [
+      "dvc",
+      "repro"
+    ],
+    "dvc_lock_sha256": "d48673a6a1a6b8b45b00f984d7dee0076ad528b47c599128b1c37edb742c6411",
+    "events": {},
+    "exit_code": 0,
+    "invocation": "10b32e026134452d91b7b8481d0823d2",
+    "outcome": "cache_hit",
+    "pipeline_manifest_sha256": "165c1924923f1163c87fbbb8e5918a74960d063f49758337d18c17956f4a666c",
+    "schema_version": 1,
+    "source_git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2"
+  },
+  "schema_version": 1,
+  "source_git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2",
+  "unchanged": {
+    "command": [
+      "dvc",
+      "repro"
+    ],
+    "dvc_lock_sha256": "d48673a6a1a6b8b45b00f984d7dee0076ad528b47c599128b1c37edb742c6411",
+    "events": {},
+    "exit_code": 0,
+    "invocation": "7267f5b5df8546cfa72acdda0617823d",
+    "outcome": "cache_hit",
+    "pipeline_manifest_sha256": "165c1924923f1163c87fbbb8e5918a74960d063f49758337d18c17956f4a666c",
+    "schema_version": 1,
+    "source_git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2"
+  }
+}

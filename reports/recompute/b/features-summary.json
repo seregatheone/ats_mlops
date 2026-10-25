@@ -1,0 +1,9 @@
+{
+  "idf_sha256": "2b7303c16fe27cc1760b1439f152f75bf7e9a369d44fa47419ce4f329cf9ff06",
+  "transformed_sha256": {
+    "train": "c4c5ac4d0d80cfe16a17b915492954daa5aeedbdc3bc9278c98d0415865d56a3",
+    "validation": "34475d747b62e908b7318ae1b64635bc20a44548d394d4b7e051b7fc818e4a0e"
+  },
+  "vocabulary_sha256": "9c687ec7a1894ed6818be9a0fca73dadfbf635dc2c6fd79a8c7f7307f6b2d01d",
+  "vocabulary_size": 92
+}

@@ -1,0 +1,167 @@
+schema: '2.0'
+stages:
+  validate:
+    cmd: '"$ATS_ML_PYTHON" -m ats_mlops pipeline stage validate --workspace . --source-root
+      ../source'
+    deps:
+    - path: ../source/requirements-build.lock
+      hash: md5
+      md5: 836d05df8afd1e3fa726a8888ae0ac26
+      size: 606
+    - path: ../source/requirements-ml.lock
+      hash: md5
+      md5: 470604041d5975ecc367c64ae45c4407
+      size: 274319
+    - path: ../source/src/ats_mlops
+      hash: md5
+      md5: 3f519de8e97d7cb87b27ecd4cfaac26b.dir
+      size: 120328
+      nfiles: 23
+    - path: admission/data-admission.json
+      hash: md5
+      md5: d69d0b109d42d45d23e9af17445f6d8b
+      size: 9335
+    - path: data/train.jsonl
+      hash: md5
+      md5: 82c2981b7009fed8dad58bda1286205b
+      size: 318921
+    - path: data/validation.jsonl
+      hash: md5
+      md5: 8ef02791c21a49b2ce90019ad85f7cb3
+      size: 107354
+    - path: data_manifest.json
+      hash: md5
+      md5: 46ad5766043440760a10d01fd35e26ec
+      size: 113169
+    - path: dataset-binding.json
+      hash: md5
+      md5: 33944ccbf73f94c02a4f37db02afa8d5
+      size: 1157
+    - path: pipeline-inputs.json
+      hash: md5
+      md5: 06eb3575e2b76658a972b2266f0375dd
+      size: 1767
+    outs:
+    - path: artifacts/validation
+      hash: md5
+      md5: 4df93763215400dca66157564e94ec58.dir
+      size: 5421
+      nfiles: 3
+  prepare:
+    cmd: '"$ATS_ML_PYTHON" -m ats_mlops pipeline stage prepare --workspace . --source-root
+      ../source'
+    deps:
+    - path: ../source/configs/model.json
+      hash: md5
+      md5: 32778cab8d3aa4f3e34666c3c9c1c071
+      size: 211
+    - path: ../source/configs/search.json
+      hash: md5
+      md5: 695b7d0dfab929e4cc60fe16ac546c1d
+      size: 218
+    - path: ../source/src/ats_mlops
+      hash: md5
+      md5: 3f519de8e97d7cb87b27ecd4cfaac26b.dir
+      size: 120328
+      nfiles: 23
+    - path: admission/data-admission.json
+      hash: md5
+      md5: d69d0b109d42d45d23e9af17445f6d8b
+      size: 9335
+    - path: artifacts/validation
+      hash: md5
+      md5: 4df93763215400dca66157564e94ec58.dir
+      size: 5421
+      nfiles: 3
+    - path: data/train.jsonl
+      hash: md5
+      md5: 82c2981b7009fed8dad58bda1286205b
+      size: 318921
+    - path: data/validation.jsonl
+      hash: md5
+      md5: 8ef02791c21a49b2ce90019ad85f7cb3
+      size: 107354
+    - path: data_manifest.json
+      hash: md5
+      md5: 46ad5766043440760a10d01fd35e26ec
+      size: 113169
+    - path: pipeline-inputs.json
+      hash: md5
+      md5: 06eb3575e2b76658a972b2266f0375dd
+      size: 1767
+    params:
+      params.yaml:
+        model: {}
+        search: {}
+        smoke: false
+    outs:
+    - path: artifacts/prepared
+      hash: md5
+      md5: b13b6d31cfd9ef15cea112a4a6f30dd7.dir
+      size: 555403
+      nfiles: 11
+  train:
+    cmd: '"$ATS_ML_PYTHON" -m ats_mlops pipeline stage train --workspace . --source-root
+      ../source'
+    deps:
+    - path: ../source/src/ats_mlops
+      hash: md5
+      md5: 3f519de8e97d7cb87b27ecd4cfaac26b.dir
+      size: 120328
+      nfiles: 23
+    - path: artifacts/prepared
+      hash: md5
+      md5: b13b6d31cfd9ef15cea112a4a6f30dd7.dir
+      size: 555403
+      nfiles: 11
+    - path: dataset-binding.json
+      hash: md5
+      md5: 33944ccbf73f94c02a4f37db02afa8d5
+      size: 1157
+    - path: pipeline-inputs.json
+      hash: md5
+      md5: 06eb3575e2b76658a972b2266f0375dd
+      size: 1767
+    outs:
+    - path: artifacts/training
+      hash: md5
+      md5: 9401224fe0b2c5985cdc0316398e3800.dir
+      size: 315937
+      nfiles: 42
+  evaluate:
+    cmd: '"$ATS_ML_PYTHON" -m ats_mlops pipeline stage evaluate --workspace . --source-root
+      ../source'
+    deps:
+    - path: ../source/src/ats_mlops
+      hash: md5
+      md5: 3f519de8e97d7cb87b27ecd4cfaac26b.dir
+      size: 120328
+      nfiles: 23
+    - path: artifacts/prepared
+      hash: md5
+      md5: b13b6d31cfd9ef15cea112a4a6f30dd7.dir
+      size: 555403
+      nfiles: 11
+    - path: artifacts/training
+      hash: md5
+      md5: 9401224fe0b2c5985cdc0316398e3800.dir
+      size: 315937
+      nfiles: 42
+    - path: dataset-binding.json
+      hash: md5
+      md5: 33944ccbf73f94c02a4f37db02afa8d5
+      size: 1157
+    - path: pipeline-inputs.json
+      hash: md5
+      md5: 06eb3575e2b76658a972b2266f0375dd
+      size: 1767
+    params:
+      params.yaml:
+        evaluation:
+          score_decimals: 12
+    outs:
+    - path: artifacts/evaluation
+      hash: md5
+      md5: fa5de9507ac2c37b71cc0fd6a05ac33f.dir
+      size: 63720
+      nfiles: 6
