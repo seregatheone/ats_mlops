@@ -1,0 +1,1 @@
+{"classifier":{"C":1.0,"max_iter":1000,"solver":"lbfgs"},"feature_version":"pair-tfidf-v1","features":{"max_features":2000,"ngram_range":[1,1]},"schema_version":1,"seed":20261026}

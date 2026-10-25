@@ -48,3 +48,35 @@ hash-cycle отсутствует. Регистрация не означает 
 
 Проверка: `python -m unittest discover -s tests/unit -p test_tuning.py`, затем
 реальный двух-trial smoke в pinned ML image и отдельный final training.
+
+## Actual evidence, 2026-10-26
+
+Executable source был clean и опубликован до запуска:
+`0c7f600e8f581d6cfc04260d5320e12f2581e5b9`. Последующий evidence commit не
+заменяет этот SHA. Resolved image:
+`sha256:574c48deb107cba3f0bdc982d3aa0ab1500de58ab1694052bb92efbcab13ec91`,
+Python 3.11.17, Optuna 5.0.0. Новые зависимости и core services не создавались.
+
+Focused unit: 11 PASS. Отдельный smoke выполнил 2/2 COMPLETE trials; основная
+серия выполнила 20/20 COMPLETE trials с бюджетом 20. На неизменном validation
+inventory baseline — 12 eligible groups и 240 пар — NDCG@10 = 1.0 у всех
+попыток; это synthetic rule labels. Tie policy выбрала trial 0:
+`classifier.C=1.0`, `features.max_features=2000`, seed модели остался 20261026.
+Reserved test/source/corpus/split files удалены после admission, до обоих study
+и финального training; они отсутствовали на протяжении этих этапов.
+
+Финальное обучение заново вызвало T7 training с selected config основной серии,
+создало run `42a8ece3ae394e0a8cc550f87ac9fff4` и точную Registry version
+`models:/ats-pair-ranking/3`. Trials не создавали MLflow runs или модели.
+В receipt проверены равенство selected config hash с final params hash и
+равенство train/validation inventory hashes; study hash не изменялся.
+Artifacts и reference fixture остаются в persistent MLflow и внешнем evidence.
+В Git сохранены только текстовые отчёты без raw texts и private host paths:
+
+- [20-trial study](../reports/studies/study.json), [2-trial smoke](../reports/studies/smoke.json);
+- [selected config](../reports/studies/selected-model.json);
+- [final training manifest](../reports/studies/final-training.json),
+  [one-way receipt](../reports/studies/final-training-receipt.json);
+- [commands/checks](../reports/studies/checks.json),
+  [training guard](../reports/studies/data-training.json),
+  [admission](../reports/studies/data-admission.json).
