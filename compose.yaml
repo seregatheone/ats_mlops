@@ -1,0 +1,122 @@
+# Persistent local core. bootstrap_core.py supplies the ignored private env file.
+x-ml-image: &ml-image
+  image: ats-core-ml:t4
+  build:
+    context: .
+    dockerfile: docker/runtime.Dockerfile
+    target: core_runtime
+
+services:
+  postgres:
+    profiles: [core]
+    image: ats-core-postgres:t4
+    build:
+      context: .
+      dockerfile: docker/core/postgres.Dockerfile
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run bootstrap_core.py init}
+      MLFLOW_DB_PASSWORD: ${MLFLOW_DB_PASSWORD:?required}
+      AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD:?required}
+    volumes: [postgres-data:/var/lib/postgresql]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    mem_limit: 512m
+
+  minio:
+    profiles: [core]
+    image: ats-core-minio:source9e49d5e
+    build:
+      context: .
+      dockerfile: docker/minio.Dockerfile
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+    volumes: [minio-data:/data]
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/minio/health/ready', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    mem_limit: 1g
+
+  storage-init:
+    profiles: [core]
+    image: ats-core-mc:source7394ce0
+    build:
+      context: .
+      dockerfile: docker/core/mc.Dockerfile
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+      DVC_ACCESS_KEY_ID: ${DVC_ACCESS_KEY_ID:?required}
+      DVC_SECRET_ACCESS_KEY: ${DVC_SECRET_ACCESS_KEY:?required}
+      MLFLOW_ACCESS_KEY_ID: ${MLFLOW_ACCESS_KEY_ID:?required}
+      MLFLOW_SECRET_ACCESS_KEY: ${MLFLOW_SECRET_ACCESS_KEY:?required}
+    tmpfs: [/tmp:uid=10001,gid=10001,mode=0700]
+    read_only: true
+    depends_on:
+      minio: {condition: service_healthy}
+    restart: "no"
+    mem_limit: 256m
+
+  mlflow:
+    <<: *ml-image
+    profiles: [core]
+    restart: unless-stopped
+    environment:
+      AWS_ACCESS_KEY_ID: ${MLFLOW_ACCESS_KEY_ID:?required}
+      AWS_SECRET_ACCESS_KEY: ${MLFLOW_SECRET_ACCESS_KEY:?required}
+      AWS_DEFAULT_REGION: us-east-1
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      MLFLOW_DB_PASSWORD: ${MLFLOW_DB_PASSWORD:?required}
+      MLFLOW_PORT: ${MLFLOW_PORT:-5050}
+      MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR: "false"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+    command: [/opt/ml-venv/bin/python, /opt/core/start_mlflow.py]
+    ports: ["127.0.0.1:${MLFLOW_PORT:-5050}:5000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      storage-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, /opt/ml-venv/bin/python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      start_period: 30s
+      retries: 40
+    mem_limit: 1536m
+
+  storage-check:
+    <<: *ml-image
+    profiles: [check]
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      DVC_ACCESS_KEY_ID: ${DVC_ACCESS_KEY_ID:?required}
+      DVC_SECRET_ACCESS_KEY: ${DVC_SECRET_ACCESS_KEY:?required}
+      MLFLOW_ACCESS_KEY_ID: ${MLFLOW_ACCESS_KEY_ID:?required}
+      MLFLOW_SECRET_ACCESS_KEY: ${MLFLOW_SECRET_ACCESS_KEY:?required}
+      MLFLOW_DB_PASSWORD: ${MLFLOW_DB_PASSWORD:?required}
+      AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD:?required}
+      AWS_DEFAULT_REGION: us-east-1
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR: "false"
+    command: [/opt/ml-venv/bin/python, /opt/core/check_storage.py, seed]
+    volumes: [check-work:/work]
+    mem_limit: 1g
+
+volumes:
+  postgres-data:
+  minio-data:
+  check-work:

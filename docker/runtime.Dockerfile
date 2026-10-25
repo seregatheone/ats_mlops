@@ -38,3 +38,6 @@ ENV PYTHONPATH=/opt/project/src \
     ATS_ML_PYTHON=/opt/ml-venv/bin/python \
     ATS_ML_LOCK_FILE=/opt/requirements-ml.lock
 USER airflow
+
+FROM ml_runtime AS core_runtime
+COPY docker/core/ /opt/core/
