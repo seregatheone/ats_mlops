@@ -152,7 +152,7 @@ mlflow.sklearn.load_model('/artifact')
                     "training_git_sha": source_sha, "image": identity,
                     "run_manifest_sha256": hashlib.sha256((directory / "training/run_manifest.json").read_bytes()).hexdigest(),
                     "mlflow": manifest["mlflow"], "model_sha256": manifest["model"]["sha256"],
-                    "prepare": json.loads(prepare), "training": json.loads(trained),
+                    "prepare": json.loads(prepare.splitlines()[-1]), "training": json.loads(trained.splitlines()[-1]),
                     "isolated_loads": results, "missing_code_rejected": True,
                     "reserved_files_unavailable": True,
                     "limitations": manifest["limitations"]}
