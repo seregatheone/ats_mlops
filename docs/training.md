@@ -75,3 +75,34 @@ MLflow directory; его `load_model` использует pyfunc. Это сох
 Свидетельства относятся к synthetic `demo_only` validation. Они подтверждают
 инженерную переносимость на зафиксированной платформе, не качество реального
 найма и не прохождение будущего release gate.
+
+## Actual evidence, 2026-10-26
+
+Executable source был clean и опубликован до обучения:
+`5823d4256392545e74c8bf7dadc0b55d0a5667b4`. Более поздний commit с этими reports
+не заменяет training SHA. Actual MLflow run `ae634955132d4adf8fcdad6d98c36a1e`,
+точная Registry version `models:/ats-pair-ranking/2`, model directory SHA256
+`6e354a8d8f38f37d52bf4c0a27bf31cf4f53817960301d66d2468482728b9f61`.
+Resolved cached image:
+`sha256:574c48deb107cba3f0bdc982d3aa0ab1500de58ab1694052bb92efbcab13ec91`.
+
+На том же validation inventory, что baseline: 12 пригодных групп, 240 пар,
+NDCG@10 = Recall@10 = 1.0 для синтетических rule labels. Native и pyfunc из
+отдельных isolated контейнеров совпали со всеми 240 reference scores точно
+(максимальная разница 0). Удаление model `code/ats_mlops` завершило fresh load
+ожидаемым ModuleNotFoundError. Reserved файлы отсутствовали уже до fit.
+
+Focused unit: 8 PASS; вся unit suite: 57 PASS; actual integration: 1 PASS.
+Первая integration зарегистрировала version 1 и прошла loaders, но остановилась
+при разборе JSON после служебного баннера MLflow. Parser был исправлен и повторён
+полный сценарий; итоговым свидетельством является version 2, а не первый запуск.
+
+Text-only reports: [checks](../reports/training/checks.json),
+[run manifest](../reports/training/run_manifest.json),
+[portability](../reports/training/portability.json),
+[validation](../reports/training/validation.json),
+[training guard](../reports/training/data-training.json),
+[admission](../reports/training/data-admission.json).
+Полный скачанный model directory и input reference fixture сохранены локально в
+`/private/tmp/ats-issue-8-evidence-20261026/training/` и в persistent MLflow model
+artifact (fixture отдельно в локальном evidence). Они не добавляются в Git.

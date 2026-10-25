@@ -1,0 +1,66 @@
+{
+  "evidence_scope": "demo_only",
+  "image": {
+    "architecture": "arm64",
+    "id": "sha256:574c48deb107cba3f0bdc982d3aa0ab1500de58ab1694052bb92efbcab13ec91",
+    "os": "linux",
+    "reference": "ats-core-ml:t4",
+    "repo_digests": [
+      "ats-core-ml@sha256:574c48deb107cba3f0bdc982d3aa0ab1500de58ab1694052bb92efbcab13ec91"
+    ]
+  },
+  "isolated_loads": [
+    {
+      "credentials": false,
+      "feature_module": "/artifact/code/ats_mlops/features/pairs.py",
+      "flavor": "native",
+      "isolated": true,
+      "max_score_difference": 0.0,
+      "model_sha256": "6e354a8d8f38f37d52bf4c0a27bf31cf4f53817960301d66d2468482728b9f61",
+      "outcome": "passed",
+      "rows": 240,
+      "training_git_sha": "5823d4256392545e74c8bf7dadc0b55d0a5667b4"
+    },
+    {
+      "credentials": false,
+      "feature_module": "/artifact/code/ats_mlops/features/pairs.py",
+      "flavor": "pyfunc",
+      "isolated": true,
+      "max_score_difference": 0.0,
+      "model_sha256": "6e354a8d8f38f37d52bf4c0a27bf31cf4f53817960301d66d2468482728b9f61",
+      "outcome": "passed",
+      "rows": 240,
+      "training_git_sha": "5823d4256392545e74c8bf7dadc0b55d0a5667b4"
+    }
+  ],
+  "limitations": [
+    "Synthetic rule labels; demo_only engineering evidence.",
+    "No independent hiring outcomes or real-world hiring quality claim.",
+    "Validation only; no release gate and no test evaluation."
+  ],
+  "missing_code_rejected": true,
+  "mlflow": {
+    "exact_uri": "models:/ats-pair-ranking/2",
+    "experiment_id": "1",
+    "model_name": "ats-pair-ranking",
+    "model_version": "2",
+    "run_id": "ae634955132d4adf8fcdad6d98c36a1e",
+    "source": "models:/m-e0b7e87981264378a057c3c791553d78"
+  },
+  "model_sha256": "6e354a8d8f38f37d52bf4c0a27bf31cf4f53817960301d66d2468482728b9f61",
+  "outcome": "passed",
+  "prepare": {
+    "admission": "passed",
+    "reserved_files_removed": true
+  },
+  "reserved_files_unavailable": true,
+  "run_manifest_sha256": "146f244bea9f8d19ebcfc2f3f3f765127911a468d99bf219c53cca3ca72de559",
+  "schema_version": 1,
+  "training": {
+    "model_sha256": "6e354a8d8f38f37d52bf4c0a27bf31cf4f53817960301d66d2468482728b9f61",
+    "model_uri": "models:/ats-pair-ranking/2",
+    "outcome": "passed",
+    "run_id": "ae634955132d4adf8fcdad6d98c36a1e"
+  },
+  "training_git_sha": "5823d4256392545e74c8bf7dadc0b55d0a5667b4"
+}

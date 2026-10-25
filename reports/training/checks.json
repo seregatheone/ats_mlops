@@ -1,0 +1,31 @@
+{
+  "checks": [
+    {
+      "command": "python -m unittest discover -s tests/unit -p test_training.py",
+      "environment": "ats-core-ml:t4 cached image, single CPU/thread",
+      "passed": 8,
+      "seconds": 1.552
+    },
+    {
+      "command": "python -m unittest discover -s tests/unit",
+      "environment": "ats-core-ml:t4 cached image, single CPU/thread",
+      "passed": 57,
+      "seconds": 9.721
+    },
+    {
+      "command": "ATS_RUN_MLFLOW_LINEAGE=1 python -m unittest discover -s tests/integration -p test_mlflow_lineage.py",
+      "environment": "existing default core, cached image; fresh native/pyfunc isolated containers",
+      "passed": 1,
+      "seconds": 13.315
+    }
+  ],
+  "evidence_scope": "demo_only",
+  "limitations": [
+    "Synthetic demo_only validation; not a real hiring quality or release gate result.",
+    "Model payload/input fixture kept in private external evidence and persistent MLflow; no model cache committed.",
+    "Attempt 1 trained and loaded version 1, then harness JSON parsing failed; version 2 is the fully passing integration result."
+  ],
+  "outcome": "passed",
+  "schema_version": 1,
+  "training_git_sha": "5823d4256392545e74c8bf7dadc0b55d0a5667b4"
+}
