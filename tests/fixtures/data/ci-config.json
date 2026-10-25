@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "generator": "synthetic-skills-v1",
+  "namespace": "ci-v1",
+  "seed": 1707,
+  "vacancy_groups": 9,
+  "candidates_per_group": 12,
+  "positives_per_group": 3,
+  "near_duplicate_jaccard": 0.9,
+  "split_ratios": {"train": 0.6, "validation": 0.2, "test": 0.2}
+}

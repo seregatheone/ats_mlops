@@ -1,0 +1,5 @@
+outs:
+- md5: e750b84707ed4c64ae4a11f6a33c8e2e
+  size: 506407
+  hash: md5
+  path: corpus.jsonl
