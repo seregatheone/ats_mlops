@@ -1,0 +1,47 @@
+{
+  "task": "T-4",
+  "outcome": "passed",
+  "evidence_scope": "demo_only",
+  "fixture_only": true,
+  "run_id": "20261025T224049Z-1272f468",
+  "source_git_sha": "fd8677e7b36c0fdd1480d44b94184437c06e746a",
+  "dirty_worktree": false,
+  "raw_report_sha256": "fc37af62a3d796d8a874f66dc0b8a9402e4027c0f94b5a91c578a320421b7bf7",
+  "checks": {
+    "compose_config_and_images": true,
+    "actual_dvc_push_delete_cache_pull": true,
+    "mlflow_sql_run_artifact_registry_persistence": true,
+    "restart_retained": true,
+    "down_up_retained": true,
+    "scoped_bucket_read_write": true,
+    "cross_bucket_list_read_write_denied": true,
+    "invalid_s3_credentials_denied": true,
+    "sql_roles_not_superuser_createdb_createrole": true,
+    "sql_cross_database_connections_denied": true,
+    "invalid_sql_credentials_denied": true,
+    "untrusted_mlflow_api_host_denied": true,
+    "loopback_only_database_not_published": true,
+    "no_oom_kill_or_automatic_restart": true,
+    "cleanup": true
+  },
+  "fixture": {
+    "dataset_sha256": "f6d2969c65ee6a75be7f73bcfd51c8834ad951c770014bca6891f8c797f8510f",
+    "artifact_sha256": "bddb3bdb3e18fdd365963d5b5790f72310f3934041d638aef0a66958c8bac20a",
+    "mlflow_run_id": "aa6dcf337535457ebe6bb1c53af37b8c",
+    "model_name": "ats_storage_fixture",
+    "model_version": "1",
+    "expected_predictions": [0, 1]
+  },
+  "resource_sample": {
+    "minio": {"memory": "248.7MiB / 1GiB", "memory_percent": 24.29, "cpu_percent": 11.94},
+    "mlflow": {"memory": "1.689GiB / 2GiB", "memory_percent": 84.44, "cpu_percent": 14.48},
+    "postgres": {"memory": "39.11MiB / 512MiB", "memory_percent": 7.64, "cpu_percent": 6.05}
+  },
+  "remaining_resources": {"containers": 0, "volumes": 0, "networks": 0},
+  "diagnostic_total_seconds": 49.032,
+  "limitations": [
+    "Warm-cache isolated storage smoke; not ATS model quality or E-2 timing.",
+    "A single post-probe resource snapshot does not measure peak or production capacity.",
+    "Loopback trusted-local service; no public network or production authentication claim."
+  ]
+}

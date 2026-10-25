@@ -58,7 +58,7 @@
 |---|---|
 | Совместимые версии, lockfiles, закреплённые образы, реальный MLflow → BentoML smoke, Airflow `/opt/ml-venv/bin/python` и проверка SHA/lock hash | **verified — T-2**, [versions.md](versions.md) и [runtime report](../reports/compatibility/t2.json); PR #23 merged |
 | Конкретный corpus manifest, лицензия/условия, counts, дубликаты, списки split и замороженный test hash | **verified — T-3**, [data-card.md](data-card.md), [manifest](../data_manifest.json) и [audit](../reports/data-audit.json). Test не использовался для обучения или подбора параметров |
-| Вместимость и сохранность постоянного стенда | **pending verification — T-2/T-4**. Исходный обезличенный baseline S4: arm64, Docker RAM около 7,75 GiB; дата 25.10.2026 |
+| Вместимость и сохранность постоянного стенда | **verified — T-4**, [runbook](runbook.md), [runtime report](../reports/storage/t4.json). arm64, Docker RAM около 7,75 GiB; warm sample MLflow 1,689/2 GiB, MinIO 248,7 MiB, PostgreSQL 39,11 MiB; OOM/restarts 0. Полная вместимость с будущими Airflow/monitoring проверяется далее |
 | Drift tests и thresholds на калибровочной части | **pending calibration — T-16**; фиксация до T-19 |
 | Финальные протокол, версии, thresholds и ресурсы | **pending freeze — T-18**, до измерений T-19 |
 | Согласование конкретного model release ID | **not performed — T-13/T-17**; для каждого локального demo release агент-оператор оформляет отдельную квитанцию после готовых gates, артефактов и staging по A3. Политика не означает, что конкретный выпуск уже approved |
