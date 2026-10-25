@@ -5,7 +5,7 @@
 ## Status
 - [x] T-1 — Постановка и протокол
 - [x] T-2 — Каркас и совместимость
-- [ ] T-3 — Данные и разбиение
+- [x] T-3 — Данные и разбиение
 - [ ] T-4 — MinIO и MLflow
 - [ ] T-5 — Качество данных
 - [ ] T-6 — Baseline и метрики
@@ -26,6 +26,8 @@
 
 ## Learnings
 <!-- Добавлять наблюдения по мере выполнения задач. -->
+
+- T-3: 1 200 синтетических пар/60 компонентов, split 36/12/12 групп; source/config/test hashes закреплены. Шесть настоящих DVC pointers, восстановление и чистый offline checkout проверены. Независимые 18 unit и 23 adversarial проверки прошли в Python 3.11. Scoped loader train/validation не читает test; свидетельства docs/data-card.md и reports/data-audit.json.
 
 - T-2: MinIO community собран из проверенного source commit; PostgreSQL init включён в image, Airflow auth store требует writable внутреннего volume. Реальный LocalExecutor/GX/DVC/MLflow/Bento smoke и cleanup прошли; отчёт reports/compatibility/t2.json. Отрицательный lock guard дополнительно проверен реальной Git unit fixture.
 
