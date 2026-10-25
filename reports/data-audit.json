@@ -1,0 +1,66 @@
+{
+  "cleaning": {
+    "identical_pair_rows_removed": 0,
+    "input_rows": 1200,
+    "retained_rows": 1200
+  },
+  "counts": {
+    "test": {
+      "eligible_groups": 12,
+      "groups": 12,
+      "max_group_size": 20,
+      "min_group_size": 20,
+      "positive_labels": 60,
+      "rows": 240,
+      "zero_positive_groups": 0
+    },
+    "train": {
+      "eligible_groups": 36,
+      "groups": 36,
+      "max_group_size": 20,
+      "min_group_size": 20,
+      "positive_labels": 180,
+      "rows": 720,
+      "zero_positive_groups": 0
+    },
+    "validation": {
+      "eligible_groups": 12,
+      "groups": 12,
+      "max_group_size": 20,
+      "min_group_size": 20,
+      "positive_labels": 60,
+      "rows": 240,
+      "zero_positive_groups": 0
+    }
+  },
+  "dataset_sha256": "c35a126bcb1dc561958169ce68669d1d4d7cc5a4637231ac24649abad63b9cc4",
+  "duplicates": {
+    "components": 60,
+    "entity_documents": 1260,
+    "exact_token_duplicate_pairs": 0,
+    "near_duplicate_pairs": 0
+  },
+  "evidence_scope": "demo_only",
+  "intersections": {
+    "test/train": {
+      "candidate_ids": 0,
+      "component_ids": 0,
+      "pair_ids": 0,
+      "vacancy_ids": 0
+    },
+    "test/validation": {
+      "candidate_ids": 0,
+      "component_ids": 0,
+      "pair_ids": 0,
+      "vacancy_ids": 0
+    },
+    "train/validation": {
+      "candidate_ids": 0,
+      "component_ids": 0,
+      "pair_ids": 0,
+      "vacancy_ids": 0
+    }
+  },
+  "outcome": "passed",
+  "test_sha256": "35a6a0fc5c379c384ccd6ba645a4673f0f508df024d34f05355a40a1c9f14d65"
+}
