@@ -1,0 +1,17 @@
+{
+  "name": "ats_pairs_v1",
+  "expectations": [
+    {"type": "expect_table_row_count_to_be_between", "kwargs": {"min_value": 1}, "meta": {"reason": "empty_corpus"}},
+    {"type": "expect_column_values_to_be_in_set", "kwargs": {"column": "_schema_valid", "value_set": [true]}, "meta": {"reason": "invalid_row_schema"}},
+    {"type": "expect_column_values_to_match_regex", "kwargs": {"column": "vacancy_id", "regex": "^[A-Za-z0-9_-]{1,128}$"}, "meta": {"reason": "invalid_entity_id"}},
+    {"type": "expect_column_values_to_match_regex", "kwargs": {"column": "candidate_id", "regex": "^[A-Za-z0-9_-]{1,128}$"}, "meta": {"reason": "invalid_entity_id"}},
+    {"type": "expect_column_values_to_match_regex", "kwargs": {"column": "vacancy_text", "regex": "\\w"}, "meta": {"reason": "empty_text"}},
+    {"type": "expect_column_values_to_match_regex", "kwargs": {"column": "candidate_text", "regex": "\\w"}, "meta": {"reason": "empty_text"}},
+    {"type": "expect_column_value_lengths_to_be_between", "kwargs": {"column": "vacancy_text", "min_value": 1, "max_value": 10000}, "meta": {"reason": "invalid_text"}},
+    {"type": "expect_column_value_lengths_to_be_between", "kwargs": {"column": "candidate_text", "min_value": 1, "max_value": 10000}, "meta": {"reason": "invalid_text"}},
+    {"type": "expect_column_values_to_be_in_set", "kwargs": {"column": "_types_valid", "value_set": [true]}, "meta": {"reason": "invalid_field_type"}},
+    {"type": "expect_column_values_to_be_in_set", "kwargs": {"column": "relevance", "value_set": [0, 1]}, "meta": {"reason": "invalid_relevance"}},
+    {"type": "expect_column_values_to_be_in_set", "kwargs": {"column": "_relevance_valid", "value_set": [true]}, "meta": {"reason": "invalid_relevance"}},
+    {"type": "expect_compound_columns_to_be_unique", "kwargs": {"column_list": ["vacancy_id", "candidate_id"], "ignore_row_if": "never"}, "meta": {"reason": "duplicate_pair"}}
+  ]
+}
