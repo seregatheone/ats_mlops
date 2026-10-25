@@ -1,0 +1,15 @@
+.git
+.local
+.cache
+.venv
+**/__pycache__
+**/*.pyc
+*.egg-info
+.env
+.env.*
+data
+reports
+mlruns
+mlartifacts
+build
+dist

@@ -1,0 +1,73 @@
+{
+  "task": "T-2",
+  "scope": "compatibility_fixture_only",
+  "status": "passed",
+  "code_revision": "dcd5f7c17079663af630f29b02a88e03d9c8ec4c",
+  "lock_sha256": "5598e0853818e5531334bdeeff3dbc1b5c7dfd818e4dbfb2602622df7b165eee",
+  "started_at_utc": "2026-10-25T22:12:43.390022+00:00",
+  "finished_at_utc": "2026-10-25T22:13:29.076913+00:00",
+  "timings_seconds": {
+    "total": 45.687
+  },
+  "checks": {
+    "airflow_api": "passed",
+    "builds": "passed",
+    "cleanup": "passed",
+    "local_executor": "passed",
+    "lock_mismatch": "passed",
+    "negative_dag": "passed",
+    "positive_dag": "passed",
+    "positive_report": "passed",
+    "services_startup": "passed",
+    "serving_metadata": "passed",
+    "serving_no_source_mount": "passed",
+    "serving_predictions": "passed"
+  },
+  "positive_dag_state": "success",
+  "negative_dag_state": "failed",
+  "worker_report": {
+    "bento_tag": "ats_compatibility_fixture:i2igshgqygjslpvh",
+    "checks": {
+      "bento_import": true,
+      "dvc_roundtrip": true,
+      "gx_invalid_rejected": true,
+      "gx_valid": true,
+      "mlflow_registered": true
+    },
+    "expected_predictions": [
+      0.0,
+      1.0
+    ],
+    "fixture_only": true,
+    "git_sha": "dcd5f7c17079663af630f29b02a88e03d9c8ec4c",
+    "lock_sha256": "5598e0853818e5531334bdeeff3dbc1b5c7dfd818e4dbfb2602622df7b165eee",
+    "manifest": {
+      "checkout_path": "/work/20261025T221243Z-40446d8feb/checkout",
+      "git_sha": "dcd5f7c17079663af630f29b02a88e03d9c8ec4c",
+      "lock_sha256": "5598e0853818e5531334bdeeff3dbc1b5c7dfd818e4dbfb2602622df7b165eee",
+      "python_executable": "/opt/ml-venv/bin/python"
+    },
+    "mlflow_run_id": "0f33e26e4bd746b4a68d366d40386b6a",
+    "model_name": "ats_compatibility_fixture",
+    "model_version": "1",
+    "platform": {
+      "machine": "aarch64",
+      "python": "3.11.16",
+      "system": "Linux"
+    },
+    "probe_values": [
+      -1.0,
+      1.0
+    ],
+    "run_id": "20261025T221243Z-40446d8feb",
+    "training_executed": true
+  },
+  "serving_predictions": [
+    0.0,
+    1.0
+  ],
+  "serving_metadata": {
+    "bento_tag": "ats_compatibility_fixture:i2igshgqygjslpvh"
+  },
+  "raw_evidence_sha256": "31963ff17c5b9b7c94cc319263ef086d3ea6efb8ff3f04b25f3f5a614f55fa9c"
+}
