@@ -60,9 +60,11 @@ def configure(state, core, port, repository=None):
 def runtime_override(state):
     """Only a source-overlay image override is allowed, bound to host identity."""
     path = state / "runtime-override.json"
+    if path.is_symlink():
+        raise ValueError("invalid_runtime_override")
     if not path.exists():
         return None
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > 8192:
+    if not path.is_file() or path.stat().st_size > 8192:
         raise ValueError("invalid_runtime_override")
     value = json.loads(path.read_bytes())
     try:

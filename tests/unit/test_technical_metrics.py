@@ -88,6 +88,10 @@ class CollectorTests(unittest.TestCase):
                 path.write_text(json.dumps(invalid))
                 with self.assertRaises(ValueError):
                     bootstrap.runtime_override(root)
+            path.unlink()
+            path.symlink_to(root / "missing-override")
+            with self.assertRaises(ValueError):
+                bootstrap.runtime_override(root)
 
     def test_numeric_snapshot_tracks_durable_transitions_and_final_checkpoint(self):
         with tempfile.TemporaryDirectory() as directory:
