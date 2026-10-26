@@ -347,7 +347,20 @@ def _attested_phase(artifacts, attestation, receipt, source_sha, commands):
         elif key == "fault": require(leaves[key]["sha256"] == selected["observations"]["fault_receipt_sha256"], "phase_fault_leaf_changed")
         elif key == "receipt": require(leaves[key]["sha256"] == selected["native_receipt_sha256"], "phase_native_receipt_changed")
         elif key == "input_request":
-            require(leaves[key]["sha256"] == environment["fixtures"]["bad_candidate_request"]["sha256"], "phase_bad_request_changed")
+            binding = intent.get("input_binding")
+            require(isinstance(binding, dict) and set(binding) == {"input_request_sha256", "candidate_run_manifest_sha256",
+                    "candidate_pipeline_manifest_sha256", "candidate_model_sha256"}
+                    and all(hash_value(item) for item in binding.values()) and selected.get("input_binding") == binding
+                    and leaves[key]["sha256"] == binding["input_request_sha256"]
+                    == environment["fixtures"]["bad_candidate_request"]["sha256"], "phase_bad_request_changed")
+        elif key == "bad_gate":
+            binding = intent.get("input_binding")
+            require(isinstance(binding, dict) and selected.get("input_binding") == binding
+                    and selected.get("gate_report_sha256") == leaves[key]["sha256"]
+                    and isinstance(value.get("candidate"), dict)
+                    and value["candidate"].get("run_manifest_sha256") == binding.get("candidate_run_manifest_sha256")
+                    and value["candidate"].get("pipeline_manifest_sha256") == binding.get("candidate_pipeline_manifest_sha256")
+                    and value["candidate"].get("model_sha256") == binding.get("candidate_model_sha256"), "phase_bad_gate_not_bound")
         elif key == "stdout_json":
             matched = False
             for output in stdout:
@@ -394,6 +407,11 @@ def phase_attestations(artifacts, receipt, source_sha):
                 require(phase["index"] is None and set(phase["leaves"]) == {"input_request", "bad_gate", "observations", "fault"}
                         and phase["leaves"]["bad_gate"] == native["bad_gate"]
                         and phase["values"]["observations"]["fault"] == phase["values"]["fault"]["fault"] == "bad_candidate", "S3_bad_retry_not_bound")
+                binding = phase["selected"]["input_binding"]
+                require(native["candidate_run"]["sha256"] == binding["candidate_run_manifest_sha256"]
+                        and native["candidate_pipeline"]["sha256"] == binding["candidate_pipeline_manifest_sha256"]
+                        and artifacts.document(native["candidate_run"])["model"]["sha256"] == binding["candidate_model_sha256"],
+                        "S3_requested_candidate_not_captured")
     elif scenario == "S4":
         require(len(phases) == 1, "S4_phase_coverage_mismatch")
         exact(phases[0], "managed", {"receipt": native["managed"]})
