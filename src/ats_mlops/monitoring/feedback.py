@@ -34,15 +34,32 @@ def sha(value):
     return hashlib.sha256(value).hexdigest()
 
 
-def read_json(path):
+def decode_json(content):
     def pairs(items):
         result = {}
         for key, value in items:
             require(key not in result, "duplicate_json_key")
             result[key] = value
         return result
-    return json.loads(Path(path).read_bytes(), object_pairs_hook=pairs,
+    return json.loads(content, object_pairs_hook=pairs,
                       parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite_json")))
+
+
+def read_json(path):
+    require(not Path(path).is_symlink(), "input_symlink")
+    return decode_json(Path(path).read_bytes())
+
+
+def checked_bytes(root, relative):
+    root, relative = Path(root), Path(relative)
+    require(not root.is_symlink() and not relative.is_absolute() and relative.parts
+            and not any(part in ("..", ".") for part in relative.parts), "invalid_snapshot_path")
+    current = root
+    for part in relative.parts:
+        current = current / part
+        require(not current.is_symlink(), "input_symlink")
+    require(current.is_file(), "missing_snapshot_file")
+    return current.read_bytes()
 
 
 def utc(value):
@@ -162,12 +179,12 @@ def export_events(database, output, cutoff):
         connection.close()
     events = []
     for request_id, input_hash, raw, response in rows:
-        event = validate_event(json.loads(raw))
+        event = validate_event(decode_json(raw))
         require(event["request_id"] == request_id and event["input_hash"] == input_hash and response is not None, "incomplete_event")
         expected = {"request_id": request_id, "model_version": event["model_version"], "release_id": event["release_id"],
                     "ranking": [{"candidate_id": item["candidate_id"], "score": item["score"]}
                                 for item in event["candidates"][:event["top_k"]]]}
-        require(json.loads(response) == expected, "stored_response_mismatch")
+        require(canonical(decode_json(response)) == canonical(expected), "stored_response_mismatch")
         if utc(event["event_time"]) <= limit:
             events.append(event)
     events = validate_events(events)
@@ -185,10 +202,14 @@ def export_events(database, output, cutoff):
 
 def load_export(directory):
     root = Path(directory)
-    manifest = read_json(root / "export.json")
-    content = (root / "events.jsonl").read_bytes()
-    require(manifest["schema_version"] == 1 and manifest["events_sha256"] == sha(content), "export_hash_mismatch")
-    events = validate_events([json.loads(line) for line in content.splitlines()])
+    manifest = decode_json(checked_bytes(root, "export.json"))
+    content = checked_bytes(root, "events.jsonl")
+    require(set(manifest) == {"schema_version", "cutoff", "events_sha256", "groups", "pairs", "full_group",
+            "verified_groups", "legacy_unverified_groups", "read_mode", "contains_text"}
+            and type(manifest["schema_version"]) is int and manifest["schema_version"] == 1
+            and all(type(manifest[key]) is int and manifest[key] >= 0 for key in ("groups", "pairs", "verified_groups", "legacy_unverified_groups"))
+            and manifest["contains_text"] is False and manifest["events_sha256"] == sha(content), "export_hash_mismatch")
+    events = validate_events([decode_json(line) for line in content.splitlines()])
     require(len(events) == manifest["groups"] and sum(len(e["candidates"]) for e in events) == manifest["pairs"], "export_counts_mismatch")
     require(all(utc(e["event_time"]) <= utc(manifest["cutoff"]) for e in events), "export_cutoff_mismatch")
     require(manifest["full_group"] is all(verified(e) for e in events)
@@ -273,7 +294,7 @@ class FeedbackStore:
     def admit(self, events, incoming, sources, *, clock=None):
         with self.database() as db:
             db.execute("BEGIN IMMEDIATE")
-            existing = [json.loads(row[0]) for row in db.execute("SELECT record_json FROM feedback ORDER BY rowid")]
+            existing = [decode_json(row[0]) for row in db.execute("SELECT record_json FROM feedback ORDER BY rowid")]
             stamp = (clock or (lambda: datetime.now(timezone.utc)))().isoformat()
             records = append_labels(events, existing, incoming, stamp, sources)
             for record in records[len(existing):]:
@@ -286,11 +307,12 @@ class FeedbackStore:
             db.execute("PRAGMA query_only=ON")
             db.execute("BEGIN")
             ledger_id = db.execute("SELECT value FROM metadata WHERE key='ledger_id'").fetchone()[0]
-            records = [json.loads(row[0]) for row in db.execute("SELECT record_json FROM feedback ORDER BY rowid")]
+            records = [decode_json(row[0]) for row in db.execute("SELECT record_json FROM feedback ORDER BY rowid")]
         return ledger_id, records
 
 
 def admit_feedback(export, incoming, output, sources, *, ledger):
+    require(not Path(output).exists() and not Path(output).is_symlink(), "immutable_output_exists")
     events, event_manifest = load_export(export)
     store = FeedbackStore(ledger)
     store.admit(events, incoming, sources)
@@ -307,9 +329,13 @@ def admit_feedback(export, incoming, output, sources, *, ledger):
 
 def load_feedback(directory):
     root = Path(directory)
-    receipt = read_json(root / "feedback.json")
-    content = (root / "feedback.jsonl").read_bytes()
-    require(receipt["schema_version"] == 1 and receipt["feedback_sha256"] == sha(content), "feedback_hash_mismatch")
-    records = [json.loads(line) for line in content.splitlines()]
+    receipt = decode_json(checked_bytes(root, "feedback.json"))
+    content = checked_bytes(root, "feedback.jsonl")
+    require(set(receipt) == {"schema_version", "feedback_sha256", "records", "ledger_id", "events_sha256", "label_sources", "selection"}
+            and type(receipt["schema_version"]) is int and receipt["schema_version"] == 1
+            and type(receipt["records"]) is int and receipt["records"] >= 0
+            and isinstance(receipt["ledger_id"], str) and re.fullmatch(r"[0-9a-f]{32}", receipt["ledger_id"])
+            and receipt["feedback_sha256"] == sha(content), "feedback_hash_mismatch")
+    records = [decode_json(line) for line in content.splitlines()]
     require(len(records) == receipt["records"], "feedback_counts_mismatch")
     return records, receipt

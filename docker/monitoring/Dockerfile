@@ -12,6 +12,7 @@ COPY src/ /opt/monitoring/src/
 COPY docker/monitoring/run.py /opt/monitoring/run.py
 ARG SOURCE_SHA
 LABEL org.opencontainers.image.revision=${SOURCE_SHA}
+ENV ATS_MONITORING_SOURCE_SHA=${SOURCE_SHA}
 USER 50000:50000
 WORKDIR /tmp
 ENTRYPOINT ["/opt/monitoring-venv/bin/python", "-I", "-B", "/opt/monitoring/run.py"]
