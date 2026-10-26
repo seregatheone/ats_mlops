@@ -136,6 +136,8 @@ for p in Path('/fixture/bundle').rglob('*'):
                                   "exhausted_attempts": self.attempts(exhausted), "invalid_attempts": self.attempts(invalid),
                                   "mlflow_run_ids_before": initial_counts, "mlflow_run_ids_after": after_io})
         finally:
+            if self.evidence["status"] == "running":
+                self.evidence["status"] = "failed"
             after = self.resources()
             self.evidence.update({"resources_before": before, "resources_after": after,
                                   "limitations": ["demo_only synthetic smoke2; not capacity/peak benchmark", "ambiguous remote commit requires operator recovery"]})
