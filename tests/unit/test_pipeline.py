@@ -59,8 +59,9 @@ class PipelineTests(unittest.TestCase):
         descriptor=pipeline.create_bundle(ROOT,path,output,reservation_parent=parent,admission_report=report)
         self.assertEqual(descriptor,pipeline.verify_bundle(output,descriptor['sha256']))
         self.assertEqual(report.read_bytes(),(output/'admission/data-admission.json').read_bytes())
-        policy=json.loads((output/'data/reservation_policy.json').read_bytes())
-        self.assertEqual(file_hash(parent),policy['parent_sha256'])
+        # A namespace-only clone adds no semantic documents. The explicit
+        # reservation parent is reused exactly, without an empty wrapper.
+        self.assertEqual(parent.read_bytes(),(output/'data/reservation_policy.json').read_bytes())
         self.assertTrue(set(descriptor['files']).isdisjoint({'data/test.jsonl','data/source.jsonl','data/corpus.jsonl','data/split.json'}))
 
     def test_real_dvc_accepts_recipe_and_declared_dependencies(self):
