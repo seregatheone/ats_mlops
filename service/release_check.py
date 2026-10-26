@@ -96,9 +96,6 @@ def stage(request, output):
         created_network = True
         command(["docker", "volume", "create", events_volume])
         created_volume = True
-        command(["docker", "run", "--rm", "--network", "none", "--user", "0:0", "--entrypoint", "/bin/sh",
-                 "--mount", f"type=volume,source={events_volume},target=/events", image,
-                 "-c", "chown 50000:50000 /events"])
         with tempfile.TemporaryDirectory(prefix="ats-t12-events-") as directory:
             with socket.socket() as probe:
                 probe.bind(("127.0.0.1", 0))

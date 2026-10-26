@@ -1,7 +1,9 @@
 ARG BASE_IMAGE=ats-core-ml:t4
 FROM ${BASE_IMAGE}
 USER root
-RUN rm -rf /opt/project/src /opt/compat
+RUN rm -rf /opt/project/src /opt/compat \
+    && mkdir -p /events \
+    && chown 50000:50000 /events
 COPY service/ /opt/serving/service/
 COPY docker/serving/serve.py /opt/serving/serve.py
 ARG SOURCE_SHA
