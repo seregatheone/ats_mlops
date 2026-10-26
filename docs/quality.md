@@ -49,7 +49,8 @@ PYTHONPATH=src python -m ats_mlops.quality.gate \
 `release_is_fixture=true` явно отмечает инженерную фикстуру; она не считается
 существующим опубликованным выпуском. Candidate/incumbent именуются точной
 числовой Registry version, run/model/pipeline-manifest hashes. Alias/latest
-отвергаются. Новый непустой report не перезаписывается. CLI возвращает 0 только
+отвергаются. Report создаётся exclusive new-file open с flush/fsync, поэтому
+конкурирующий writer также не перезаписывает готовый результат. CLI возвращает 0 только
 при passed; rejected/request error дают 1.
 
 Candidate обязан соответствовать текущему manifest, admission, train/validation
@@ -90,6 +91,11 @@ Raw validation texts существуют только в приватном в�
 receipts; texts/credentials и upstream exception messages не публикуются.
 Временные контейнеры удаляются; timeout удаляет только контейнер данного scorer.
 
+Hashes metadata относятся к тем же байтам, которые были прочитаны и проверены:
+run/pipeline manifests, admission/binding, thresholds и pointer metadata не
+хешируются повторным чтением изменяемого пути после проверки. Если путь позднее
+заменён, report продолжает ссылаться на валидированный снимок, а не новую запись.
+
 Expected incumbent model/release IDs фиксируются в report. T13 должен повторно
 сверить их под activation lock: этот model gate не разрешает использовать stale
 incumbent, переключать release или обходить последующие проверки.
@@ -123,3 +129,9 @@ scoring. [Артефакт другого model version](../reports/quality/reje
 также отвергнут до unpickle. [Commands/checks и report hashes](../reports/quality/checks.json)
 сохраняют успешные и отрицательные результаты. Raw validation/request paths
 остаются в приватном внешнем evidence, публичные отчёты не содержат текстов.
+
+Независимый review выявил гонки между validation/read/hash и проверкой/созданием
+output. После узкого исправления metadata snapshot и exclusive publication
+прошли 23 focused tests, включая четыре воспроизводимых race regressions.
+Модельные алгоритмы, inputs и isolated scoring не менялись; фактические scores
+выше сохранены со своим первоначальным source SHA без дополнительных model runs.

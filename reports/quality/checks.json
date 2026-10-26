@@ -63,5 +63,22 @@
       "seconds": 2.426,
       "suite": "quality focused"
     }
-  ]
+  ],
+  "post_review_fix": {
+    "source_sha": "f34492b5b302d1bf0e7a86bbe4923545a39c3769",
+    "focused_tests_passed": 23,
+    "seconds": 2.626,
+    "changes": [
+      "Report hashes identify exact loaded metadata bytes; no post-validation path reread for identity.",
+      "Exclusive new-file report publication, flush/fsync; competing output is preserved."
+    ],
+    "regressions": [
+      "run/pipeline replacement after load",
+      "admission/binding replacement after load",
+      "threshold replacement after validation",
+      "competing output created after initial existence check"
+    ],
+    "reused_model_scoring_evidence_sha": "32b3ea6146916b33b527f79adbc8ac92edad9c03",
+    "additional_model_runs": 0
+  }
 }
