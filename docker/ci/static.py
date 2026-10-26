@@ -6,7 +6,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from service.contracts import API_SCHEMA
+from service.contracts import API_SCHEMA, canonical
 
 
 def check():
@@ -19,7 +19,7 @@ def check():
     if not isinstance(fixture, dict) or set(fixture) != required:
         raise AssertionError("CI HTTP contract fixture requires the complete boundary")
     actual = {key: API_SCHEMA[key] for key in required}
-    if fixture != actual:
+    if canonical(fixture) != canonical(actual):
         raise AssertionError("CI HTTP contract fixture differs from implemented API_SCHEMA")
     print(json.dumps({"syntax_files": len(files), "http_contract": "passed"}))
     return len(files)

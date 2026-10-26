@@ -43,7 +43,8 @@ class CITests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("ci_static", ROOT / "docker/ci/static.py")
         static = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(static)
-        for fixture in ({}, {"max_candidates": 100}, {"routes": {"/rank": "POST"}, "max_candidates": 100, "top_k": [1, 100]}):
+        for fixture in ({}, {"max_candidates": 100}, {"routes": {"/rank": "POST"}, "max_candidates": 100, "top_k": [1, 100]},
+                        {"routes": {"/rank": "POST", "/metadata": "POST"}, "max_candidates": 100.0, "top_k": [True, 100]}):
             with self.subTest(fixture=fixture), tempfile.TemporaryDirectory() as folder:
                 path = Path(folder) / "tests/fixtures/ci-contract.json"
                 path.parent.mkdir(parents=True)

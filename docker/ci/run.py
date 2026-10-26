@@ -190,6 +190,13 @@ class Lifecycle:
             "run_manifest": str(final / "run_manifest.json"), "pipeline_manifest": str(pipeline),
             "serving_identity": str(self.root / "serving-identity.json")})
         self.worker("package")
+        # Actual serving UID, metadata/hash inventory only; never unpickle here.
+        delivered = int(self.command("package-uid-inventory", ["docker", "run", "--rm", "--network", "none", "--read-only",
+            "--user", "50000:50000", "--mount", f"type=bind,source={self.root / 'package'},target=/release,readonly",
+            "--entrypoint", "/opt/ml-venv/bin/python", serving_image["id"], "-I", "-B", "-c",
+            "import sys;sys.path.insert(0,'/opt/serving');from service.integrity import inventory;print(len(inventory('/release')))"], output=True))
+        assert delivered == len(read(self.root / "package/release_manifest.json")["files"]) + 1
+        self.report["checks"]["fixed_serving_uid_reads_package"] = True
         self.worker("alias")
         from service.release_check import stage
         check_request = {"package": str(self.root / "package"), **{key: request[key] for key in

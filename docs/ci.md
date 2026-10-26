@@ -1,7 +1,7 @@
 # Isolated CI
 
 `isolated-ci` runs on PRs, pushes to main and manual dispatch. The public
-repository uses GitHub's standard `ubuntu-24.04-arm` runner. Checkout and upload
+repository uses GitHub's [standard hosted ARM runner](https://docs.github.com/en/actions/reference/runners/github-hosted-runners), `ubuntu-24.04-arm`. Checkout and upload
 actions are pinned to upstream commit IDs; checkout retains no credentials.
 Only `contents: read` is granted. There are no repository secrets, deployments
 or image pushes. Each lifecycle gets its own random Compose project, freshly
@@ -21,7 +21,8 @@ platform, CPU/memory resources and resolved image IDs. Additional amd64
 compatibility is not claimed. Local results do not replace actual Actions runs.
 
 The static job parses Python source without writing bytecode and compares the
-consumed `tests/fixtures/ci-contract.json` with the implemented HTTP schema.
+complete consumed `tests/fixtures/ci-contract.json` with the implemented HTTP
+schema using canonical JSON, including JSON types. Empty or partial fixtures fail.
 The lifecycle builds ML/core images sequentially, runs the complete unit suite
 inside the pinned ML runtime, and starts disposable PostgreSQL/MinIO/MLflow.
 `docker compose -f docker/ci/compose.yaml config --quiet` is executed using only
@@ -46,6 +47,14 @@ then stages, approves and activates this demo package in a separate temporary
 state/port/alias/volume, and confirms idempotent activation. This exercises T13's
 positive path; its full crash/rollback matrix and Airflow LocalExecutor are
 explicitly `not_run` here. The durable local demo is untouched.
+
+Offline scoring runs as the host input-directory owner, preserving its private
+0700 mode. An actual Linux named-volume probe checks rejection of another UID
+and successful reading by the owner. Delivery packaging separately normalizes
+only the release artifact to directories 0755/files 0444 before freezing; its
+private staging parent stays 0700 and byte hashes stay unchanged. A fresh
+networkless readonly UID50000 container hashes the complete delivered package
+without loading a model, before the actual API checks.
 
 The coordinator uses `finally` cleanup; an Actions `always()` step repeats scoped
 cleanup after cancellation/failure. Only the invocation's exact project and
