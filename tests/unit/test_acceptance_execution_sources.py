@@ -359,6 +359,88 @@ class PhaseAttestations(unittest.TestCase):
         value = self.s2_envelope(); value["native"]["replicas"][0]["workspace_id"] = "foreign-workspace"
         with self.assertRaises(audit.EvidenceError): self.validate(value)
 
+    def bad_gate_fixture(self):
+        fixture = PhaseFixture(self.files, "bad", "fault-bad_candidate", "fault")
+        run = fixture.put("candidate-run.json", {"git_sha": Q, "model": {"sha256": "c" * 64}})
+        pipeline = fixture.put("candidate-pipeline.json", {"source": Q, "candidate_run_sha256": run["sha256"]})
+        request = fixture.put("input-request.json", {"candidate": {"run_manifest": "/private/fixed/run_manifest.json",
+            "pipeline_manifest": "/private/fixed/pipeline_manifest.json", "model_dir": "/private/fixed/model"}})
+        binding = {"input_request_sha256": request["sha256"], "candidate_run_manifest_sha256": run["sha256"],
+            "candidate_pipeline_manifest_sha256": pipeline["sha256"], "candidate_model_sha256": "c" * 64}
+        gate = fixture.put("bad-gate.json", {"outcome": "rejected", "candidate": {
+            "run_manifest_sha256": run["sha256"], "pipeline_manifest_sha256": pipeline["sha256"], "model_sha256": "c" * 64}})
+        environment = {"project": "ats-acceptance-sandbox", "fixtures": {"bad_candidate_request": {
+            "path": "/private/fixed/request.json", "sha256": request["sha256"]}}}
+        envref = fixture.put("environment.json", environment)
+        fixture.spec["bindings"]["environment_sha256"] = envref["sha256"]
+        specref = fixture.put("spec.json", fixture.spec)
+        fixture.auth["input_spec_sha256"] = specref["sha256"]
+        authref = fixture.put("authorization.json", fixture.auth)
+        fixture.intent.update(input_spec_sha256=specref["sha256"], authorization_sha256=authref["sha256"], input_binding=binding)
+        fixture.selected.update(input_binding=deepcopy(binding), gate_report_sha256=gate["sha256"])
+        fixture.phase["input_spec_sha256"] = specref["sha256"]
+        fixture.attestation.update(spec=specref, environment=envref, authorization=authref)
+        fixture.attestation["leaves"].update(input_request=request, bad_gate=gate)
+        self.reseal_bad(fixture)
+        return fixture, run, pipeline
+
+    def reseal_bad(self, fixture):
+        fixture.attestation["intent"] = fixture.put("intent.json", fixture.intent)
+        fixture.phase["intent_sha256"] = fixture.attestation["intent"]["sha256"]
+        fixture.attestation["phase"] = fixture.put("phase.json", fixture.phase)
+
+    def validate_bad(self, fixture):
+        return audit._attested_phase(audit.Artifacts(self.files.root), fixture.attestation,
+            {"started_at": "2026-01-01T00:00:00+00:00", "finished_at": "2026-01-01T00:00:03+00:00"}, Q,
+            {fixture.command["id"]: (0, fixture.command)})
+
+    def test_bad_gate_output_hash_and_predeclared_inputs_pass_together(self):
+        fixture, _, _ = self.bad_gate_fixture()
+        phase = self.validate_bad(fixture)
+        self.assertEqual(phase["selected"]["gate_report_sha256"], phase["leaves"]["bad_gate"]["sha256"])
+
+    def test_missing_or_changed_bad_gate_result_hash_rejected(self):
+        for value in (None, "f" * 64):
+            with self.subTest(value=value):
+                fixture, _, _ = self.bad_gate_fixture()
+                if value is None: del fixture.selected["gate_report_sha256"]
+                else: fixture.selected["gate_report_sha256"] = value
+                self.reseal_bad(fixture)
+                with self.assertRaises(audit.EvidenceError): self.validate_bad(fixture)
+
+    def test_replaced_gate_with_valid_file_hash_but_unrecorded_output_rejected(self):
+        fixture, _, _ = self.bad_gate_fixture()
+        gate = audit.Artifacts(self.files.root).document(fixture.attestation["leaves"]["bad_gate"])
+        gate["swapped_after_phase"] = True
+        fixture.attestation["leaves"]["bad_gate"] = fixture.put("swapped-gate.json", gate)
+        with self.assertRaises(audit.EvidenceError): self.validate_bad(fixture)
+
+    def test_missing_or_contradictory_predeclared_request_binding_rejected(self):
+        for mode in ("missing", "contradictory"):
+            with self.subTest(mode=mode):
+                fixture, _, _ = self.bad_gate_fixture()
+                if mode == "missing": del fixture.intent["input_binding"]
+                else:
+                    fixture.intent["input_binding"]["input_request_sha256"] = "f" * 64
+                    fixture.selected["input_binding"] = deepcopy(fixture.intent["input_binding"])
+                self.reseal_bad(fixture)
+                with self.assertRaises(audit.EvidenceError): self.validate_bad(fixture)
+
+    def test_bad_gate_cannot_select_a_different_captured_candidate_run(self):
+        bad, run, pipeline = self.bad_gate_fixture()
+        schema = PhaseFixture(self.files, "schema-coverage", "schema", "receipt")
+        corrupt = PhaseFixture(self.files, "guard-coverage", "fault-corrupt_data", "fault")
+        guard = corrupt.put("fit-guard.json", {"fit_calls": {"pipeline": 0, "classifier": 0}, "validation": {"outcome": "rejected"}})
+        corrupt.attestation["leaves"] = {"stdout_json": guard}
+        value = {"scenario": "S3", "started_at": "2026-01-01T00:00:00+00:00", "finished_at": "2026-01-01T00:00:03+00:00",
+            "commands": [item.command for item in (schema, corrupt, bad)],
+            "phase_attestations": [item.attestation for item in (schema, corrupt, bad)],
+            "native": {"schema": schema.attestation["leaves"]["receipt"], "guard": guard,
+                "bad_gate": bad.attestation["leaves"]["bad_gate"], "candidate_run": run, "candidate_pipeline": pipeline}}
+        self.assertEqual(self.validate(value), 3)
+        value["native"]["candidate_run"] = bad.put("different-captured-run.json", {"git_sha": Q, "model": {"sha256": "f" * 64}})
+        with self.assertRaises(audit.EvidenceError): self.validate(value)
+
 
 class CollectorSources(unittest.TestCase):
     def test_envelope_records_actual_source_without_changing_final_spec_hash(self):
