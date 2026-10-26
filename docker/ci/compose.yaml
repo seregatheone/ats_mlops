@@ -1,0 +1,83 @@
+name: ${COMPOSE_PROJECT_NAME:-ats-ci-config}
+services:
+  postgres:
+    profiles: [core]
+    image: ${ATS_CI_POSTGRES_IMAGE:-ats-ci-postgres:local}
+    build: {context: "${ATS_CI_SOURCE:-../..}", dockerfile: docker/core/postgres.Dockerfile}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?initialize temporary CI credentials}
+      MLFLOW_DB_PASSWORD: ${MLFLOW_DB_PASSWORD:?required}
+      AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD:?required}
+    volumes: [postgres-data:/var/lib/postgresql]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    mem_limit: 512m
+    cpus: 1
+  minio:
+    profiles: [core]
+    image: ${ATS_CI_MINIO_IMAGE:-ats-ci-minio:local}
+    build: {context: "${ATS_CI_SOURCE:-../..}", dockerfile: docker/minio.Dockerfile}
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+    volumes: [minio-data:/data]
+    ports: ["127.0.0.1:${MINIO_API_PORT:-19000}:9000"]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/minio/health/ready', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    mem_limit: 1g
+    cpus: 1
+  storage-init:
+    profiles: [core]
+    image: ${ATS_CI_MC_IMAGE:-ats-ci-mc:local}
+    build: {context: "${ATS_CI_SOURCE:-../..}", dockerfile: docker/core/mc.Dockerfile}
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+      DVC_ACCESS_KEY_ID: ${DVC_ACCESS_KEY_ID:?required}
+      DVC_SECRET_ACCESS_KEY: ${DVC_SECRET_ACCESS_KEY:?required}
+      MLFLOW_ACCESS_KEY_ID: ${MLFLOW_ACCESS_KEY_ID:?required}
+      MLFLOW_SECRET_ACCESS_KEY: ${MLFLOW_SECRET_ACCESS_KEY:?required}
+    tmpfs: ["/tmp:uid=10001,gid=10001,mode=0700"]
+    read_only: true
+    depends_on: {minio: {condition: service_healthy}}
+    mem_limit: 256m
+    cpus: 1
+  mlflow:
+    profiles: [core]
+    image: ${ATS_CI_ML_IMAGE:-ats-ci-ml:local}
+    build: {context: "${ATS_CI_SOURCE:-../..}", dockerfile: docker/runtime.Dockerfile, target: core_runtime}
+    environment:
+      AWS_ACCESS_KEY_ID: ${MLFLOW_ACCESS_KEY_ID:?required}
+      AWS_SECRET_ACCESS_KEY: ${MLFLOW_SECRET_ACCESS_KEY:?required}
+      AWS_DEFAULT_REGION: us-east-1
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      MLFLOW_DB_PASSWORD: ${MLFLOW_DB_PASSWORD:?required}
+      MLFLOW_PORT: ${MLFLOW_PORT:-15050}
+      MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR: "false"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+    command: [/opt/ml-venv/bin/python, /opt/core/start_mlflow.py]
+    ports: ["127.0.0.1:${MLFLOW_PORT:-15050}:5000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      storage-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, /opt/ml-venv/bin/python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      start_period: 30s
+      retries: 40
+    mem_limit: 2g
+    cpus: 1
+volumes:
+  postgres-data:
+  minio-data:
