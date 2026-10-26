@@ -87,7 +87,7 @@ class Lifecycle:
                 "--name", self.project + "-worker", "--cpus", "1", "--memory", "1536m",
                 "--user", f"{os.getuid()}:{os.getgid()}", "--workdir", str(self.root),
                 "--mount", f"type=bind,source={self.root},target={self.root}",
-                "-e", "HOME=/tmp", "-e", f"PYTHONPATH={source / 'src'}:{source}",
+                "-e", "HOME=/tmp", "-e", "USER=ats-ci", "-e", "LOGNAME=ats-ci", "-e", f"PYTHONPATH={source / 'src'}:{source}",
                 "-e", "PYTHONDONTWRITEBYTECODE=1", "-e", "OMP_NUM_THREADS=1", "-e", "OPENBLAS_NUM_THREADS=1",
                 "-e", "MKL_NUM_THREADS=1", "-e", "MLFLOW_TRACKING_URI=http://mlflow:5000",
                 "-e", "MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR=false", "-e", "BENTOML_DO_NOT_TRACK=1",
