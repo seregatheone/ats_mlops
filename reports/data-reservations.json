@@ -2,7 +2,7 @@
   "schema_version": 1,
   "issue": 36,
   "evidence_scope": "demo_only; no_training_or_test_scoring",
-  "outcome": "passed_focused_checks; independent_review_pending",
+  "outcome": "passed_focused_and_integrated_unit_checks; Actions_pending",
   "executable_git_sha": "ada48ea68c2b6a46b1b31350311f89b954ac92c5",
   "canonical_manifest_sha256": "81bde9b3a96ecdf6a970ee4a04bb1c2ea06c3af6da4123c1471cf94a780ef0f9",
   "canonical_partitions_sha256": {
@@ -46,6 +46,26 @@
     },
     "fit_calls": 0,
     "skipped": 0
+  },
+  "T14_integration": {
+    "merged_main_sha": "cd2c7d8c5610fd51742e6b507fdbb2f70548a85e",
+    "executable_git_sha": "732b4e8b6f13f9535c637bf5b11b165a791709d8",
+    "reservation_code_carrier_policy_unchanged_from": "ada48ea68c2b6a46b1b31350311f89b954ac92c5",
+    "CI_and_transport_adapters": "unchanged_from_merged_T14",
+    "host_static": {"syntax_files": 83, "http_contract": "passed", "transport_tests": 3},
+    "canonical_pinned_unit": {
+      "tests": 155,
+      "elapsed_seconds": 55.268,
+      "outcome": "passed",
+      "skipped": 0,
+      "image_id": "sha256:574c48deb107cba3f0bdc982d3aa0ab1500de58ab1694052bb92efbcab13ec91",
+      "network": "none",
+      "CPU_limit": 1,
+      "memory_limit_mib": 1536,
+      "fit_scope": "existing tiny unit fixtures, including in-memory Optuna tests; no separate lifecycle, live Registry fit or registration"
+    },
+    "reused_proof": "ada48ea canonical 3-SHA oracle, semantic guards and installed-wheel resource proof; data/policy/package-data byte-identical after T14 merge",
+    "remote_Actions": "pending; no pass claimed"
   },
   "limits": [
     "Focused evidence, not a new full ML lifecycle or E5 evaluation.",
