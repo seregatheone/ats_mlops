@@ -27,6 +27,11 @@ current DB/WAL fingerprints twice. A source change or invalid sidecar yields
 source_up=0 without payload series. `ats_pipeline_from_snapshot` identifies this
 path. The Airflow runner must be rebuilt with the transition hooks; failed
 monitoring publication never changes a training/request outcome.
+`monitoring/Dockerfile.orchestration` can overlay the exact committed `src/`
+onto the previously verified Airflow image by digest, with no dependency or
+lock changes. Keep its prior digest/tag and all state/auth/work volumes. Update
+the runtime image identity sidecar and recreate only the idle Airflow service;
+do not claim that an old running image executes the new hooks.
 
 Release metrics derive from the read-only checksummed journal, including its
 final entry, rather than trusting the cached JSON alone. They expose active,
