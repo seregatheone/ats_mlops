@@ -333,7 +333,8 @@ def _attested_phase(artifacts, attestation, receipt, source_sha, commands):
         selected = selected[index]
     else:
         require(name != "S2", "indexed_S2_phase_required")
-    require(isinstance(selected, dict), "object_phase_result_required")
+    require(isinstance(selected, dict) and selected.get("outcome") ==
+            ("expected_rejection" if name.startswith("fault-") else "passed"), "contradictory_phase_result")
     ids, stdout = _attested_commands(artifacts, attestation, commands, selected)
     leaves = attestation["leaves"]
     require(isinstance(leaves, dict) and set(leaves) <= {"result", "observations", "fault", "receipt", "stdout_json", "input_request", "bad_gate"}, "invalid_phase_leaf")
