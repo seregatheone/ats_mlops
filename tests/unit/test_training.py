@@ -173,6 +173,19 @@ class TrainingTests(unittest.TestCase):
             report = json.loads((temp / "reports/data-training.json").read_text())
             self.assertEqual(report["outcome"], "rejected")
 
+    def test_legacy_manifest_cannot_reenter_actual_stage_fit(self):
+        # Original metadata remains loadable for audit/inference, never a fresh
+        # admission after the semantic reservation policy was introduced.
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            manifest = temp / "legacy.json"
+            manifest.write_bytes((ROOT / "data_manifest.json").read_bytes())
+            with patch.object(Pipeline, "fit") as fitted:
+                with self.assertRaisesRegex(ValidationError, "reservation_metadata_required"):
+                    train(manifest, temp / "reports", admission_report=temp / "old-receipt.json",
+                          config_path=ROOT / "configs/model.json", source_root=ROOT, image_identity={})
+                fitted.assert_not_called()
+
     def test_actual_stage_fits_bound_rows_after_data_becomes_unavailable(self):
         import mlflow
 

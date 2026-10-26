@@ -191,7 +191,13 @@ def fetch_bundle(client, conf, output):
     manifest = json.loads(manifest_bytes)
     partitions = {manifest["artifacts"][name]["path"] for name in ("train", "validation")}
     forbidden = {manifest["artifacts"][name]["path"] for name in ("source", "corpus", "test", "split_lists")}
-    if partitions.intersection(forbidden) or set(files) != required | partitions:
+    # Policy metadata carries hashes only. It is explicitly admitted alongside
+    # train/validation, never substituted for a reserved raw artifact.
+    policy_path = manifest.get("reservation", {}).get("policy", {}).get("path")
+    if (manifest.get("schema_version") != 2 or not isinstance(policy_path, str)
+            or not policy_path.endswith("/reservation_policy.json")
+            or policy_path in forbidden | partitions | required
+            or partitions.intersection(forbidden) or set(files) != required | partitions | {policy_path}):
         raise Failure("data_invalid")
     output.mkdir(parents=True, exist_ok=True)
     write(output / "bundle.json", descriptor)

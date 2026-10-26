@@ -15,4 +15,4 @@ ats-mlops = "ats_mlops.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"ats_mlops.data" = ["expectations/*.json"]
+"ats_mlops.data" = ["expectations/*.json", "reservations/*.json"]

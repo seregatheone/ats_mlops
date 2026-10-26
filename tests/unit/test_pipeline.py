@@ -44,6 +44,7 @@ class PipelineTests(unittest.TestCase):
         names = set(verified["files"])
         self.assertIn("data/train.jsonl", names)
         self.assertIn("data/validation.jsonl", names)
+        self.assertIn("data/reservation_policy.json", names)
         self.assertTrue(names.isdisjoint({"data/test.jsonl", "data/source.jsonl", "data/corpus.jsonl", "data/split.json"}))
         with self.assertRaisesRegex(ValueError, "bundle_identity_mismatch"):
             pipeline.verify_bundle(self.bundle, "0" * 64)
@@ -101,6 +102,8 @@ class PipelineTests(unittest.TestCase):
         prepared = self.workspace / "artifacts/prepared"
         self.assertEqual((prepared / "data_manifest.json").read_bytes(), (self.workspace / "data_manifest.json").read_bytes())
         self.assertEqual((prepared / "admission.json").read_bytes(), (self.workspace / "admission/data-admission.json").read_bytes())
+        self.assertEqual((prepared / "data/reservation_policy.json").read_bytes(),
+                         (self.workspace / "data/reservation_policy.json").read_bytes())
         for name in ("train", "validation"):
             self.assertEqual((prepared / "data" / (name + ".jsonl")).read_bytes(),
                              (self.workspace / "data" / (name + ".jsonl")).read_bytes())
