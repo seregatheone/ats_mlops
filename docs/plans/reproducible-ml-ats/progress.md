@@ -15,7 +15,7 @@
 - [x] T-10 — Airflow
 - [x] T-11 — Gate кандидата
 - [x] T-12 — BentoML API
-- [ ] T-13 — Выпуск и откат
+- [x] T-13 — Выпуск и откат
 - [ ] T-14 — GitHub Actions
 - [ ] T-15 — Prometheus/Grafana
 - [ ] T-16 — Evidently и обратная связь
@@ -26,6 +26,8 @@
 
 ## Learnings
 <!-- Добавлять наблюдения по мере выполнения задач. -->
+
+- T-13: контроллер проверяет immutable gates/approval и current release под lock; journal payload checksums защищают tail и generation guard. На executable5fd94b0 прошли135 unit, syntax70py и actual18checks с process crashes, stale C/ABA, rollback и combined container/Registry failure. Независимая приёмка PASS, оба semantic findings закрыты. API восстанавливается локально до согласования alias при outage. Reports/releases/t13.json хранит raw hashes и monotonic outage intervals. Постоянный demo_only release модели4 активен на loopback3000 по A3; champion обновлён после ready, рабочий журнал событий пуст. После executed source — только docs/EOF whitespace.
 
 - T-12: exact MLflow version4 упакована в Bento, manifest заморожен до staging. На executable59967b7 прошли121 unit, actual12checks и Compose smoke с новым volume; все240 HTTP scores совпали с native reference. Независимая приёмка VERIFIED: контракт, SQLite replay/concurrency/corrupt rows, model/source/image/report binding и actual privacy. Manifest6dacc847 не изменился. Журнал хранится на native Docker volume; macOS bind mount не подходит для проверки SQLite WAL/locks. Отчёты reports/serving; approval/activation относятся к T-13, scope demo_only.
 
