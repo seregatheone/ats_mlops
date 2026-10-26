@@ -229,6 +229,23 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotIn("environment", service)
         self.assertNotIn("/var/run/docker.sock", json.dumps(service))
 
+    def test_docker_desktop_mount_prefix_is_exact_and_platform_scoped(self):
+        runtime = DockerRuntime(self.controller.root, DEFAULT_CONFIG)
+        package = str(self.controller.root / "releases/A/package")
+        reference = {"metadata": {"ready": True, "release_id": "A"}, "image_id": "sha256:a", "package_path": "releases/A/package"}
+        observed = {"ready": True, "metadata": reference["metadata"], "image_id": "sha256:a",
+                    "ports": {"3000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "3000"}]},
+                    "mounts": [{"Destination": "/release", "Source": "/host_mnt" + package, "RW": False},
+                               {"Destination": "/models", "Source": "/host_mnt" + package + "/bentoml/models", "RW": False},
+                               {"Destination": "/events", "Name": DEFAULT_CONFIG["events_volume"]}]}
+        with patch("ats_mlops.release.runtime.platform.system", return_value="Darwin"):
+            self.assertTrue(runtime.matches(observed, reference))
+            observed["mounts"][0]["Source"] += "-foreign"
+            self.assertFalse(runtime.matches(observed, reference))
+            observed["mounts"][0]["Source"] = "/host_mnt" + package
+        with patch("ats_mlops.release.runtime.platform.system", return_value="Linux"):
+            self.assertFalse(runtime.matches(observed, reference))
+
 
 class CheckBindingTests(unittest.TestCase):
     def test_registry_missing_alias_is_exact_typed_400_only(self):

@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import platform
 import subprocess
 import time
 from urllib.error import HTTPError, URLError
@@ -30,7 +31,7 @@ class Registry:
         except HTTPError as exc:
             try:
                 error = json.loads(exc.read())
-                # MLflow 3.10 returns HTTP 400 for a missing alias, rather than 404.
+                # MLflow 3.17.2 returns HTTP 400 for a missing alias, rather than 404.
                 missing = (error.get("error_code") == "INVALID_PARAMETER_VALUE"
                            and error.get("message") == f"Registered model alias {self.config['alias']} not found.")
                 if exc.code == 400 and missing:
@@ -153,7 +154,11 @@ class DockerRuntime:
             return False
         mounts = {item["Destination"]: item for item in observed["mounts"]}
         package = str(self.root / reference["package_path"])
-        return (all(mounts.get(target, {}).get("Source") == source and mounts[target]["RW"] is False
+        def bound_source(actual, expected):
+            # Docker Desktop can expose the same host bind through its VM prefix.
+            return actual == expected or (platform.system() == "Darwin" and actual == "/host_mnt" + expected)
+
+        return (all(bound_source(mounts.get(target, {}).get("Source"), source) and mounts[target]["RW"] is False
                     for target, source in (("/release", package), ("/models", package + "/bentoml/models")))
                 and mounts.get("/events", {}).get("Name") == self.config["events_volume"]
                 and observed["ports"].get("3000/tcp") == [{"HostIp": "127.0.0.1", "HostPort": str(self.config["port"])}])
