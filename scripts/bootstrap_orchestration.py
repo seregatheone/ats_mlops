@@ -97,7 +97,7 @@ def main():
         return 0
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         if isinstance(error, subprocess.CalledProcessError):
-            diagnostic = state / "operation-error.log"
+            diagnostic = state / ("operation-error-" + secrets.token_hex(4) + ".log")
             private(diagnostic, "")
             diagnostic.write_text((error.stdout or "") + (error.stderr or ""))
         print("Orchestration operation failed; inspect private local evidence", file=sys.stderr)

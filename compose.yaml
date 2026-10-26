@@ -125,7 +125,7 @@ services:
       target: airflow_runtime
     environment: &airflow-environment
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:?required}@postgres:5432/airflow
-      AIRFLOW__DATABASE__SQL_ALCHEMY_POOL_SIZE: "2"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_POOL_SIZE: "5"
       AIRFLOW__DATABASE__SQL_ALCHEMY_MAX_OVERFLOW: "0"
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
