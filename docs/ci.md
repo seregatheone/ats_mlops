@@ -64,7 +64,21 @@ is `ci.json`: outcomes, counts, SHA/image/platform identities and safe exception
 types/frame names. It contains no credentials, raw text, HTTP payloads, SQLite,
 model files or raw logs. Successful and failed receipts use the same allowlist.
 
-The acceptance record must link the actual failing contract-fixture commit/run,
-its ordinary restoration commit and passing run, plus the passing final head.
-Those remote results are pending until recorded in the issue receipt; a skipped
-or locally simulated workflow is never credited as Actions evidence.
+The [CI evidence](../reports/ci/actions.json) binds the actual negative
+[run 40260037093](https://github.com/seregatheone/ats_mlops/actions/runs/40260037093)
+to the temporary `max_candidates=99` fixture commit `3d2386e`. Static failed with
+the expected contract assertion and lifecycle was skipped. Commit `8088da7`
+restored the fixture. Later actual Linux runs exposed and preserved the worker
+user/input-directory and Bento delivery-directory permission failures; the
+local alias-fixture API failure is also retained. Local full lifecycle `1b6d188`
+passed before those Linux fixes, and is identified separately from final proof.
+
+The complete Linux ARM [run 40262524058](https://github.com/seregatheone/ats_mlops/actions/runs/40262524058)
+passed on executable source `2292065050aead536b527326d98167abb02668c2`:
+145 unit tests, 11 lifecycle checks and all 12 actual API checks. Native/HTTP
+scores matched exactly for 12 pairs in one validation group. The runner reported
+4 CPUs and 16,722,010,112 Docker memory bytes. Its [unaltered public receipt](../reports/ci/actions-pass.json)
+records images, SHA bindings and scoped cleanup. These are one synthetic smoke's
+observations, not an availability or hiring-quality claim. The final documentary
+head must still pass actual Actions before merge; its live check is separate
+from this pinned executable receipt, avoiding a self-updating evidence cycle.

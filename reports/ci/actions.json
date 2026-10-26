@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "evidence_scope": "demo_only",
+  "executed_by": "implementation worker and GitHub-hosted runners; independent acceptance is separate",
+  "expected_negative": {
+    "head_sha": "3d2386e9119ae99894009a1e98b5b75cdaaaa088",
+    "run_id": 40260037093,
+    "url": "https://github.com/seregatheone/ats_mlops/actions/runs/40260037093",
+    "conclusion": "failure",
+    "job": "static",
+    "reason": "AssertionError: CI HTTP contract fixture differs from implemented API_SCHEMA",
+    "mutation": "max_candidates 100 -> 99 in consumed HTTP contract fixture",
+    "lifecycle": "skipped because static failed"
+  },
+  "fixture_restored_sha": "8088da73d289b1c9f1d21fdee5278c70c30da317",
+  "positive": {
+    "head_sha": "2292065050aead536b527326d98167abb02668c2",
+    "run_id": 40262524058,
+    "url": "https://github.com/seregatheone/ats_mlops/actions/runs/40262524058",
+    "conclusion": "success",
+    "jobs": {"static": "success", "lifecycle": "success"},
+    "receipt": "actions-pass.json",
+    "receipt_sha256": "f9cfec3fb5481b7368123d960a5d76f44fca55807eef7961e1db4587601a9434"
+  },
+  "intermediate_failures": [
+    {"run_id": 40260106775, "head_sha": "8088da73d289b1c9f1d21fdee5278c70c30da317", "receipt": "failure-linux-user.json", "reason": "DVC getpass required an explicit worker USER for the host-bound UID"},
+    {"run_id": 40260725829, "head_sha": "1b6d188161f61a8e0c57bb0819d597c00b3e4561", "receipt": "failure-offline-input.json", "reason": "Offline gate failed; private 0700 input UID mismatch independently reproduced on Linux volume"},
+    {"run_id": 40261644973, "head_sha": "7509eebd50255cc9bf49449b6692ac7e5778c52c", "receipt": "failure-package-permissions.json", "reason": "Bento tag and inner model directories retained 0700; fixed serving UID could not traverse them"}
+  ],
+  "local": {
+    "same_command_full_lifecycle": {"head_sha": "1b6d188161f61a8e0c57bb0819d597c00b3e4561", "receipt": "local-pass.json", "outcome": "passed", "unit_tests": 142},
+    "earlier_alias_failure": {"head_sha": "264fbbb6e3d256f5d341f371349d03581ab16305", "receipt": "failure-alias-fixture.json", "reason": "MLflow 3.17.2 create_model_version requires model_id for models:/m-ID source"},
+    "final_unit_boundary": {"head_sha": "2292065050aead536b527326d98167abb02668c2", "tests": 145, "seconds": 10.685, "outcome": "passed"},
+    "targeted_transport_regressions": {
+      "private_input_linux_volume": {"mode": "0700", "owner_uid": 1001, "uid50000_read": "PermissionError", "uid1001_read": "passed"},
+      "offline_gate_after_uid_fix": {"artifact_source": "reused local 1b6d188 model", "outcome": "passed", "new_fits": 0, "scores_sha256": "94c546094d455c66b376e9ab0c127ba0fe996f02d7fe1e3861b5fadc256cf7f7"},
+      "normalized_package_linux_volume": {"artifact_source": "reused copy of local 1b6d188 package", "implementation_sha": "2292065050aead536b527326d98167abb02668c2", "serving_uid": 50000, "readonly": true, "files": 49, "model_loaded": false, "bytes_unchanged": true, "private_parent_mode": "0700", "outcome": "passed"}
+    }
+  },
+  "official_action_pins": {
+    "actions/checkout": {"tag": "v7.0.1", "sha": "3d3c42e5aac5ba805825da76410c181273ba90b1"},
+    "actions/upload-artifact": {"tag": "v7.0.2", "sha": "cf430e030ddbb5b0abf93d22962f4752f3646cd9"}
+  },
+  "limitations": [
+    "Local full lifecycle predates Linux transport fixes; targeted local regressions and the later full Linux Actions run are recorded separately.",
+    "The CI Registry, object storage, release state and events are disposable and cleaned; their URIs do not identify the durable local demo.",
+    "Airflow full LocalExecutor, full T13 recovery matrix, production deployment and amd64 compatibility are not run by this smoke.",
+    "This receipt pins the successful executable checkpoint. A later documentation-only head must also have passing actual Actions before merge; its live check is recorded separately to avoid a self-updating receipt cycle."
+  ]
+}
