@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 import fcntl
+from functools import wraps
 import hashlib
 import json
 import os
@@ -66,6 +67,30 @@ def validate(conf):
     return conf
 
 
+def _numeric_snapshot(path):
+    # Monitoring metadata is best effort and cannot change pipeline outcomes.
+    try:
+        from ats_mlops.monitoring.technical import write_pipeline_snapshot
+        write_pipeline_snapshot(path)
+    except Exception:
+        pass
+
+
+def _snapshot_after(function):
+    @wraps(function)
+    def monitored(db, *args, **kwargs):
+        try:
+            return function(db, *args, **kwargs)
+        finally:
+            try:
+                path = db.execute("PRAGMA database_list").fetchone()[2]
+                if path:
+                    _numeric_snapshot(Path(path))
+            except Exception:
+                pass
+    return monitored
+
+
 @contextmanager
 def database(path):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -86,8 +111,10 @@ def database(path):
         yield connection
     finally:
         connection.close()
+        _numeric_snapshot(path)
 
 
+@_snapshot_after
 def claim(db, request_id, payload_hash):
     with db:
         db.execute("BEGIN IMMEDIATE")
@@ -105,6 +132,7 @@ def claim(db, request_id, payload_hash):
         return row
 
 
+@_snapshot_after
 def begin_attempt(db, request_id):
     with db:
         changed = db.execute("UPDATE requests SET attempts=attempts+1,status='in_progress' WHERE request_id=? AND attempts<3 AND status IN ('ready','retryable','in_progress')", (request_id,))
@@ -115,12 +143,14 @@ def begin_attempt(db, request_id):
     return attempt
 
 
+@_snapshot_after
 def finish(db, request_id, attempt, status, *, kind=None, receipt_hash=None, phase="download"):
     with db:
         db.execute("UPDATE requests SET status=?,kind=?,receipt_hash=? WHERE request_id=?", (status, kind, receipt_hash, request_id))
         db.execute("UPDATE attempts SET phase=?,outcome=?,kind=? WHERE request_id=? AND attempt=?", (phase, status, kind, request_id, attempt))
 
 
+@_snapshot_after
 def recovered(db, request_id, receipt_hash):
     with db:
         db.execute("UPDATE requests SET status='completed',kind=NULL,receipt_hash=? WHERE request_id=?", (receipt_hash, request_id))

@@ -1,0 +1,16 @@
+{
+  "prometheus": {
+    "version": "3.15.1",
+    "reference": "prom/prometheus@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2",
+    "source": "https://prometheus.io/download/"
+  },
+  "grafana": {
+    "version": "13.2.4",
+    "reference": "grafana/grafana@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f",
+    "source": "https://grafana.com/grafana/download"
+  },
+  "collector": {
+    "reference": "python@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce",
+    "dependencies": "stdlib only"
+  }
+}

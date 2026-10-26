@@ -1,15 +1,38 @@
 """Reject untrusted input before Bento's validation/traceback logger sees it."""
 
 from service.contracts import BoundaryError, MAX_BODY, canonical, decode, rank_request
+from service.metrics import METRICS
+from time import monotonic
 
 
 class HTTPBoundary:
-    def __init__(self, app):
+    def __init__(self, app, telemetry=None):
         self.app = app
+        self.telemetry = METRICS if telemetry is None else telemetry
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
+        started, status = monotonic(), 500
+
+        async def measured(message):
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = message["status"]
+            await send(message)
+
+        try:
+            if scope.get("path") == "/metrics" and scope.get("method") == "GET":
+                body = self.telemetry.render()
+                await measured({"type": "http.response.start", "status": 200,
+                                "headers": [(b"content-type", b"text/plain; version=0.0.4; charset=utf-8"),
+                                            (b"content-length", str(len(body)).encode())]})
+                return await measured({"type": "http.response.body", "body": body})
+            return await self._validated(scope, receive, measured)
+        finally:
+            self.telemetry.observe(scope.get("path"), scope.get("method"), status, monotonic() - started)
+
+    async def _validated(self, scope, receive, send):
         try:
             if scope.get("path") not in ("/rank", "/metadata"):
                 raise BoundaryError(404, "not_found")
