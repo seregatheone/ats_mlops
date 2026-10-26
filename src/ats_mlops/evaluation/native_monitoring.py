@@ -58,6 +58,13 @@ def require_rule(card, spec):
             and sha(canonical(card)) == spec["bindings"]["calibration_sha256"], "E4_frozen_calibration_changed")
 
 
+def fixture_launch_document(config, image_id, package_path):
+    """Use the release runtime's exact encoding at its launch boundary."""
+    from ats_mlops.release.state import canonical as release_canonical
+    return {"schema_version":1,"package_path":package_path,"image_id":image_id,
+            "config_sha256":sha(release_canonical(config))}
+
+
 class Campaign:
     def __init__(self, spec, config, commands):
         # These modules exist only after the reviewed T17 dependency is merged.
@@ -203,8 +210,7 @@ class Campaign:
         # already checked ACTIVE package, with its immutable manifest/check.
         launch = {**active,"package_path":"release/package","launch_path":"fixture-launch.json"}
         copied = fixture.root / "release/package";copied.parent.mkdir(parents=True);shutil.copytree(package,copied)
-        immutable(fixture.root / "fixture-launch.json", {"schema_version": 1, "package_path": launch["package_path"],
-            "image_id": active["image_id"], "config_sha256": sha(canonical(fixture.config))})
+        immutable(fixture.root / "fixture-launch.json", fixture_launch_document(fixture.config,active["image_id"],launch["package_path"]))
         intervals=[]
         try:
             fixture.runtime.launch(launch)
