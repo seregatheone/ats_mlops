@@ -33,6 +33,7 @@ T20_ML_TAG="${T20_PROJECT}-ml:t4"
 mkdir -p "$(dirname "$T20_ROOT")"
 mkdir -m 700 "$T20_ROOT"
 mkdir "$T20_ROOT/inputs" "$T20_ROOT/runs" "$T20_ROOT/releases" "$T20_ROOT/bundles"
+mkdir "$T20_ROOT/bundles/staging"
 export PYTHONPATH="$T20_REPO/src:$T20_REPO"
 python3 -B scripts/bootstrap_core.py init --state-dir "$T20_CORE" --project "$T20_PROJECT" --image-prefix "$T20_PROJECT" --minio-port 19100 --console-port 19101 --mlflow-port 15150
 python3 -B scripts/bootstrap_core.py config --state-dir "$T20_CORE" --project "$T20_PROJECT"
@@ -84,8 +85,8 @@ t20_ml() {
     --workdir "$t20_source" --entrypoint /opt/ml-venv/bin/python "$T20_ML_IMAGE" -B "$@"
 }
 cp tests/fixtures/data/ci-config.json "$T20_ROOT/inputs/ci-config.json"
-t20_ml "$T20_REPO" "$T20_ROOT/bundles" -m ats_mlops pipeline bundle --source-root "$T20_REPO" --config "$T20_ROOT/inputs/ci-config.json" --output "$T20_ROOT/bundles/bundle"
-T20_BUNDLE_SHA="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["sha256"])' "$T20_ROOT/bundles/bundle/bundle.json")"
+t20_ml "$T20_REPO" "$T20_ROOT/bundles/staging" -m ats_mlops pipeline bundle --source-root "$T20_REPO" --config "$T20_ROOT/inputs/ci-config.json" --output "$T20_ROOT/bundles/staging/bundle"
+T20_BUNDLE_SHA="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["sha256"])' "$T20_ROOT/bundles/staging/bundle/bundle.json")"
 ```
 
 Это одноразовый admission synthetic fixture. Bundle передаёт train/validation
@@ -100,7 +101,7 @@ protected pointers. [Контракт DAG и кеша](reproducibility.md) ос�
 ```sh
 for t20_slot in A B; do
   python3 -B -m ats_mlops pipeline init --repo "$T20_REPO" --git-sha "$T20_SHA" \
-    --directory "$T20_ROOT/runs/$t20_slot" --bundle "$T20_ROOT/bundles/bundle" \
+    --directory "$T20_ROOT/runs/$t20_slot" --bundle "$T20_ROOT/bundles/staging/bundle" \
     --bundle-sha "$T20_BUNDLE_SHA" --image-identity "$T20_ROOT/inputs/image.json"
   python3 - "$T20_ROOT/runs/$t20_slot/workspace/params.yaml" <<'PY'
 import json,sys
