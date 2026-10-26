@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Operate only Airflow on the already healthy ats-core project."""
+"""Operate only Airflow on the explicitly matching existing core project."""
 import argparse
 import base64
 import json
@@ -12,6 +12,8 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from scripts.bootstrap_core import image_settings
 
 
 def private(path, value):
@@ -31,15 +33,28 @@ def command(args, *, env=None, capture=False):
                           stderr=subprocess.PIPE if capture else None)
 
 
-def configure(state, core, port, repository=None):
+def configure(state, core, port, repository=None, *, project="ats-core"):
+    if not isinstance(project, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", project):
+        raise ValueError("invalid_core_project")
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
     if state.is_symlink():
         raise ValueError("symlink_rejected")
     state.chmod(0o700)
     private(core, "")
     values = dict(line.split("=", 1) for line in core.read_text().splitlines() if line)
-    if values.get("COMPOSE_PROJECT_NAME") != "ats-core":
-        raise ValueError("existing_ats_core_required")
+    if values.get("COMPOSE_PROJECT_NAME") != project:
+        raise ValueError("matching_explicit_core_project_required")
+    values.update(image_settings(values))
+    binding = {"project": project, "core_env": str(core.resolve())}
+    binding_path = state / "core-binding.json"
+    if binding_path.exists() or binding_path.is_symlink():
+        private(binding_path, "")
+        if json.loads(binding_path.read_bytes()) != binding:
+            raise ValueError("orchestration_state_core_mismatch")
+    else:
+        if project != "ats-core" and any((state / name).exists() for name in ("airflow.env", "passwords.json", "image.json")):
+            raise ValueError("unbound_existing_orchestration_state")
+        private(binding_path, json.dumps(binding))
     private(state / "airflow.env", "AIRFLOW_FERNET_KEY=" + base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()
             + "\nAIRFLOW_JWT_SECRET=" + secrets.token_hex(32) + "\n")
     private(state / "passwords.json", json.dumps({"operator": secrets.token_urlsafe(32)}))
@@ -85,6 +100,7 @@ def main():
     parser.add_argument("action", choices=("init", "refresh-source", "config", "build", "up", "stop", "status"))
     parser.add_argument("--state-dir", type=Path, default=ROOT / ".local/orchestration")
     parser.add_argument("--core-env", type=Path, default=ROOT / ".local/core/core.env")
+    parser.add_argument("--project", default="ats-core", help="must exactly match the selected core.env project")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--sanitized-git-source", type=Path, help="explicit local Git source; only a new bare clone is mounted")
     args = parser.parse_args()
@@ -92,10 +108,10 @@ def main():
     try:
         if not args.core_env.is_file():
             raise ValueError("existing_core_credentials_required")
-        values = configure(state, args.core_env, args.port, args.sanitized_git_source)
+        values = configure(state, args.core_env, args.port, args.sanitized_git_source, project=args.project)
         env = {**os.environ, **values}
         base = ["docker", "compose", "--project-directory", str(ROOT), "--env-file", str(args.core_env),
-                "-p", "ats-core", "-f", str(ROOT / "compose.yaml"), "--profile", "orchestration"]
+                "-p", args.project, "-f", str(ROOT / "compose.yaml"), "--profile", "orchestration"]
         override = runtime_override(state)
         if override:
             base += ["-f", str(override)]
@@ -116,8 +132,8 @@ def main():
             command([*base, "build", "airflow"], env=env, capture=True)
             identity = json.loads(command(["docker", "image", "inspect", "--format",
                 '{"Id":{{json .Id}},"RepoDigests":{{json .RepoDigests}},"Architecture":{{json .Architecture}},"Os":{{json .Os}}}',
-                "ats-core-airflow:t10"], capture=True).stdout)
-            (state / "image.json").write_text(json.dumps({"id": identity["Id"], "reference": "ats-core-airflow:t10",
+                values["ATS_AIRFLOW_IMAGE"]], capture=True).stdout)
+            (state / "image.json").write_text(json.dumps({"id": identity["Id"], "reference": values["ATS_AIRFLOW_IMAGE"],
                     "repo_digests": identity["RepoDigests"], "architecture": identity["Architecture"], "os": identity["Os"]}))
             print("Pinned orchestration image built")
         else:

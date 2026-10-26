@@ -1,4 +1,46 @@
-# Локальный постоянный core
+# Эксплуатация локального стенда
+
+Первый проход нового читателя — [demo.md](demo.md): собственный runtime/state,
+две заранее назначенные frozen demo модели, actual image/version identities,
+публичные gate/package/check/release команды и реальное восстановление.
+Архитектура и state stores описаны в [architecture.md](architecture.md),
+принятые инженерные свидетельства — в [acceptance.md](acceptance.md).
+Формальные измерения и human E2 отделены в [results.md](results.md).
+
+| Контур | Публичный вход | Граница |
+|---|---|---|
+| Постоянный core | `scripts/bootstrap_core.py init/config/up/status` | Сохраняемые credentials/volumes; loopback, PostgreSQL без host port |
+| DVC/ML | `python -m ats_mlops pipeline bundle/init/repro` | Readonly source, mutable workspace, admitted train/validation |
+| Release | `python -m ats_mlops release --state-dir ... stage/approve/activate/status/rollback/reconcile` | Свой project/alias/port; A3 и durable journal |
+| Airflow | `scripts/bootstrap_orchestration.py --project ... --core-env ...` | Explicit project должен совпасть с сохранённым core.env; image берётся из того же config |
+| Технический мониторинг | `monitoring/bootstrap.py up/status` | Собственный профиль и read-only collection; не quality gate |
+
+Команды ниже сохраняют историю принятых T4/T10/T13/T15 упражнений. Указанные в
+их receipts номера моделей, source и времена не являются постоянным состоянием
+нового backend. Текущее состояние своего release получают через `status`
+и свежий `/metadata`, не по старому `/rank` replay. На общем host сначала
+проверяется ownership; default core/Airflow/release не останавливают ради demo.
+
+## Локальный постоянный core
+
+Для новой отдельной среды `bootstrap_core.py init --project NAME --image-prefix
+NAME --state-dir PRIVATE_CORE` сохраняет собственные build tags. Последующие
+config/up/status используют этот config; другой prefix для уже созданного state
+отвергается. Без нового параметра прежние defaults остаются совместимыми.
+Core credentials хранить отдельно от ML workspaces и никогда не монтировать
+весь private state в ML процесс. Полный пример scoped mounts — в [demo.md](demo.md).
+
+Собственный Airflow подключается к этому core явно:
+
+```sh
+python3 -B scripts/bootstrap_orchestration.py init --project "$T20_PROJECT" --core-env "$T20_CORE/core.env" --state-dir "$T20_ROOT/airflow" --port 28150 --sanitized-git-source "$T20_REPO"
+python3 -B scripts/bootstrap_orchestration.py build --project "$T20_PROJECT" --core-env "$T20_CORE/core.env" --state-dir "$T20_ROOT/airflow" --port 28150 --sanitized-git-source "$T20_REPO"
+python3 -B scripts/bootstrap_orchestration.py up --project "$T20_PROJECT" --core-env "$T20_CORE/core.env" --state-dir "$T20_ROOT/airflow" --port 28150 --sanitized-git-source "$T20_REPO"
+```
+
+Не держать одновременно лишние ML/serving/Airflow workers при ограниченной памяти;
+переходить к следующему этапу после проверки завершения собственного предыдущего.
+Новый monitoring namespace этим изменением не добавляется.
 
 Core содержит PostgreSQL 18.3, MinIO и MLflow 3.17.2/Registry. Версии ML и сервера MinIO закреплены в [versions.md](versions.md); T-4 добавляет официальный клиент [MinIO mc](https://github.com/minio/mc/tree/7394ce0dd2a80935aded936b09fa12cbb3cb8096), release `RELEASE.2025-08-13T08-35-41Z`. SHA-256 его исходного архива — `95cd293c7119f16921a6dc515a1fb74a2227f19fd994b9c8b770a154e802ac44`; Docker проверяет checksum и собирает клиент закреплённым Go image из T-2. Копия upstream лицензии включена в образ. Новый внешний сервис не требуется.
 
@@ -17,7 +59,7 @@ python3 scripts/bootstrap_core.py status
 
 Адреса по умолчанию: MLflow `http://127.0.0.1:5050`, MinIO S3 `http://127.0.0.1:9000`, console `http://127.0.0.1:9001`. Порты публикуются только на loopback, PostgreSQL не имеет host port. Перед первым `init` занятые порты можно заменить флагами `--minio-port`, `--console-port`, `--mlflow-port`; последующие команды используют сохранённые значения. Это локальный доверенный стенд без TLS/MLflow login; не открывайте порты во внешнюю сеть и не добавляйте публичный reverse proxy.
 
-Для MLflow client достаточно источника `.local/core/mlflow.env` и tracking URI; артефакты проходят через MLflow proxy. Сервер получает только IAM identity для `ats-mlflow`. DVC identity имеет доступ только к `ats-dvc`, не получает MinIO admin или MLflow bucket. Root identity доступна MinIO и одноразовому `storage-init`, чья mc конфигурация находится в tmpfs. Используется [официальный policy attach](https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-policy-attach.html). PostgreSQL роли `mlflow`/`airflow` имеют отдельные БД, не являются superuser/createdb/createrole; PUBLIC connect отозван. Airflow пока не запущен, его отдельная БД подготовлена для T-10.
+Для MLflow client достаточно источника `.local/core/mlflow.env` и tracking URI; артефакты проходят через MLflow proxy. Сервер получает только IAM identity для `ats-mlflow`. DVC identity имеет доступ только к `ats-dvc`, не получает MinIO admin или MLflow bucket. Root identity доступна MinIO и одноразовому `storage-init`, чья mc конфигурация находится в tmpfs. Используется [официальный policy attach](https://min.io/docs/minio/linux/reference/minio-mc-admin/mc-admin-policy-attach.html). PostgreSQL роли `mlflow`/`airflow` имеют отдельные БД, не являются superuser/createdb/createrole; PUBLIC connect отозван. Core bootstrap готовит БД Airflow; сам сервис подключается отдельной процедурой T10 ниже.
 
 Когда T-3 metadata уже находится в checkout, настройте DVC client с установленным закреплённым ML окружением:
 
@@ -107,9 +149,9 @@ A healthy previous or target API remains available during Registry failure;
 do not edit the journal, receipts or cached state. A stale candidate requires
 new gate/package/check/approval against the current release ID and generation.
 [T13 evidence](../reports/releases/t13.json) records actual crash recovery,
-rollback, source identities and measured stop/start downtime. The active local
-demo initially used `t12-model4-59967b7` / model4 / champion4 with A3 `demo_only`
-approval; T15 below records the current release.
+rollback, source identities and measured stop/start downtime. The historical
+local demo initially used `t12-model4-59967b7` / model4 / champion4 with A3
+`demo_only` approval; T15 below records its later snapshot, not every backend.
 
 ## Technical monitoring (T15)
 
@@ -122,7 +164,7 @@ inference. A source read/snapshot mismatch sets source_up0 and suppresses stale
 payload metrics. Keep the verified Airflow runtime override with its matching
 identity so future bootstrap preserves the numeric snapshot hooks.
 
-The current working service is `t15-metrics-23145b9` / model4 / champion4,
+The saved T15 service snapshot is `t15-metrics-23145b9` / model4 / champion4,
 generation2, with separate A3 approval and the same persistent events volume.
 The earlier T13 release remains available for rollback. Working HTTP probes used
 metadata only; the traffic/error fixture was backed up and owner-cleaned.

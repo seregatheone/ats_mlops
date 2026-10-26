@@ -1,6 +1,6 @@
 # Persistent local core. bootstrap_core.py supplies the ignored private env file.
 x-ml-image: &ml-image
-  image: ats-core-ml:t4
+  image: ${ATS_ML_IMAGE:-ats-core-ml:t4}
   build:
     context: .
     dockerfile: docker/runtime.Dockerfile
@@ -9,7 +9,7 @@ x-ml-image: &ml-image
 services:
   postgres:
     profiles: [core]
-    image: ats-core-postgres:t4
+    image: ${ATS_POSTGRES_IMAGE:-ats-core-postgres:t4}
     build:
       context: .
       dockerfile: docker/core/postgres.Dockerfile
@@ -30,7 +30,7 @@ services:
 
   minio:
     profiles: [core]
-    image: ats-core-minio:source9e49d5e
+    image: ${ATS_MINIO_IMAGE:-ats-core-minio:source9e49d5e}
     build:
       context: .
       dockerfile: docker/minio.Dockerfile
@@ -51,7 +51,7 @@ services:
 
   storage-init:
     profiles: [core]
-    image: ats-core-mc:source7394ce0
+    image: ${ATS_MC_IMAGE:-ats-core-mc:source7394ce0}
     build:
       context: .
       dockerfile: docker/core/mc.Dockerfile
@@ -118,7 +118,7 @@ services:
 
   airflow:
     profiles: [orchestration]
-    image: ats-core-airflow:t10
+    image: ${ATS_AIRFLOW_IMAGE:-ats-core-airflow:t10}
     build:
       context: .
       dockerfile: docker/runtime.Dockerfile
@@ -170,7 +170,7 @@ services:
 
   orchestration-init:
     profiles: [orchestration]
-    image: ats-core-airflow:t10
+    image: ${ATS_AIRFLOW_IMAGE:-ats-core-airflow:t10}
     user: "0:0"
     environment: *airflow-environment
     command: [python, /opt/orchestration/init.py]
