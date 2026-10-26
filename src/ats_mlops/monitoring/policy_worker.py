@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import sqlite3
 import sys
+import uuid
 
 from . import policy as p
 
@@ -101,14 +102,24 @@ def install(root, receipt):
     if path.exists():
         p.require(not path.is_symlink() and path.read_bytes() == content, "receipt_conflict")
     else:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o440)
-        with os.fdopen(fd, 'wb') as stream:
-            stream.write(content); stream.flush(); os.fsync(stream.fileno())
-        fd = os.open(directory, os.O_RDONLY)
+        temporary=directory/('.pending-'+uuid.uuid4().hex)
         try:
-            os.fsync(fd)
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o440)
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(content); stream.flush(); os.fsync(stream.fileno())
+            try:
+                # Same-filesystem hard-link publish is atomic and exclusive.
+                # A final receipt never names unflushed/partially written bytes.
+                os.link(temporary,path,follow_symlinks=False)
+            except FileExistsError:
+                p.require(not path.is_symlink() and path.read_bytes()==content,'receipt_conflict')
         finally:
-            os.close(fd)
+            temporary.unlink(missing_ok=True)
+    fd = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
     return {"receipt_id": identity, "receipt_sha256": identity}
 
 

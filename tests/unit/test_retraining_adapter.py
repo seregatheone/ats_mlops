@@ -7,6 +7,8 @@ from datetime import timedelta
 import base64
 import importlib.util
 import json
+import multiprocessing
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -19,6 +21,25 @@ from ats_mlops.monitoring import policy as p, policy_worker as worker
 from ats_mlops.monitoring.retraining import AirflowAPI, NativePolicy, candidate_conf, effective_rule_sha256, file_sha, monitoring_decisions, reference_binding, save_candidate_export, semantic_labelset
 from ats_mlops.monitoring.retraining_batch import HostBatch, execution_plan
 from tests.unit.test_retraining_policy import START,HOUR,MINUTE,REFERENCE,MODEL,h,window,approval
+
+
+def install_child(root,receipt,phase,queue=None):
+    if phase=='after_write':
+        original=worker.os.fdopen
+        class ExitAfterWrite:
+            def __init__(self,stream):self.stream=stream
+            def __enter__(self):return self
+            def __exit__(self,*args):self.stream.close()
+            def write(self,content):self.stream.write(content);os._exit(81)
+        worker.os.fdopen=lambda descriptor,mode:ExitAfterWrite(original(descriptor,mode))
+    elif phase in {'before_publish','after_publish'}:
+        original=worker.os.link
+        def crash(*args,**kwargs):
+            if phase=='after_publish':original(*args,**kwargs)
+            os._exit(82)
+        worker.os.link=crash
+    result=worker.install(Path(root),receipt)
+    if queue is not None:queue.put(result)
 
 
 class AdapterTests(unittest.TestCase):
@@ -275,6 +296,36 @@ class AdapterTests(unittest.TestCase):
         path.chmod(0o640); path.write_text('{}')
         with self.assertRaisesRegex(p.PolicyError,'verified_receipt_changed'):
             worker.execute('apply',installed,self.root,now=START+HOUR)
+        self.assertFalse((self.root/'policy.sqlite3').exists())
+
+    def test_receipt_process_exit_never_exposes_torn_final_and_same_retry_recovers(self):
+        context=multiprocessing.get_context('spawn');receipt=self.receipt(0)
+        content=(p.canonical(receipt)+'\n').encode();identity=worker.sha(content)
+        for phase in ('after_write','before_publish','after_publish'):
+            root=self.root/phase;child=context.Process(target=install_child,args=(str(root),receipt,phase))
+            child.start();child.join(10)
+            self.assertFalse(child.is_alive());self.assertEqual(81 if phase=='after_write' else 82,child.exitcode)
+            path=root/'receipts'/(identity+'.json')
+            if path.exists():self.assertEqual(content,path.read_bytes())
+            saved=worker.install(root,receipt)
+            self.assertEqual({'receipt_id':identity,'receipt_sha256':identity},saved)
+            self.assertEqual(content,path.read_bytes())
+            self.assertFalse((root/'policy.sqlite3').exists())
+            worker.execute('apply',saved,root,now=START+HOUR)
+            self.assertEqual(1,p.PolicyStore(root/'policy.sqlite3').snapshot()['windows'])
+
+    def test_concurrent_same_and_different_receipts_publish_complete_immutable_files(self):
+        context=multiprocessing.get_context('spawn');queue=context.Queue()
+        receipts=[self.receipt(0),self.receipt(0),self.receipt(1)]
+        children=[context.Process(target=install_child,args=(str(self.root),receipt,None,queue)) for receipt in receipts]
+        for child in children:child.start()
+        for child in children:
+            child.join(10);self.assertFalse(child.is_alive());self.assertEqual(0,child.exitcode)
+        saved=[queue.get(timeout=2) for _ in children];queue.close();queue.join_thread()
+        self.assertEqual(2,len({value['receipt_id'] for value in saved}))
+        self.assertEqual(2,len(list((self.root/'receipts').glob('*.json'))))
+        self.assertFalse(list((self.root/'receipts').glob('.pending-*')))
+        for value in saved:worker.load_receipt(self.root,value)
         self.assertFalse((self.root/'policy.sqlite3').exists())
 
     def test_receipt_replay_and_wrong_ack_request_have_no_extra_effects(self):
