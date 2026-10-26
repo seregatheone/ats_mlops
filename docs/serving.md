@@ -84,10 +84,53 @@ validation groups в actual generic serving image (atol1e-12). Test не чит�
 Проверяются readonly/code isolation, schema/size/empty/ties/privacy, full events,
 retry/restart/conflict, missing model и event-write503. В Registry перемещается
 только уникальный temporary fixture alias между существующими versions, затем
-он удаляется; candidate/champion не меняются. Staging DB — отдельная временная
-директория, уничтожается после проверки, не входит в drift inputs.
+он удаляется в finally; candidate/champion не меняются. Staging DB — отдельный
+временный Docker named volume, уничтожается после проверки, не входит в drift
+inputs. Live SQL/locks и checkpoint выполняются только в Linux, не через macOS
+host bind: межсистемные WAL/byte-lock semantics не являются надёжной проверкой.
+После остановки выполняется WAL checkpoint и immutable readonly export.
 
 Report exclusive-write, содержит outcome/scope/model/Bento/image/gate/manifest
 identities, actual named checks и unchanged manifest SHA. Report пишется вне
 package и не добавляется обратно в manifest. Skip не является PASS. Текущие
 actual результаты публикуются отдельным evidence commit после executable source.
+
+## Actual evidence, 2026-10-26
+
+Executable source заранее committed/pushed:
+`59967b72f963fd86472688c785c466ca4cd47f52`. Последующий evidence commit не
+заменяет этот build/source SHA. Generic image:
+`sha256:6123886de312aeea6c0dd0fc2dfd2463bad7a4913c2f0fc76a93cfa51a8b6cf7`.
+
+Exact model `models:/ats-pair-ranking/4` импортирован через BentoML1.4.40 без
+обучения/новой Registry version. [Frozen release manifest](../reports/serving/release_manifest.json)
+связывает model tree/payload/code, gate SHA, API schema и serving image. Его SHA256
+`6dacc847605267c917c27b32aaf81c23d5473652ca562dc3d4cc47230340ac1e`
+до/после actual check одинаков. Model weights/store и исходные тексты остаются в
+приватном package/evidence вне Git; опубликованы только текстовые identities.
+
+[Release check](../reports/serving/release_check_report.json) — **passed + demo_only**,
+все12 named checks выполнены. HTTP scores всех12 validation groups/240пар совпали
+с fresh native reference в recorded training image точно (max difference0).
+Reference scores SHA совпал с прошедшим T11 model gate. Проверены fresh source-free
+load, readonly package/store, actual image ID и OCI source revision; schema/size
+(включая actual1MiB/+1 и chunked overflow),100/101candidates, Unicode10k text,
+empty/ties, full events до top_k, retry/conflict/restart, corrupt replay503,
+Linux SQLite lock503/no partial event, missing model503 и original-release replay.
+Fixture-only alias реально перемещён4→5; **новые request IDs** на каждом положении
+подтвердили fresh inference неизменной local модели, alias удалён. Sentinel
+приватного текста/контакта отсутствует в technical logs/events; staging volume и
+контейнеры удалены.
+
+[Обычный Compose smoke](../reports/serving/compose-smoke.json) стартовал с новым
+named volume от UID50000 без ручного chown: metadata ready=true, rank200; после
+проверки project/network/volume удалены. Ownership `/events` задаёт image.
+Full canonical unit suite на том же source —121PASS; focused stdlib —8PASS.
+[Checks и hashes](../reports/serving/checks.json) фиксируют также предыдущие
+rejected попытки и причины исправлений; они не выдаются за successful evidence.
+
+Этот model4 run использует training и serving Python3.11.17. Environments
+записаны раздельно; код не требует универсального совпадения patch. Airflow3.11.16
+candidate обязан пройти собственные model gate и actual serving check; текущий
+результат не выдаётся за проверку такого другого candidate. Проверка синтетическая
+`demo_only`, без вывода о реальном найме; approve/activate ещё не выполнялись.
