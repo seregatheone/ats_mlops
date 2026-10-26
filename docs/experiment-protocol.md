@@ -110,3 +110,11 @@ eligible groups exist; otherwise intervals are undefined with the reason. Retain
 private numeric IDs/GT/results and publish aggregate results only. Numeric recovery
 verifies retained seals/SQL hashes; it cannot reread text or rescore. A consumed
 intent without trusted complete numeric evidence stays `consumed_unknown`.
+
+The native API has one persistent ledger per OS account, derived from the account
+database at `.local/state/ats-mlops/evaluation/holdout.sqlite3` under that account's
+canonical home. It accepts no ledger-path override, ignores HOME environment
+changes and rejects symlink aliases before warmup/consume. Its path-rule/identity
+hash is frozen independently of study/project/model/protocol. The generic guard's
+temporary path API exists for sandbox tests, not the native operational entrypoint.
+There is no public reset/force. This does not claim protection from the OS owner.

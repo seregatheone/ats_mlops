@@ -273,7 +273,11 @@ def validate_freeze(path, expected_sha256):
     require(isinstance(environment["project"],str) and re.fullmatch(r"ats-(?:acceptance|experiment)-[a-z0-9][a-z0-9-]{2,40}",environment["project"])
         and environment["network"]==environment["project"]+"_default" and type(environment["threads"]) is int and environment["threads"]==1
         and type(environment["worker_memory_mib"]) is int and environment["worker_memory_mib"]==1536,"freeze_runtime_resources_mismatch")
-    require(set(value["holdout"])=={"manifest","policy"},"missing_holdout_metadata")
+    require(set(value["holdout"])=={"manifest","policy","ledger"},"missing_holdout_metadata")
+    from ats_mlops.evaluation.native import holdout_ledger
+    _,ledger=holdout_ledger()
+    require(canonical(value["holdout"]["ledger"])==canonical(ledger)
+        and digest(canonical(ledger))==spec["bindings"]["holdout_ledger_sha256"],"freeze_global_ledger_mismatch")
     manifest,policy=(artifacts.document(value["holdout"][key]) for key in ("manifest","policy"))
     lineage=derive_holdout_lineage(policy)
     require(all(lineage[key]==spec["bindings"][key] for key in ("root_policy_sha256","protected_test_documents_sha256"))

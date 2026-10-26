@@ -89,6 +89,11 @@ semantic holdout. `derive_holdout_lineage` verifies the anchored parent chain
 and reads only reservation metadata. No E5 ledger is initialized in preparation.
 The local guard is an operational control, not a signature against an administrator;
 there is no public force/reset path.
+The native `evaluate_e5(directory, authorization)` API derives one persistent
+ledger from the OS account's canonical home, independent of the study directory.
+It accepts no guard path and ignores HOME overrides; ancestor symlinks reject
+before warmup. Freeze binds the stable path-rule/ledger identity. Preparation
+does not create or consume this real ledger.
 
 The exact full-pair inventory digest is separately derived from sorted manifest
 `splits.test.pair_ids` metadata, without reading test rows. After durable consume,

@@ -1001,7 +1001,28 @@ class HoldoutSession:
         self.close()
 
 
-def evaluate_e5(directory, guard_path, authorization):
+def holdout_ledger():
+    """One OS-account ledger, independent of study, candidate and namespace.
+
+    Resolve account metadata, never a caller path or HOME environment override.
+    Preparation checks metadata/symlinks only: no directory/SQLite is created.
+    This is an operational boundary, not protection from an OS administrator.
+    """
+    import pwd
+    home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    require(home.is_absolute() and home == home.resolve(), "canonical_account_home_required")
+    path = home / ".local/state/ats-mlops/evaluation/holdout.sqlite3"
+    current = path
+    while current != current.parent:
+        require(not current.is_symlink(), "holdout_ledger_symlink_forbidden")
+        current = current.parent
+    identity = {"schema_version": 1, "scope": "one_OS_account_all_ATS_studies",
+        "path_rule": "OS_account_home/.local/state/ats-mlops/evaluation/holdout.sqlite3",
+        "os_uid": os.getuid(), "canonical_path_sha256": sha(str(path).encode())}
+    return path, identity
+
+
+def evaluate_e5(directory, authorization):
     """No public reset/force; root must authorize this exact frozen one-use run.
 
     Metadata preflight occurs before the ledger. evaluate_once owns the durable
@@ -1016,6 +1037,8 @@ def evaluate_e5(directory, guard_path, authorization):
     require(isinstance(authorization, dict) and set(authorization) == {"spec_sha256", "holdout_lineage_sha256", "actor", "scope"}
             and authorization["spec_sha256"] == header["spec_sha256"] and authorization["holdout_lineage_sha256"] == holdout_key(spec)
             and authorization["actor"] == "root-coordinator" and authorization["scope"] == "one_attempt_synthetic_final_test", "explicit_final_evaluation_authorization_required")
+    guard_path, ledger_identity = holdout_ledger()
+    require(sha(canonical(ledger_identity)) == spec["bindings"]["holdout_ledger_sha256"], "frozen_global_holdout_ledger_mismatch")
     model, warmup = _qualified(spec, config)
     holdout = config["holdout"]
     require(set(holdout) == {"manifest", "policy"}, "invalid_holdout_metadata")
