@@ -3,7 +3,7 @@
 Actual002 прошёл на executable source `48b6d3adc6853971d583f8cc3c93e4aebc4bac00`.
 Этот commit не переатрибутируется последующему docs/evidence commit. Public
 [summary](../reports/retraining/t17.json) содержит exact IDs, raw/public SHA и
-71 переносимый backing file с metadata/numeric bytes. Независимое final review,
+80 переносимых backing files с metadata/numeric bytes. Независимое final review,
 CI и merge учитываются отдельно; T17 остаётся unchecked до merge.
 
 Начальная модель13 была квалифицирована раньше на source
