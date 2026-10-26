@@ -188,6 +188,30 @@ def run_pipeline(spec, config, root, commands, *, corrupt=False):
     source_guard(config["repo"], spec["source_git_sha"])
     if corrupt:
         require(repro["outcome"] == "failed" and not repro["events"].get("train"), "invalid_data_reached_training")
+        script = r'''
+import json
+from pathlib import Path
+from unittest.mock import patch
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
+from ats_mlops.model.training import train
+from ats_mlops.data.validate import ValidationError
+calls={'pipeline':0,'classifier':0}
+def forbid(name):
+ def fit(*a,**k):calls[name]+=1;raise RuntimeError('fit_must_not_run')
+ return fit
+with patch.object(Pipeline,'fit',forbid('pipeline')),patch.object(LogisticRegression,'fit',forbid('classifier')):
+ try:
+  train(Path('/run/workspace/data_manifest.json'),Path('/run/workspace/.local/negative-guard'),admission_report=Path('/run/workspace/admission/data-admission.json'),config_path=Path('/run/source/configs/model.json'),source_root=Path('/run/source'),image_identity={})
+ except ValidationError as error:
+  assert calls=={'pipeline':0,'classifier':0} and error.report['outcome']=='rejected'
+  assert not any(reason.startswith('admission_') for reason in error.report['reasons'])
+  print(json.dumps({'fit_calls':calls,'validation':error.report}))
+ else:raise AssertionError('corrupt_train_accepted')
+'''
+        proof = decode(worker(commands, config, run, ["-c", script], network=False).stdout.strip().splitlines()[-1])
+        require(proof["fit_calls"] == {"pipeline": 0, "classifier": 0}, "real_fit_guard_not_proven")
+        immutable(Path(root) / "fit-guard.json", proof)
         return run, repro, started
     require(repro["outcome"] == "new_training" and repro["command"] == ["dvc", "repro", "-f", "--no-run-cache"]
             and set(repro["events"]) == {"validate", "prepare", "train", "evaluate"}, "actual_forced_fit_required")
@@ -287,7 +311,8 @@ def _cleanup_release(controller, commands):
         if result.returncode == 0:
             require(result.stdout.decode().strip() == str(controller.root), "foreign_cleanup_resource")
             commands.run(["docker", kind, "rm", name])
-    controller.registry.set(None)  # unique private alias, never default champion
+    if controller.registry.get() is not None:
+        controller.registry.set(None)  # unique private alias, never default champion
 
 
 def _sample_http(controller, samples, stop):
@@ -341,9 +366,8 @@ def clean_start(spec, root):
     """
     from ats_mlops.quality.gate import run_gate
     from ats_mlops.release.controller import load_package
-    from service.release_check import stage
-
     config = environment(spec, series="E1");root = Path(root);commands = Commands(root)
+    from service.release_check import stage
     require(not (root / "core").exists(), "fresh_core_state_required")
     for kind in ("ps", "volume", "network"):
         argv = ["docker", "ps", "-aq"] if kind == "ps" else ["docker", kind, "ls", "-q"]
@@ -399,6 +423,158 @@ def clean_start(spec, root):
         "scope": "T18 clean startup qualification; no E1 experimental observation"}
     immutable(root / "startup.json", result)
     return result
+
+
+def _launch_baseline(config, root):
+    baseline, manifest = checked_fixture(config, "baseline")
+    require(manifest["expected_incumbent"] is None, "actual_first_release_fixture_required")
+    controller = _controller(config, root)
+    require(controller.registry.get() is None, "fresh_private_alias_required")
+    controller.stage(Path(baseline["package"]), Path(baseline["check"]["path"]))
+    controller.approve(manifest["release_id"], "agent-operator", "A3")
+    controller.activate(manifest["release_id"])
+    _consistent(controller)
+    return controller, manifest
+
+
+def _rank_probe(controller, config, request_id):
+    from ats_mlops.data.dataset import load_partition
+    from ats_mlops.release.runtime import http_json
+    rows = load_partition(Path(config["bundle"]) / "data_manifest.json", "validation")
+    require(rows, "validation_probe_required")
+    vacancy = sorted({row["vacancy_id"] for row in rows})[0]
+    group = [row for row in rows if row["vacancy_id"] == vacancy]
+    payload = {"request_id": request_id, "vacancy": {"id": vacancy, "text": group[0]["vacancy_text"]},
+               "candidates": [{"id": row["candidate_id"], "text": row["candidate_text"]} for row in group], "top_k": 100}
+    response = http_json(f"http://127.0.0.1:{controller.config['port']}/rank", payload)
+    require(response["request_id"] == request_id, "fresh_inference_required")
+    return {key: response[key] for key in ("ranking", "model_version", "release_id")}
+
+
+def managed_release(spec, root):
+    """S4 uses real T13 denials and fresh inference after a candidate alias move."""
+    from ats_mlops.release.runtime import Registry
+    from ats_mlops.release.state import ReleaseError
+    config = environment(spec, series="E3");root = Path(root);commands = Commands(root)
+    from service.integrity import inventory
+    isolation_sha = owned_core(commands, config)
+    controller, baseline_manifest = _launch_baseline(config, root)
+    target, target_manifest = checked_fixture(config, "target")
+    candidate_alias = Registry({**controller.config, "alias": controller.config["alias"] + "-candidate"})
+    checks = {}
+    try:
+        before = controller.store.read()
+        missing = root / "missing-gate";shutil.copytree(target["package"], missing)
+        path = missing / "model_gate_report.json";path.chmod(0o600);path.unlink()
+        try:controller.stage(missing, Path(target["check"]["path"]))
+        except (ReleaseError, ValueError, OSError):pass
+        else:raise ExperimentError("missing_gate_was_accepted")
+        require(controller.store.read() == before, "denied_gate_changed_catalog")
+        checks["missing_gate_blocks_stage"] = True
+        controller.stage(Path(target["package"]), Path(target["check"]["path"]))
+        before = controller.store.read()
+        try:controller.activate(target_manifest["release_id"])
+        except ReleaseError as error:require(str(error) == "approval_required", "unexpected_approval_denial")
+        else:raise ExperimentError("approval_bypass_accepted")
+        require(controller.store.read() == before, "denied_approval_changed_catalog")
+        checks["missing_approval_blocks_activation"] = True
+        controller.approve(target_manifest["release_id"], "agent-operator", "A3")
+        controller.activate(target_manifest["release_id"])
+        before_inventory = inventory(Path(target["package"]))
+        candidate_alias.set(target_manifest["candidate"]["model_version"])
+        first = _rank_probe(controller, config, controller.config["project"] + "-before")
+        candidate_alias.set(baseline_manifest["candidate"]["model_version"])
+        second = _rank_probe(controller, config, controller.config["project"] + "-after")
+        require(first == second and second["release_id"] == target_manifest["release_id"]
+                and second["model_version"] == target_manifest["candidate"]["model_version"]
+                and inventory(Path(target["package"])) == before_inventory, "packaged_release_followed_candidate_alias")
+        checks["candidate_alias_move_fresh_inference_package_unchanged"] = True
+        state, observed = _consistent(controller)
+        proof = {"schema_version": 1, "outcome": "passed", "source_git_sha": spec["source_git_sha"], "checks": checks,
+                 "isolation_sha256": isolation_sha, "state": state, "observation": observed,
+                 "package_inventory_sha256": sha(canonical(before_inventory)), "fresh_rank_sha256": sha(canonical(second)),
+                 "journal_sha256": sha((controller.root / "journal.jsonl").read_bytes())}
+        immutable(root / "managed-release.json", proof)
+    finally:
+        try:
+            if candidate_alias.get() is not None:candidate_alias.set(None)
+            _cleanup_release(controller, commands)
+        finally:evidence_sha = commands.finish()
+    return {"outcome": "passed", "native_receipt_sha256": sha(canonical(proof)), "evidence_sha256": evidence_sha, "checks": checks}
+
+
+def registry_outage(spec, root):
+    """S5 additional Registry failure: stop only the proven private MLflow service."""
+    from ats_mlops.release.state import ReleaseError
+    config = environment(spec, series="E3");root = Path(root);commands = Commands(root)
+    isolation_sha = owned_core(commands, config)
+    controller, baseline_manifest = _launch_baseline(config, root)
+    target, target_manifest = checked_fixture(config, "target")
+    controller.stage(Path(target["package"]), Path(target["check"]["path"]))
+    controller.approve(target_manifest["release_id"], "agent-operator", "A3")
+    service = config["core"]["containers"]["mlflow"]
+    stopped = False;error_code = None
+    try:
+        before = controller.store.read();injected = time.monotonic()
+        commands.run(["docker", "stop", service]);stopped = True
+        try:controller.activate(target_manifest["release_id"])
+        except ReleaseError as error:error_code = str(error)
+        else:raise ExperimentError("registry_outage_marked_success")
+        detected = time.monotonic()
+        require(error_code == "registry_unavailable" and controller.store.read() == before
+                and controller.runtime.matches(controller.runtime.observe(), before["active"]), "registry_outage_not_fail_closed")
+        commands.run(["docker", "start", service]);stopped = False
+        deadline = time.monotonic() + 90
+        while True:
+            try:
+                state, observed = _consistent(controller);break
+            except ReleaseError:
+                require(time.monotonic() < deadline, "registry_recovery_timeout");time.sleep(.25)
+        proof = {"schema_version": 1, "outcome": "passed", "source_git_sha": spec["source_git_sha"],
+                 "isolation_sha256": isolation_sha, "error_code": error_code, "state": state, "observation": observed,
+                 "injected_monotonic": injected, "detected_monotonic": detected, "restored_monotonic": time.monotonic(),
+                 "blocked_next_release": state["active"]["release_id"] == baseline_manifest["release_id"]}
+        immutable(root / "registry-outage.json", proof)
+    finally:
+        try:
+            if stopped:commands.run(["docker", "start", service])
+            _cleanup_release(controller, commands)
+        finally:evidence_sha = commands.finish()
+    return {"outcome": "passed", "native_receipt_sha256": sha(canonical(proof)), "evidence_sha256": evidence_sha}
+
+
+def schema_rejection(spec, root):
+    """S3 runs real GX on a fresh owned negative fixture, not frozen test bytes."""
+    config = environment(spec, series="E3");root = Path(root);commands = Commands(root)
+    run = prepare_run(spec, config, root)
+    original = document(config["fixtures"]["schema_fixture_config"])
+    require(type(original.get("vacancy_groups")) is int and 3 <= original["vacancy_groups"] <= 20, "bounded_schema_fixture_required")
+    fixture_config = dict(original, namespace="acc-" + sha(config["project"].encode())[:16] + "-schema")
+    (run / "workspace/.local").mkdir(exist_ok=True)
+    (run / "workspace/.local/schema-config.json").write_bytes(canonical(fixture_config))
+    script = r'''
+import json,hashlib
+from pathlib import Path
+from ats_mlops.data.dataset import generate_dataset,canonical_json
+from ats_mlops.data.validate import validate_dataset
+root=Path('/run/workspace/.local/schema-fixture');root.mkdir()
+manifest_path=root/'data_manifest.json'
+generate_dataset(Path('/run/workspace/.local/schema-config.json'),manifest_path,root/'data')
+manifest=json.loads(manifest_path.read_bytes())
+source=root/manifest['artifacts']['source']['path'];rows=[json.loads(line) for line in source.read_bytes().splitlines()]
+rows[0].pop('candidate_text');content=b''.join(canonical_json(row) for row in rows);source.write_bytes(content)
+manifest['artifacts']['source']['sha256']=hashlib.sha256(content).hexdigest()
+manifest_path.write_bytes(canonical_json(manifest))
+report=validate_dataset(manifest_path,Path('/run/workspace/.local/schema-report'),mode='admission')
+assert report['outcome']=='rejected' and any(batch['scope']=='source' and batch['success'] is False for batch in report['gx'])
+print(json.dumps({'report':report,'fresh_fixture_test_sha256':manifest['artifacts']['test']['sha256']}))
+'''
+    result = decode(worker(commands, config, run, ["-c", script], network=False).stdout.strip().splitlines()[-1])
+    require(result["fresh_fixture_test_sha256"] != spec["bindings"]["test_partition_sha256"], "original_test_cannot_be_admission_fixture")
+    immutable(root / "schema-rejection.json", {"schema_version": 1, "outcome": "passed", "source_git_sha": spec["source_git_sha"],
+        "validation": result["report"], "fresh_fixture_test_sha256": result["fresh_fixture_test_sha256"],
+        "original_test_read": False, "training_invoked": False, "scope": "new synthetic GX negative admission only"})
+    return {"outcome": "passed", "native_receipt_sha256": sha((root / "schema-rejection.json").read_bytes()), "evidence_sha256": commands.finish()}
 
 
 def e3(spec, root):
