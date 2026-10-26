@@ -62,9 +62,12 @@ Images are pinned by digest in [images.json](../monitoring/images.json):
 [Prometheus 3.15.1](https://prometheus.io/download/) and
 [Grafana OSS 13.2.4](https://grafana.com/grafana/download), plus the cached pinned
 Python stdlib collector image. Prometheus/Grafana use persistent native volumes.
-Their limits are 256 MiB / 0.5 CPU for Prometheus and 384 MiB / 0.5 CPU for
+Their limits are 256 MiB / 0.5 CPU for Prometheus and 512 MiB / 0.5 CPU for
 Grafana; the collector is 128 MiB / 0.25 CPU. Grafana's initial startup measured
-222.7 MiB against a trial 256 MiB limit, so its limit was raised before the gate.
+222.7 MiB against a trial 256 MiB limit; actual dashboard queries later measured
+382.9 MiB against 384 MiB. The final limit was raised to 512 MiB, with a targeted
+frontend/query/persistence/resource check. The full 004 traffic gate remains
+separately attributed to its exact source/config before this budget-only change.
 Prometheus configures seven-day / 256 MB retention; WAL/head add storage overhead. Limits do not prove
 capacity; check actual memory and OOM/restart state alongside core/Airflow.
 

@@ -56,7 +56,7 @@ services:
       - grafana-data:/var/lib/grafana
       - grafana-auth:/run/credentials:ro
     cpus: 0.5
-    mem_limit: 384m
+    mem_limit: 512m
     restart: unless-stopped
     networks: [monitoring]
 networks:
