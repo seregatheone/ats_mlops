@@ -251,6 +251,17 @@ class RetrainingPolicyTests(unittest.TestCase):
         self.assertIsNone(self.store.snapshot()['inflight'])
         self.assertEqual(result, self.store.record_candidate(request_id, candidate(False), now=START + 2 * HOUR + 4 * MINUTE))
 
+    def test_ambiguous_unacked_dispatch_must_recover_delivery_receipt_before_result(self):
+        request_id = self.accepted()
+        self.store.accept_labels(request_id, approval(), now=START + 2 * HOUR + MINUTE)
+        event = self.store.pending_outbox()[0]
+        self.store.record_failure(request_id, ambiguous=True, now=START + 2 * HOUR + 2 * MINUTE)
+        with self.assertRaisesRegex(PolicyError, 'dispatch_receipt_required'):
+            self.store.record_candidate(request_id, candidate(), now=START + 2 * HOUR + 3 * MINUTE)
+        self.assertEqual([event], self.store.pending_outbox())
+        self.store.ack_dispatch(event['event_id'], h('existing-run-receipt'), now=START + 2 * HOUR + 3 * MINUTE)
+        self.assertEqual('waiting_approval', self.store.record_candidate(request_id, candidate(), now=START + 2 * HOUR + 4 * MINUTE)['state'])
+
     def test_unambiguous_failure_cancels_pending_outbox_and_is_idempotent(self):
         request_id = self.accepted()
         self.store.accept_labels(request_id, approval(), now=START + 2 * HOUR + MINUTE)

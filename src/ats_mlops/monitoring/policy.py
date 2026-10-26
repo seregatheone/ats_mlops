@@ -441,6 +441,9 @@ class PolicyStore:
                 require(request["candidate"] == value, "candidate_result_conflict")
                 return request
             require(request["state"] in ("candidate_running", "recovery_required"), "candidate_not_running")
+            delivery = db.execute("SELECT * FROM outbox WHERE request_id=? AND kind='candidate'", (request_id,)).fetchone()
+            require(delivery is not None and delivery["state"] == "acknowledged", "dispatch_receipt_required")
+            self._checked_outbox(delivery)
             require(request["incumbent"] == meta["reference"], "incumbent_changed")
             require(value["model"]["name"] == request["incumbent"]["cohort"]["model"]["name"], "candidate_model_name_mismatch")
             request["candidate"] = value
