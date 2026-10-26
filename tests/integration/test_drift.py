@@ -141,7 +141,8 @@ def main():
         container = subprocess.check_output([*compose, "ps", "-q", "ranking"], cwd=ROOT, env=env, text=True).strip()
         for _ in range(60):
             try:
-                with urlopen(f"http://127.0.0.1:{args.port}/readyz", timeout=2) as response:
+                metadata_request = Request(f"http://127.0.0.1:{args.port}/metadata", data=b"{}", headers={"Content-Type": "application/json"})
+                with urlopen(metadata_request, timeout=2) as response:
                     if json.load(response)["ready"]:break
             except Exception:time.sleep(.2)
         else:raise AssertionError("fixture_not_ready")
@@ -155,7 +156,7 @@ def main():
                        "candidates": [{"id": row["candidate_id"], "text": row["candidate_text"]} for row in group], "top_k": 3}
             with urlopen(Request(f"http://127.0.0.1:{args.port}/rank", data=canonical(payload), headers={"Content-Type": "application/json"}), timeout=10) as response:
                 assert len(json.load(response)["ranking"]) == 3
-        payload = {"request_id": "full100", "vacancy": {"id": "private-vacancy", "text": "Python private fixture"},
+        payload = {"request_id": "full100", "vacancy": {"id": "private-vacancy", "text": rows[0]["vacancy_text"]},
                    "candidates": [{"id": f"private-{i:03}", "text": "Python private fixture"} for i in range(100)], "top_k": 3}
         write(request_file, payload)
         with urlopen(Request(f"http://127.0.0.1:{args.port}/rank", data=canonical(payload), headers={"Content-Type": "application/json"}), timeout=10) as response:
