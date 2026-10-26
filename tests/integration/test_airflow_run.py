@@ -44,6 +44,7 @@ class AirflowIntegrationTests(unittest.TestCase):
             image = json.loads((self.state / "image.json").read_text())
             self.evidence["image"] = image
             docker = ["docker", "run", "--rm", "--user", "0:0", "--cpus", "1", "--memory", "1536m",
+                      "-e", "PATH=/opt/ml-venv/bin:/usr/bin:/bin",
                       "-e", "OMP_NUM_THREADS=1", "-e", "OPENBLAS_NUM_THREADS=1", "-e", "MKL_NUM_THREADS=1",
                       "-e", "PYTHONDONTWRITEBYTECODE=1", "-e", "PYTHONPATH=/source/src",
                       "-v", f"{self.evidence_dir / 'source'}:/source:ro", "-v", f"{self.evidence_dir}:/fixture"]
