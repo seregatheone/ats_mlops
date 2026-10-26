@@ -70,9 +70,11 @@ t20_ml() {
   local t20_source="$1" t20_write="$2"; shift 2
   docker run --rm --pull=never --network "${T20_PROJECT}_default" \
     --read-only --cpus 1 --memory 1536m --user "$(id -u):$(id -g)" \
-    --tmpfs /tmp:rw,size=128m,mode=1777 --env-file "$T20_CORE/dvc.env" \
+    --tmpfs /tmp:rw,size=128m,mode=1777 --tmpfs /var/tmp/dvc:rw,size=32m,mode=1777 \
+    --env-file "$T20_CORE/dvc.env" \
     -e MLFLOW_TRACKING_URI=http://mlflow:5000 -e ATS_ML_PYTHON=/opt/ml-venv/bin/python \
     -e PYTHONDONTWRITEBYTECODE=1 -e "PYTHONPATH=$t20_source/src:$t20_source" \
+    -e USER=ats-demo -e LOGNAME=ats-demo -e XDG_CONFIG_HOME=/tmp/config \
     -e XDG_CACHE_HOME=/tmp/cache -e BENTOML_HOME=/tmp/bento -e MPLCONFIGDIR=/tmp/mpl \
     -e OMP_NUM_THREADS=1 -e OPENBLAS_NUM_THREADS=1 -e MKL_NUM_THREADS=1 \
     -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e "GIT_CONFIG_VALUE_0=$t20_source" \
