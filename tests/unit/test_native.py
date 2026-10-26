@@ -2,15 +2,17 @@
 from copy import deepcopy
 import json
 import io
+import inspect
 import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from ats_mlops.evaluation import experiment, native
-from tests.unit.test_experiment import spec, make_study, numeric
+from tests.unit.test_experiment import spec, make_study, numeric, snapshot
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -146,12 +148,14 @@ class FinalScorerTests(unittest.TestCase):
 
     def test_failed_worker_preflight_never_consumes_guard_or_reads_test(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder);directory = make_study(root)
-            with patch.object(native, "environment", return_value={}), patch.object(native, "_qualified", side_effect=experiment.ExperimentError("preflight")), patch.object(experiment, "HoldoutGuard") as guard:
+            root = Path(folder);identity={"schema_version":1,"toy_fixed_ledger":"global"};value=spec()
+            value["bindings"]["holdout_ledger_sha256"]=experiment.sha(experiment.canonical(identity))
+            directory = make_study(root,value=value)
+            with patch.object(native,"holdout_ledger",return_value=(root/"global.sqlite",identity)), patch.object(native, "environment", return_value={}), patch.object(native, "_qualified", side_effect=experiment.ExperimentError("preflight")), patch.object(experiment, "HoldoutGuard") as guard:
                 authorization = {"spec_sha256": experiment.study(directory)[1]["spec_sha256"], "holdout_lineage_sha256": experiment.holdout_key(spec()),
                                  "actor": "root-coordinator", "scope": "one_attempt_synthetic_final_test"}
                 with self.assertRaisesRegex(experiment.ExperimentError, "preflight"):
-                    native.evaluate_e5(directory, root / "absent.sqlite", authorization)
+                    native.evaluate_e5(directory, authorization)
                 guard.assert_not_called()
             self.assertFalse((root / "absent.sqlite").exists())
 
@@ -160,9 +164,50 @@ class FinalScorerTests(unittest.TestCase):
             root = Path(folder);directory = make_study(root)
             with patch.object(native, "environment", return_value={}), patch.object(native, "_qualified") as qualified, patch.object(experiment, "HoldoutGuard") as guard:
                 with self.assertRaisesRegex(experiment.ExperimentError, "authorization"):
-                    native.evaluate_e5(directory, root / "must-not-create.sqlite3", {})
+                    native.evaluate_e5(directory, {})
                 qualified.assert_not_called();guard.assert_not_called()
             self.assertFalse((root / "must-not-create.sqlite3").exists())
+
+    def test_native_API_accepts_no_new_guard_path_for_any_study(self):
+        self.assertEqual(["directory","authorization"],list(inspect.signature(native.evaluate_e5).parameters))
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            with patch.object(native,"_qualified") as qualified,patch.object(experiment,"HoldoutGuard") as guard:
+                for name in ("one","another-candidate"):
+                    with self.assertRaises(TypeError):native.evaluate_e5(root/name,root/(name+".sqlite"),{})
+                qualified.assert_not_called();guard.assert_not_called()
+            self.assertEqual([],list(root.iterdir()))
+
+    def test_native_account_ledger_ignores_HOME_and_rejects_symlink_before_warmup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder).resolve();home=root/"account";home.mkdir()
+            with patch("pwd.getpwuid",return_value=SimpleNamespace(pw_dir=str(home))):
+                one,identity=native.holdout_ledger()
+                with patch.dict(os.environ,{"HOME":str(root/"fake-new-home")}):
+                    two,same=native.holdout_ledger()
+                self.assertEqual(one,two);self.assertEqual(identity,same)
+                self.assertFalse((home/".local").exists())
+                (home/".local").symlink_to(root,target_is_directory=True)
+                with self.assertRaisesRegex(experiment.ExperimentError,"symlink"):
+                    native.holdout_ledger()
+                self.assertFalse((root/"state").exists())
+
+    def test_two_toy_studies_share_native_account_ledger_and_semantic_holdout_budget(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder).resolve();home=root/"account";home.mkdir();value=spec()
+            with patch("pwd.getpwuid",return_value=SimpleNamespace(pw_dir=str(home))):
+                ledger,identity=native.holdout_ledger()
+                value["bindings"]["holdout_ledger_sha256"]=experiment.sha(experiment.canonical(identity))
+                first=make_study(root,"first",value=value)
+                experiment.evaluate_once(first,ledger,lambda:snapshot(value),lambda _:numeric(value))
+                changed=deepcopy(value);changed["study_id"]="new-candidate"
+                changed["bindings"]["model_artifact_sha256"]="e"*64
+                other=make_study(root,"other",value=changed)
+                again,_=native.holdout_ledger();self.assertEqual(ledger,again)
+                reader=Mock(side_effect=AssertionError("must not reread"));scorer=Mock(side_effect=AssertionError("must not rescore"))
+                with self.assertRaisesRegex(experiment.ExperimentError,"holdout_already_consumed"):
+                    experiment.evaluate_once(other,again,reader,scorer)
+                reader.assert_not_called();scorer.assert_not_called()
 
 
 class ClaimAuditTests(unittest.TestCase):
