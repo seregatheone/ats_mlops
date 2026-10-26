@@ -31,7 +31,7 @@
         {
           "refId": "A",
           "expr": "sum by (endpoint,status) (rate(ats_http_requests_total[1m]))",
-          "legendFormat": "{{endpoint}} {{status}} {{outcome}} {{source}}",
+          "legendFormat": "{{endpoint}} {{status}}",
           "datasource": {
             "type": "prometheus",
             "uid": "ats-prometheus"
@@ -74,7 +74,7 @@
         {
           "refId": "A",
           "expr": "sum by (endpoint,status) (rate(ats_http_errors_total[1m]))",
-          "legendFormat": "{{endpoint}} {{status}} {{outcome}} {{source}}",
+          "legendFormat": "{{endpoint}} {{status}}",
           "datasource": {
             "type": "prometheus",
             "uid": "ats-prometheus"
@@ -117,7 +117,7 @@
         {
           "refId": "A",
           "expr": "histogram_quantile(0.95, sum by (le) (rate(ats_http_request_duration_seconds_bucket{endpoint=\"/rank\"}[1m])))",
-          "legendFormat": "{{endpoint}} {{status}} {{outcome}} {{source}}",
+          "legendFormat": "p95 seconds",
           "datasource": {
             "type": "prometheus",
             "uid": "ats-prometheus"
@@ -125,7 +125,9 @@
         }
       ],
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "unit": "s"
+        },
         "overrides": []
       },
       "options": {
@@ -160,11 +162,12 @@
         {
           "refId": "A",
           "expr": "ats_pipeline_requests",
-          "legendFormat": "{{endpoint}} {{status}} {{outcome}} {{source}}",
+          "legendFormat": "{{status}}",
           "datasource": {
             "type": "prometheus",
             "uid": "ats-prometheus"
-          }
+          },
+          "instant": true
         }
       ],
       "fieldConfig": {
@@ -203,11 +206,12 @@
         {
           "refId": "A",
           "expr": "sum by (outcome) (ats_pipeline_attempts)",
-          "legendFormat": "{{endpoint}} {{status}} {{outcome}} {{source}}",
+          "legendFormat": "{{outcome}}",
           "datasource": {
             "type": "prometheus",
             "uid": "ats-prometheus"
-          }
+          },
+          "instant": true
         }
       ],
       "fieldConfig": {
@@ -246,11 +250,12 @@
         {
           "refId": "A",
           "expr": "{__name__=~\"ats_release_active|ats_release_pending|ats_release_generation\"}",
-          "legendFormat": "{{endpoint}} {{status}} {{outcome}} {{source}}",
+          "legendFormat": "{{__name__}}",
           "datasource": {
             "type": "prometheus",
             "uid": "ats-prometheus"
-          }
+          },
+          "instant": true
         }
       ],
       "fieldConfig": {
@@ -289,11 +294,12 @@
         {
           "refId": "A",
           "expr": "ats_technical_source_up",
-          "legendFormat": "{{endpoint}} {{status}} {{outcome}} {{source}}",
+          "legendFormat": "{{source}}",
           "datasource": {
             "type": "prometheus",
             "uid": "ats-prometheus"
-          }
+          },
+          "instant": true
         }
       ],
       "fieldConfig": {
@@ -332,11 +338,12 @@
         {
           "refId": "A",
           "expr": "up",
-          "legendFormat": "{{endpoint}} {{status}} {{outcome}} {{source}}",
+          "legendFormat": "{{job}} {{instance}}",
           "datasource": {
             "type": "prometheus",
             "uid": "ats-prometheus"
-          }
+          },
+          "instant": true
         }
       ],
       "fieldConfig": {
