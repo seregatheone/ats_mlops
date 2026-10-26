@@ -117,4 +117,3 @@ class Store:
         state.clear()
         state.update(projected)
         return state
-

@@ -92,3 +92,20 @@ Ingress проверяется до загрузки partition bytes: descriptor
 Независимое recovery свидетельство на том же source: в отдельной shadow copy завершённого request удалён только candidate receipt, ledger установлен в in_progress/attempt3. Реальный recovery child восстановил byte-identical candidate из existing audited repro receipt, завершил журнал и не вызвал DVC/download/fit/registration; четвёртой попытки нет. Shared runtime/ledger не менялись. Неоднозначный исход без полного receipt по-прежнему блокируется для оператора.
 
 Предыдущие неудачи сохранены: pool2 migration timeout до DAG (pool увеличен до bounded5); fixture PATH без DVC до DAG; первый nonroot train дошёл до MLflow и остался `recovery_required` после cleanup read-only code copy. Последний не перезапускался: узкий T7 packaging helper создаёт temporary writable copy под basename `ats_mlops`, сверяет byte inventory и сохраняет исходный source неизменным. Реальный pinned MLflow copy/cleanup под UID50000 проверен без fit/remote calls; algorithms и lineage format сохранены. Рабочая политика остаётся conservative: неизвестный исход train/register не повторять автоматически.
+
+## Local release operation (T13)
+
+[Release lifecycle](releases.md) documents `release stage/approve/activate/rollback/reconcile/status`
+and its immutable T11/T12 inputs. Default durable state is outside the checkout,
+under `$XDG_STATE_HOME/ats-mlops` or `~/.local/state/ats-mlops`; the working event DB
+is in a Linux named volume. Do not remove that volume or the stable serving
+bridge during an update. Serving is loopback-only at port3000, with exact image
+and readonly package mounts; Registry access stays in the host controller.
+
+When an operation blocks with pending intent, restore access and run `reconcile`.
+A healthy previous or target API remains available during Registry failure;
+do not edit the journal, receipts or cached state. A stale candidate requires
+new gate/package/check/approval against the current release ID and generation.
+[T13 evidence](../reports/releases/t13.json) records actual crash recovery,
+rollback, source identities and measured stop/start downtime. The active local
+demo is `t12-model4-59967b7` / model4 / champion4 with A3 `demo_only` approval.
