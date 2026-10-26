@@ -1,0 +1,67 @@
+{
+  "actual_checks": [
+    {
+      "actual_outcome": "passed",
+      "expected_outcome": "passed",
+      "reasons": [],
+      "report": "first-release.json"
+    },
+    {
+      "actual_outcome": "passed",
+      "expected_outcome": "passed",
+      "reasons": [],
+      "report": "incumbent-fixture.json"
+    },
+    {
+      "actual_outcome": "rejected",
+      "expected_outcome": "rejected",
+      "reasons": [
+        "candidate.artifact_bytecode_forbidden"
+      ],
+      "report": "rejected-bytecode.json"
+    },
+    {
+      "actual_outcome": "rejected",
+      "expected_outcome": "rejected",
+      "reasons": [
+        "candidate.model_inventory_mismatch"
+      ],
+      "report": "rejected-model-mismatch.json"
+    }
+  ],
+  "evidence_scope": "demo_only",
+  "gate_git_sha": "32b3ea6146916b33b527f79adbc8ac92edad9c03",
+  "host_coordinator_python": "3.14.3",
+  "incumbent_release_is_fixture": true,
+  "isolated_scoring_receipts": 3,
+  "limitations": [
+    "Synthetic demo_only validation; no hiring quality or release claim.",
+    "Incumbent release identity is an explicit fixture until T13 activation exists.",
+    "Host coordinator uses stdlib; actual host Python version is recorded separately from pinned model runtime."
+  ],
+  "model_python": "3.11.17",
+  "model_runtime_image_id": "sha256:574c48deb107cba3f0bdc982d3aa0ab1500de58ab1694052bb92efbcab13ec91",
+  "outcome": "passed",
+  "report_sha256": {
+    "first-release.json": "4629a39f659771f95713ebc98cc9247cea72cc5cd4b8447e60c00aa0d77aec35",
+    "incumbent-fixture.json": "932708cf214e83a1dd38a50a03e371fd21d1ab308f2a0ef267bafcece45499ee",
+    "rejected-bytecode.json": "41b677cd7e851dcfbe52683bf27edc6c9b07e8f24363045b4a60552c4f6f54cd",
+    "rejected-model-mismatch.json": "eddd4ed556263895e65ae1a9f6e559e25a8e55073d4aa057db584c6017261d7f"
+  },
+  "schema_version": 1,
+  "training_executed_by_gate": false,
+  "unit_checks": [
+    {
+      "note": "before final narrow identity-validation delta",
+      "passed": 98,
+      "seconds": 12.881,
+      "suite": "all unit"
+    },
+    {
+      "note": "rerun after identity validation delta; transport also checked by actual gates",
+      "passed": 19,
+      "seconds": 2.426,
+      "suite": "quality focused"
+    }
+  ]
+}

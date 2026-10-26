@@ -97,3 +97,29 @@ incumbent, переключать release или обходить последу
 Проверка: `python -m unittest discover -s tests/unit -p test_quality_gate.py`.
 Структурные unit fixtures не исполняют pickle; реальные isolated artifact checks
 выполняются отдельно на закреплённых model versions без обучения.
+
+## Выполненные проверки, 26.10.2026
+
+Исполняемый source заранее закоммичен и опубликован:
+`32b3ea6146916b33b527f79adbc8ac92edad9c03`. На закреплённом Python 3.11 выполнены
+98 unit-тестов; после узкого изменения identity validation повторены 19 focused
+тестов. Реальная transport-проверка выполнена на том же source без обучения.
+
+[Первый сценарий](../reports/quality/first-release.json) загрузил exact model 4;
+[сценарий incumbent](../reports/quality/incumbent-fixture.json) отдельно загрузил
+models 4 и 5. Оба gate дали passed+demo_only на одном validation snapshot
+`cfcd3cee...260bb8`: 240 пар, 12 eligible групп, NDCG@10=Recall@10=1.0,
+снижение относительно baseline/incumbent — 0. Incumbent release ID помечен
+fixture и не выдаётся за опубликованный выпуск.
+
+Все три model-scoring receipts подтверждают fresh `python -I -B` в exact image
+`sha256:574c48deb107cba3f0bdc982d3aa0ab1500de58ab1694052bb92efbcab13ec91`,
+Python 3.11.17, без checkout mount, сети и credentials. Host coordinator использовал
+Python 3.14; его версия отдельно зафиксирована, а зависимости модели сверены с
+закреплённым runtime. Контейнеров `ats-quality-*` после проверок не осталось.
+
+[Копия с bytecode](../reports/quality/rejected-bytecode.json) отвергнута до
+scoring. [Артефакт другого model version](../reports/quality/rejected-model-mismatch.json)
+также отвергнут до unpickle. [Commands/checks и report hashes](../reports/quality/checks.json)
+сохраняют успешные и отрицательные результаты. Raw validation/request paths
+остаются в приватном внешнем evidence, публичные отчёты не содержат текстов.
