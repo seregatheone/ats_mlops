@@ -85,7 +85,8 @@ class DockerRuntime:
             require(docker("network", "inspect", "--format", '{{index .Labels "ats.release.owner"}}',
                            self.config["network"]) == str(self.root), "foreign_serving_network")
         else:
-            docker("network", "create", "--internal", "--label", "ats.release.owner=" + str(self.root), self.config["network"])
+            # Docker Desktop needs a normal bridge for published loopback ports.
+            docker("network", "create", "--driver", "bridge", "--label", "ats.release.owner=" + str(self.root), self.config["network"])
         docker("run", "--rm", "--network", "none", "--user", "0:0", "--entrypoint", "/bin/sh",
                "--mount", "type=volume,src=" + self.config["events_volume"] + ",dst=/events",
                image, "-c", "chown 50000:50000 /events && chmod 700 /events")
@@ -93,7 +94,7 @@ class DockerRuntime:
         directory = self.root / "runtime"
         directory.mkdir(exist_ok=True)
         atomic_json(directory / "compose.json", spec)
-        docker("compose", "-p", self.config["project"], "-f", directory / "compose.json",
+        docker("compose", "--env-file", "/dev/null", "-p", self.config["project"], "-f", directory / "compose.json",
                "up", "-d", "--no-deps", "--pull", "never", "ranking")
 
     def compose(self, launch):

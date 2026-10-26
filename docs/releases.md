@@ -34,7 +34,7 @@ package, release check and approval revision against the current release.
 Activation uses one managed `ranking` service, a fixed loopback port, an exact
 image ID, readonly package/model mounts, UID 50000, one CPU and 1536 MiB. The
 native named events volume survives every switch and rollback. The stable
-named internal bridge also survives switches; a local monitoring container can
+named bridge also survives switches; a local monitoring container can
 join it and scrape `ranking:3000`. The controller never runs Compose `down` or
 prunes images, networks or volumes. It refuses resources owned by another
 controller state directory. Retained current and two previous successful
