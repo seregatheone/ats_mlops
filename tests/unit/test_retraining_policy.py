@@ -11,8 +11,8 @@ import tempfile
 import unittest
 
 from ats_mlops.monitoring.policy import (
-    ACTIVE_CHECKS, CandidateEvidence, Cohort, DatasetApproval, ModelIdentity,
-    PolicyError, PolicyStore, ReferenceBinding, VerifiedActive, WindowEvidence, payload,
+    ACTIVE_CHECKS, CandidateEvidence, Cohort, DatasetApproval, ExecutionPlan, ModelIdentity,
+    PolicyError, PolicyStore, ReferenceBinding, VerifiedActive, WindowEvidence, canonical, payload,
 )
 
 
@@ -27,6 +27,13 @@ MODEL = ModelIdentity('ranking', '4', 'run-4', h('model-4'))
 COHORT = Cohort(h('reference-1'), MODEL, 'release-A', 1, h('monitoring-config'))
 REFERENCE = ReferenceBinding(COHORT, 'dataset-v1', h('manifest-1'), h('policy-1'), h('labels-1'))
 NEXT_MODEL = ModelIdentity('ranking', '5', 'run-5', h('model-5'))
+
+
+def execution():
+    parameters = {'model': {'seed': 20261026}, 'search': {'mode': 'frozen'}, 'smoke': False,
+                  'evaluation': {'score_decimals': 12}}
+    raw = __import__('json').dumps(parameters, sort_keys=True, separators=(',', ':'))
+    return ExecutionPlan('a' * 40, 'sha256:' + h('image'), canonical(parameters), h(raw), h(canonical(parameters['model']) + '\n'))
 
 
 def window(index, **changes):
@@ -83,6 +90,7 @@ class RetrainingPolicyTests(unittest.TestCase):
         self.assertEqual('first_signal', self.store.observe(window(0), now=START + HOUR)['reason'])
         result = self.store.observe(window(1), now=START + 2 * HOUR)
         self.assertEqual('waiting_for_labels', result['state'])
+        self.store.bind_execution(result['request_id'], execution(), now=START + 2 * HOUR)
         return result['request_id']
 
     def dispatched(self):

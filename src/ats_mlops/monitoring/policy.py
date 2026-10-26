@@ -191,6 +191,34 @@ class DatasetApproval:
 
 
 @dataclass(frozen=True)
+class ExecutionPlan:
+    source_git_sha: str
+    training_image_id: str
+    parameters_json: str
+    parameters_sha256: str
+    effective_model_sha256: str
+
+    def __post_init__(self):
+        require(isinstance(self.source_git_sha, str) and re.fullmatch(r"[0-9a-f]{40}", self.source_git_sha), "invalid_source_identity")
+        require(isinstance(self.training_image_id, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", self.training_image_id), "invalid_image_identity")
+        fingerprint(self.parameters_sha256)
+        fingerprint(self.effective_model_sha256)
+        try:
+            parameters = json.loads(self.parameters_json)
+            require(self.parameters_json == canonical(parameters), "noncanonical_execution_parameters")
+            require(set(parameters) == {"model", "search", "smoke", "evaluation"}
+                    and parameters["search"] == {"mode": "frozen"} and parameters["smoke"] is False,
+                    "frozen_execution_required")
+            # Same canonical hash as the existing T10 request protocol.
+            raw = json.dumps(parameters, sort_keys=True, separators=(",", ":")).encode()
+            require(hashlib.sha256(raw).hexdigest() == self.parameters_sha256
+                    and hashlib.sha256((canonical(parameters["model"]) + "\n").encode()).hexdigest() == self.effective_model_sha256,
+                    "execution_parameter_hash_mismatch")
+        except (TypeError, ValueError, KeyError):
+            raise PolicyError("invalid_execution_parameters") from None
+
+
+@dataclass(frozen=True)
 class CandidateEvidence:
     candidate_id: str
     model: ModelIdentity
@@ -376,7 +404,7 @@ class PolicyStore:
                 request = {"request_id": request_id, "run_id": "retrain__" + digest(signal),
                            "signal": signal, "accepted_at": stamp(now), "state": "waiting_for_labels",
                            "incumbent": meta["reference"], "dataset": None, "candidate": None,
-                           "failure": None, "reference_intent": None}
+                           "failure": None, "reference_intent": None, "execution": None}
                 db.execute("INSERT INTO requests VALUES(?,?)", (request_id, packed(request)))
                 db.execute("INSERT INTO inflight VALUES(1,?)", (request_id,))
                 self._save(db, request, "request_accepted", now)
@@ -388,6 +416,19 @@ class PolicyStore:
             meta["last_window"] = {"window_id": window.window_id, "end": value["end"]}
             db.execute("INSERT INTO windows VALUES(?,?,?,?)", (window.window_id, window_hash, packed(value), packed(decision)))
             return decision
+
+    def bind_execution(self, request_id, execution, *, now):
+        require(type(execution) is ExecutionPlan, "invalid_execution_plan")
+        value = payload(execution)
+        with self._transaction(now) as (db, meta, now):
+            request = self._request(db, request_id)
+            if request.get("execution") is not None:
+                require(request["execution"] == value, "execution_plan_conflict")
+                return request
+            require(request["state"] == "waiting_for_labels" and request["dataset"] is None, "execution_binding_too_late")
+            request["execution"] = value
+            self._save(db, request, "execution_bound", now)
+            return request
 
     def accept_labels(self, request_id, approval, *, now):
         require(type(approval) is DatasetApproval, "invalid_dataset_approval")
@@ -410,9 +451,10 @@ class PolicyStore:
             require(approval.parent_labelset_sha256 == incumbent["labelset_sha256"], "labelset_parent_mismatch")
             require(approval.reservation_policy_sha256 == incumbent["reservation_policy_sha256"]
                     or approval.reservation_parent_sha256 == incumbent["reservation_policy_sha256"], "reservation_parent_mismatch")
+            require(request.get("execution") is not None, "execution_plan_required")
             request["dataset"], request["state"] = value, "queued"
             self._outbox(db, request_id, "candidate", {"request_id": request_id, "run_id": request["run_id"],
-                "incumbent": request["incumbent"], "dataset_approval": value})
+                "incumbent": request["incumbent"], "dataset_approval": value, "execution": request["execution"]})
             self._save(db, request, "candidate_intent", now)
             return request
 
