@@ -16,6 +16,7 @@ import math
 import os
 from pathlib import Path
 import re
+import select
 import shutil
 import subprocess
 import sys
@@ -80,9 +81,17 @@ def source_guard(repo, expected):
     return repo
 
 
-def environment(spec, *, series):
+def environment(spec, *, series, qualification=False):
     """All mutable locations and effect targets are part of the frozen binding."""
-    validate_spec(spec)
+    validate_spec(spec, template=qualification)
+    if qualification:
+        require(isinstance(spec["source_git_sha"], str) and re.fullmatch(r"[0-9a-f]{40}", spec["source_git_sha"])
+                and all(digest(spec["bindings"][key]) for key in
+                        ("environment_sha256", "data_manifest_sha256", "admission_sha256", "root_policy_sha256", "split_sha256")),
+                "qualification_inputs_not_pinned")
+        require(all(spec["bindings"][key] is None for key in
+                    ("model_artifact_sha256", "model_lineage_sha256")) and spec["qualified_model_source_git_sha"] is None,
+                "qualification_must_precede_candidate_selection")
     path = os.environ.get("ATS_EXPERIMENT_ENVIRONMENT")
     require(path is not None and Path(path).suffix.lower() == ".json" and not Path(path).is_symlink(), "native_environment_required")
     content = Path(path).read_bytes()
@@ -360,6 +369,35 @@ def _package_io_attempt(spec, config, root, commands, *, expect_failure=True, in
         require(result.returncode == 0 and (Path(root) / output_name / "release_manifest.json").is_file(), "package_io_not_verified")
 
 
+def declare_qualification(spec, config, root):
+    """Choose S1's FIRST required fit before metrics; never select best of runs."""
+    value = {"schema_version": 1, "outcome": "declared", "slot": "S1",
+        "selection_rule": "first_required_fit_before_metrics", "source_git_sha": spec["source_git_sha"],
+        "execution": spec["execution"], "bundle_sha256": config["bundle_sha256"],
+        "data_manifest_sha256": spec["bindings"]["data_manifest_sha256"],
+        "admission_sha256": spec["bindings"]["admission_sha256"], "split_sha256": spec["bindings"]["split_sha256"],
+        "qualification_recomputations": 3, "formal_E1": "not_run", "declared_at": datetime.now(timezone.utc).isoformat()}
+    immutable(Path(root) / "qualification-plan.json", value)
+    return value
+
+
+def select_qualification(plan, record, root):
+    """Bind the first S1 fit immediately, before invoking any quality gate."""
+    require(plan == read(Path(root) / "qualification-plan.json") and plan["slot"] == "S1"
+            and plan["selection_rule"] == "first_required_fit_before_metrics"
+            and record["git_sha"] == plan["source_git_sha"] and record["dirty_worktree"] is False
+            and record["test_read"] is False and record["read_partitions"] == ["train", "validation"]
+            and record["data_manifest_sha256"] == plan["data_manifest_sha256"]
+            and record["split_sha256"] == plan["split_sha256"], "qualification_first_fit_binding_mismatch")
+    value = {"schema_version": 1, "outcome": "selected", "slot": "S1", "selection_rule": plan["selection_rule"],
+        "plan_sha256": sha(canonical(plan)), "source_git_sha": record["git_sha"],
+        "model_artifact_sha256": record["model"]["sha256"], "model_lineage_sha256": sha(canonical(record)),
+        "mlflow": record["mlflow"], "selected_at": datetime.now(timezone.utc).isoformat(),
+        "scope": "T18 qualification; selected before quality metrics; not formal E1"}
+    immutable(Path(root) / "qualified-selection.json", value)
+    return value
+
+
 def clean_start(spec, root):
     """S1's real isolated core → fit → T11/T12 → A3 → API/catalog/Registry.
 
@@ -368,8 +406,9 @@ def clean_start(spec, root):
     """
     from ats_mlops.quality.gate import run_gate
     from ats_mlops.release.controller import load_package
-    config = environment(spec, series="E1");root = Path(root);commands = Commands(root)
+    config = environment(spec, series="E1", qualification=True);root = Path(root);commands = Commands(root)
     from service.release_check import stage
+    plan = declare_qualification(spec, config, root)
     require(not (root / "core").exists(), "fresh_core_state_required")
     for kind in ("ps", "volume", "network"):
         argv = ["docker", "ps", "-aq"] if kind == "ps" else ["docker", kind, "ls", "-q"]
@@ -392,6 +431,7 @@ def clean_start(spec, root):
     owned_core(commands, config)
     run, repro, _ = run_pipeline(spec, config, root, commands)
     workspace = run / "workspace";final = workspace / "artifacts/training/final"
+    selected = select_qualification(plan, read(final / "run_manifest.json"), root)
     gate_request = {"validation_manifest": str(workspace / "artifacts/prepared/data_manifest.json"),
         "admission_report": str(workspace / "artifacts/prepared/admission.json"), "dataset_binding": str(workspace / "dataset-binding.json"),
         "thresholds": str(repo / "configs/quality.yaml"), "candidate": {"run_manifest": str(final / "run_manifest.json"),
@@ -419,7 +459,7 @@ def clean_start(spec, root):
     controller.activate(manifest["release_id"])
     state, observed = _consistent(controller)
     result = {"schema_version": 1, "outcome": "passed", "source_git_sha": spec["source_git_sha"],
-        "repro": repro, "mlflow": identity, "release_id": manifest["release_id"], "manifest_sha256": manifest_sha,
+        "repro": repro, "mlflow": identity, "selected_qualification_sha256": sha(canonical(selected)), "release_id": manifest["release_id"], "manifest_sha256": manifest_sha,
         "check_sha256": check_sha, "alias_fixture_version": alias_version, "state": state, "observation": observed,
         "command_evidence_sha256": commands.finish(), "retained_private_core": True,
         "scope": "T18 clean startup qualification; no E1 experimental observation"}
@@ -777,53 +817,6 @@ def e3(spec, root):
     return {"outcome": "expected_rejection", "observations": observation, "evidence_sha256": evidence_sha}
 
 
-def e5_bootstrap():
-    """Keep the full existing T11 load/identity guard; replace only score output.
-
-    The unique exact marker is checked before any test input exists. This avoids
-    a second, weaker copy of the native/pyfunc/runtime/model/source validation.
-    """
-    from ats_mlops.quality.isolated import BOOTSTRAP
-    marker = "    scores=score_rows(model,request['rows'])"
-    require(BOOTSTRAP.count(marker) == 1, "audited_scorer_interface_changed")
-    prefix = BOOTSTRAP.split(marker)[0]
-    return prefix + r'''
-    import time
-    from collections import defaultdict
-    from ats_mlops.model.baseline import score_rows as baseline_scores,MODEL_VERSION
-    check(MODEL_VERSION=='jaccard-v1')
-    baseline_files={name:source[name] for name in ('model/baseline.py','data/dataset.py')}
-    baseline_sha=hashlib.sha256(canonical({'version':'jaccard-v1','source_sha256':baseline_files})).hexdigest()
-    check(baseline_sha==request['baseline_artifact_sha256'])
-    warmup=request['warmup_rows'];check(warmup)
-    # Warmup is independently admitted validation only, never a test group.
-    baseline_scores(warmup);score_rows(model,warmup)
-    groups=defaultdict(list)
-    for row in request['rows']:groups[row['vacancy_id']].append(row)
-    output=[];latencies=[]
-    for group,rows in sorted(groups.items()):
-        start=time.perf_counter();baseline=baseline_scores(rows);baseline_seconds=time.perf_counter()-start
-        start=time.perf_counter();predictions=score_rows(model,rows);model_seconds=time.perf_counter()-start
-        check(set(baseline)==set(predictions)=={(row['vacancy_id'],row['candidate_id']) for row in rows})
-        for row in sorted(rows,key=lambda row:row['candidate_id']):
-            key=(group,row['candidate_id'])
-            check(type(row['relevance']) is int and row['relevance'] in (0,1))
-            output.append({'group_id':group,'candidate_id':key[1],'relevance':row['relevance'],
-                           'baseline_score':float(baseline[key]),'model_score':float(predictions[key])})
-        latencies.append({'group_id':group,'baseline_seconds':baseline_seconds,'model_seconds':model_seconds})
-    for name,module in list(sys.modules.items()):
-        if name=='ats_mlops' or name.startswith('ats_mlops.'):check(pathlib.Path(module.__file__).resolve().is_relative_to(artifact/'code'))
-    print(json.dumps({'outcome':'passed','observations':{'rows':output,'groups':sorted(groups),'latencies':latencies,
-       'snapshot_sha256':request['snapshot_sha256'],'model_artifact_sha256':record['model']['sha256'],
-       'baseline_artifact_sha256':baseline_sha,'evaluated_groups_once':len(groups),'warmup':'train_validation_only'},
-       'receipt':{'isolated':True,'bytecode_disabled':True,'prior_project_import':False,'network':False,
-       'training_checkout_mounted':False,'credentials':False,'model_sha256':record['model']['sha256'],
-       'baseline_artifact_sha256':baseline_sha,'source_tree_sha256':record['source_tree_sha256']}},allow_nan=False))
-except Exception:
-    print(json.dumps({'outcome':'rejected','reason':'isolated_final_scoring_failed'}));raise SystemExit(1)
-'''
-
-
 def _qualified(spec, config):
     """Metadata and validation only; this runs before initializing the E5 ledger."""
     from ats_mlops.release.controller import load_package
@@ -832,7 +825,7 @@ def _qualified(spec, config):
     from ats_mlops.data.dataset import load_partition
     from ats_mlops.data.reservation import manifest_policy, validate_partitions
     value = config["qualified"]
-    require(set(value) == {"package", "check", "training_manifest", "admission_report", "dataset_binding"}, "invalid_qualified_inputs")
+    require(set(value) == {"package", "check", "training_manifest", "admission_report", "dataset_binding", "selection", "plan"}, "invalid_qualified_inputs")
     for key in ("check", "training_manifest", "admission_report", "dataset_binding"):document(value[key])
     package = Path(value["package"])
     require(not any(path.suffix.lower() == ".jsonl" for path in package.rglob("*")), "raw_partition_in_model_package")
@@ -845,6 +838,13 @@ def _qualified(spec, config):
             and record["params_sha256"] == spec["bindings"]["params_sha256"]
             and record["data_manifest_sha256"] == spec["bindings"]["data_manifest_sha256"]
             and baseline_identity(record) == spec["bindings"]["baseline_artifact_sha256"], "qualified_model_binding_mismatch")
+    selected, plan = document(value["selection"]), document(value["plan"])
+    require(selected["slot"] == plan["slot"] == "S1" and selected["outcome"] == "selected"
+            and selected["selection_rule"] == plan["selection_rule"] == "first_required_fit_before_metrics"
+            and selected["plan_sha256"] == sha(canonical(plan)) and selected["mlflow"] == record["mlflow"]
+            and selected["model_artifact_sha256"] == record["model"]["sha256"]
+            and selected["model_lineage_sha256"] == sha(canonical(record))
+            and selected["source_git_sha"] == plan["source_git_sha"] == record["git_sha"], "qualified_first_S1_selection_mismatch")
     training_metadata = document(value["training_manifest"])
     require(type(training_metadata["schema_version"]) is int and training_metadata["schema_version"] == 2
             and record["read_partitions"] == ["train", "validation"] and record["test_read"] is False
@@ -860,40 +860,102 @@ def _qualified(spec, config):
     return {"artifact": package / manifest["model_relative_path"], "record": record}, warmup
 
 
-def final_score(model, rows, warmup, *, snapshot_sha256, baseline_artifact_sha256, output):
-    """One offline artifact-only process, one scoring pass per complete test group."""
-    output = Path(output)
-    image = model["record"]["environment"]["image"]["id"]
-    bootstrap = e5_bootstrap()
-    name = "ats-final-score-" + uuid.uuid4().hex[:12]
-    inspected = subprocess.run(["docker", "image", "inspect", "--format", "{{.Id}}", image], capture_output=True, text=True, check=True)
-    require(inspected.stdout.strip() == image, "final_runtime_image_unavailable")
-    with tempfile.TemporaryDirectory(prefix="ats-final-private-") as private:
-        request = {"record": model["record"], "rows": rows, "warmup_rows": warmup,
-                   "snapshot_sha256": snapshot_sha256, "baseline_artifact_sha256": baseline_artifact_sha256}
-        Path(private, "request.json").write_bytes(canonical(request))
-        command = ["docker", "run", "--rm", "--pull=never", "--name", name, "--network", "none", "--read-only", "--cpus", "1", "--memory", "1536m",
-            "--user", f"{os.getuid()}:{os.getgid()}", "--workdir", "/tmp", "--tmpfs", "/tmp:rw,size=128m,mode=1777",
-            "--mount", f"type=bind,source={model['artifact'].resolve()},target=/artifact,readonly", "--mount", f"type=bind,source={private},target=/input,readonly",
-            "-e", "HOME=/tmp", "-e", "USER=ats-final", "-e", "LOGNAME=ats-final", "-e", "PYTHONPATH=", "-e", "MLFLOW_TRACKING_URI=",
-            "-e", "AWS_ACCESS_KEY_ID=", "-e", "AWS_SECRET_ACCESS_KEY=", "-e", "AWS_SESSION_TOKEN=",
-            "-e", "OMP_NUM_THREADS=1", "-e", "OPENBLAS_NUM_THREADS=1", "-e", "MKL_NUM_THREADS=1",
-            "--entrypoint", "/opt/ml-venv/bin/python", image, "-I", "-B", "-c", bootstrap]
+class HoldoutSession:
+    """READY before durable consume; the original test snapshot travels only stdin.
+
+    Docker receives one standalone worker file, exact artifact, validation-only
+    preflight and an empty numeric output directory. No training checkout,
+    credentials, network or daemon socket enters the scoring process.
+    """
+    def __init__(self, model, warmup, *, baseline_artifact_sha256, output):
+        self.model, self.warmup = model, warmup
+        self.baseline_sha = baseline_artifact_sha256
+        self.output = Path(output)
+        self.image = model["record"]["environment"]["image"]["id"]
+        self.worker = Path(__file__).with_name("holdout_worker.py").resolve()
+        self.worker_sha = sha(self.worker.read_bytes())
+        self.name = "ats-final-score-" + uuid.uuid4().hex[:12]
+        self.process = self.private = self.stderr = None
+        self.scored = False
+
+    def _line(self, timeout):
+        require(select.select([self.process.stdout], [], [], timeout)[0], "holdout_worker_timeout")
+        line = self.process.stdout.readline(65537)
+        require(bool(line) and len(line) <= 65536 and line.endswith(b"\n"), "invalid_holdout_protocol")
+        return decode(line)
+
+    def __enter__(self):
         try:
-            completed = subprocess.run(command, capture_output=True, timeout=180)
-        finally:
-            subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=20)
-    # The only durable scoring payload is numeric; text/labels input temp is gone.
-    result = decode(completed.stdout.strip().splitlines()[-1])
-    require(completed.returncode == 0 and result["outcome"] == "passed", "final_scoring_failed")
-    receipt = result["receipt"]
-    require(receipt["model_sha256"] == model["record"]["model"]["sha256"]
-            and receipt["baseline_artifact_sha256"] == baseline_artifact_sha256
-            and receipt["source_tree_sha256"] == model["record"]["source_tree_sha256"]
-            and receipt["isolated"] is True and receipt["bytecode_disabled"] is True
-            and all(receipt[key] is False for key in ("prior_project_import", "network", "training_checkout_mounted", "credentials")), "final_scoring_binding_mismatch")
-    immutable(output / "scorer.json", {"image_id": image, "bootstrap_sha256": sha(bootstrap.encode()), **receipt})
-    return result["observations"]
+            require(subprocess.run(["docker", "image", "inspect", "--format", "{{.Id}}", self.image],
+                capture_output=True, text=True, check=True).stdout.strip() == self.image, "final_runtime_image_unavailable")
+            require(not self.output.exists() and not self.output.is_symlink(), "fresh_worker_output_required")
+            self.output.mkdir(parents=True, mode=0o700)
+            self.private = tempfile.TemporaryDirectory(prefix="ats-final-preflight-")
+            preflight = {"schema_version": 1, "record": self.model["record"], "warmup_rows": self.warmup,
+                         "baseline_artifact_sha256": self.baseline_sha}
+            immutable(Path(self.private.name) / "preflight.json", preflight)
+            self.stderr = (self.output.parent / (self.output.name + "-stderr.txt")).open("xb")
+            argv = ["docker", "run", "--rm", "-i", "--pull=never", "--name", self.name, "--network", "none", "--read-only",
+                "--cpus", "1", "--memory", "1536m", "--user", f"{os.getuid()}:{os.getgid()}", "--workdir", "/tmp",
+                "--tmpfs", "/tmp:rw,size=128m,mode=1777", "--mount", f"type=bind,source={self.model['artifact'].resolve()},target=/artifact,readonly",
+                "--mount", f"type=bind,source={self.private.name},target=/input,readonly",
+                "--mount", f"type=bind,source={self.worker},target=/worker.py,readonly",
+                "--mount", f"type=bind,source={self.output.resolve()},target=/out",
+                "-e", "HOME=/tmp", "-e", "USER=ats-final", "-e", "LOGNAME=ats-final", "-e", "PYTHONPATH=", "-e", "MLFLOW_TRACKING_URI=",
+                "-e", "AWS_ACCESS_KEY_ID=", "-e", "AWS_SECRET_ACCESS_KEY=", "-e", "AWS_SESSION_TOKEN=",
+                "-e", "OMP_NUM_THREADS=1", "-e", "OPENBLAS_NUM_THREADS=1", "-e", "MKL_NUM_THREADS=1",
+                "--entrypoint", "/opt/ml-venv/bin/python", self.image, "-I", "-B", "/worker.py", "--request", "/input/preflight.json", "--output", "/out"]
+            self.process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.stderr)
+            ready = self._line(180)
+            expected = {"status": "ready", "worker_sha256": self.worker_sha, "warmup": "train_validation_only",
+                "receipt": {"isolated": True, "bytecode_disabled": True, "prior_project_import": False, "network": False,
+                "training_checkout_mounted": False, "credentials": False, "model_sha256": self.model["record"]["model"]["sha256"],
+                "baseline_artifact_sha256": self.baseline_sha, "source_tree_sha256": self.model["record"]["source_tree_sha256"]}}
+            require(canonical(ready) == canonical(expected) and canonical(read(self.output / "ready.json")) == canonical(ready),
+                    "final_scoring_preflight_mismatch")
+            self.ready = ready
+            return self
+        except BaseException:
+            self.close()
+            raise
+
+    def score(self, snapshot):
+        from .holdout_worker import validate_numeric
+        require(not self.scored and self.process is not None, "one_snapshot_only")
+        self.scored = True
+        message = {"schema_version": 1, "snapshot_sha256": snapshot["sha256"], "pair_ids_sha256": snapshot["pair_ids_sha256"],
+                   "ground_truth_sha256": snapshot["ground_truth_sha256"], "snapshot": {"rows": snapshot["rows"]}}
+        # Generic evaluate_once has already fsynced and SQL-bound numeric truth.
+        stdout, _ = self.process.communicate(canonical(message), timeout=180)
+        require(self.process.returncode == 0 and len(stdout) <= 65536 and len(stdout.splitlines()) == 1, "final_scoring_failed")
+        final = decode(stdout)
+        numeric, truth, commit = (read(self.output / name) for name in ("numeric.json", "truth.json", "commit.json"))
+        validate_numeric(self.ready, truth, numeric)
+        hashes = {key: sha((self.output / filename).read_bytes()) for key, filename in
+                  (("ready_sha256", "ready.json"), ("truth_sha256", "truth.json"), ("numeric_sha256", "numeric.json"))}
+        expected = {"schema_version": 1, "status": "completed", "worker_sha256": self.worker_sha, **hashes,
+                    "rows": len(truth["rows"]), "groups": len(numeric["groups"]),
+                    **{key: snapshot[key if key != "snapshot_sha256" else "sha256"] for key in
+                       ("snapshot_sha256", "pair_ids_sha256", "ground_truth_sha256")}}
+        require(canonical(commit) == canonical(expected) and canonical(final) == canonical({"status": "completed",
+                "numeric_sha256": hashes["numeric_sha256"], "commit_sha256": sha((self.output / "commit.json").read_bytes())}),
+                "final_numeric_commit_mismatch")
+        return numeric
+
+    def close(self):
+        if self.process is not None:
+            if self.process.poll() is None:
+                self.process.kill()
+            self.process.wait(timeout=20)
+            for stream in (self.process.stdin, self.process.stdout):
+                if stream and not stream.closed:stream.close()
+        if self.stderr is not None:self.stderr.close()
+        if self.private is not None:self.private.cleanup()
+        # Exact unique container only. Never prune or stop another namespace.
+        subprocess.run(["docker", "rm", "-f", self.name], capture_output=True, timeout=20)
+
+    def __exit__(self, *error):
+        self.close()
 
 
 def evaluate_e5(directory, guard_path, authorization):
@@ -930,7 +992,8 @@ def evaluate_e5(directory, guard_path, authorization):
         require(document(holdout["manifest"]) == manifest, "holdout_metadata_changed")
         rows = load_partition(Path(holdout["manifest"]["path"]), "test", final_evaluation=True)
         return {"sha256": manifest["artifacts"]["test"]["sha256"], "rows": rows}
-    def score_both(snapshot):
-        return final_score(model, snapshot["rows"], warmup, snapshot_sha256=snapshot["sha256"],
-                           baseline_artifact_sha256=spec["bindings"]["baseline_artifact_sha256"], output=Path(directory) / "E5")
-    return evaluate_once(directory, guard_path, read_snapshot, score_both)
+    # Model/metadata checks and validation-only warmup finish BEFORE the ledger
+    # is initialized or the durable holdout intent is consumed.
+    with HoldoutSession(model, warmup, baseline_artifact_sha256=spec["bindings"]["baseline_artifact_sha256"],
+                        output=Path(directory) / "E5-worker") as session:
+        return evaluate_once(directory, guard_path, read_snapshot, session.score)

@@ -18,7 +18,8 @@
     "baseline_artifact_sha256": null,
     "model_artifact_sha256": null,
     "model_lineage_sha256": null,
-    "calibration_sha256": null
+    "calibration_sha256": null,
+    "effective_config_sha256": null
   },
   "test_inventory": {"pairs": null, "groups": null, "group_ids_sha256": null, "pair_ids_sha256": null},
   "registry_before": {"runs": [], "versions": []},

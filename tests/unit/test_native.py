@@ -1,6 +1,7 @@
 """Native adapter contract tests. No Docker, fits, API, original test or real ledger."""
 from copy import deepcopy
 import json
+import io
 import os
 from pathlib import Path
 import subprocess
@@ -77,34 +78,79 @@ class NativeTransportTests(unittest.TestCase):
 
 
 class FinalScorerTests(unittest.TestCase):
-    def test_reuses_whole_audited_guard_before_any_baseline_or_score(self):
-        bootstrap = native.e5_bootstrap();compile(bootstrap, "<isolated-final>", "exec")
-        self.assertLess(bootstrap.index("model=mlflow.sklearn.load_model"), bootstrap.index("from ats_mlops.model.baseline"))
-        for guard in ("sys.flags.isolated", "sys.dont_write_bytecode", "find_spec('ats_mlops') is None", "__pycache__", "classifier.get_params()==record['effective_classifier_params']"):
-            self.assertIn(guard, bootstrap)
-        self.assertNotIn(".fit(", bootstrap)
-        self.assertEqual(1, bootstrap.count("predictions=score_rows(model,rows)"))
-        self.assertEqual(1, bootstrap.count("baseline=baseline_scores(rows)"))
-
-    def test_artifact_only_transport_and_receipt_binding(self):
+    def test_first_qualification_slot_is_declared_before_fit_and_not_replaceable(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder);artifact = root / "model";artifact.mkdir()
-            record = {"environment": {"image": {"id": "sha256:" + "a"*64}}, "model": {"sha256": "b"*64}, "source_tree_sha256": "c"*64}
-            receipt = dict(isolated=True, bytecode_disabled=True, prior_project_import=False, network=False, training_checkout_mounted=False,
-                           credentials=False, model_sha256="b"*64, baseline_artifact_sha256="d"*64, source_tree_sha256="c"*64)
-            observed = {"toy_numeric": True}
+            root = Path(folder);value = spec();config = {"bundle_sha256": "f"*64}
+            plan = native.declare_qualification(value, config, root)
+            self.assertEqual("S1", plan["slot"])
+            self.assertFalse((root / "qualified-selection.json").exists())
+            record = {"git_sha": value["source_git_sha"], "dirty_worktree": False, "test_read": False,
+                "read_partitions": ["train", "validation"], "data_manifest_sha256": plan["data_manifest_sha256"],
+                "split_sha256": plan["split_sha256"], "model": {"sha256": "a"*64}, "mlflow": {"run_id": "1"*32, "model_version": "1"}}
+            selected = native.select_qualification(plan, record, root)
+            self.assertEqual(record["mlflow"], selected["mlflow"])
+            for changed in (deepcopy(record), deepcopy(record)):
+                changed["mlflow"]["run_id"] = "2"*32
+                with self.assertRaisesRegex(experiment.ExperimentError, "immutable_receipt"):
+                    native.select_qualification(plan, changed, root)
+            with self.assertRaisesRegex(experiment.ExperimentError, "immutable_receipt"):
+                native.declare_qualification(value, config, root)
+
+    def test_streaming_worker_is_ready_before_test_snapshot_and_keeps_only_numeric(self):
+        from tests.unit.test_holdout_worker import w, ready, message, toy_session
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder);artifact = root / "model";artifact.mkdir();output = root / "worker"
+            record = {"environment": {"image": {"id": "sha256:"+"a"*64}}, "model": {"sha256": "a"*64}, "source_tree_sha256": "c"*64}
+            calls = []
+            test = self
+            class Process:
+                def __init__(self, argv, **kwargs):
+                    test.assertIn("none", argv);test.assertIn("--read-only", argv)
+                    test.assertIn("-I", argv);test.assertIn("-B", argv);test.assertIn("-i", argv)
+                    mounts = [argv[i+1] for i,item in enumerate(argv[:-1]) if item == "--mount"]
+                    test.assertEqual(4, len(mounts));test.assertEqual(3, sum("readonly" in item for item in mounts))
+                    test.assertFalse(any("docker.sock" in item or "target=/source" in item for item in mounts))
+                    preflight = Path(next(item.split("source=",1)[1].split(",",1)[0] for item in mounts if "target=/input" in item)) / "preflight.json"
+                    request = experiment.read(preflight)
+                    test.assertEqual({"schema_version", "record", "warmup_rows", "baseline_artifact_sha256"}, set(request))
+                    test.assertNotIn("snapshot", request)
+                    w.publish(output / "ready.json", ready())
+                    self.stdout = io.BytesIO(w.canonical(ready()));self.stdin = io.BytesIO();self.returncode = None
+                    calls.append("ready")
+                def communicate(self, payload, timeout):
+                    calls.append("snapshot");rows, truth = w.validate_snapshot(w.decode(payload))
+                    w.publish(output / "truth.json", truth)
+                    observed = w.evaluate(toy_session([], output), rows, truth)
+                    w.publish(output / "numeric.json", observed);final = w.recover(output)
+                    self.returncode = 0
+                    return w.canonical(final), None
+                def poll(self):return self.returncode
+                def wait(self, timeout):return self.returncode
             def run(argv, **kwargs):
-                if argv[:3] == ["docker", "image", "inspect"]:return subprocess.CompletedProcess(argv, 0, stdout=record["environment"]["image"]["id"] + "\n")
-                if argv[:2] == ["docker", "run"]:
-                    self.assertIn("none", argv);self.assertIn("--read-only", argv);self.assertIn("-I", argv);self.assertIn("-B", argv)
-                    mounts = [argv[i+1] for i,value in enumerate(argv[:-1]) if value == "--mount"]
-                    self.assertEqual(2, len(mounts));self.assertTrue(all("readonly" in item for item in mounts))
-                    self.assertFalse(any("docker.sock" in item or "target=/source" in item for item in mounts))
-                    return subprocess.CompletedProcess(argv, 0, stdout=experiment.canonical({"outcome": "passed", "observations": observed, "receipt": receipt}))
-                return subprocess.CompletedProcess(argv, 0, stdout=b"")
-            with patch.object(native.subprocess, "run", side_effect=run):
-                self.assertEqual(observed, native.final_score({"record": record, "artifact": artifact}, [], [], snapshot_sha256="e"*64, baseline_artifact_sha256="d"*64, output=root))
-            self.assertTrue((root / "scorer.json").exists())
+                return subprocess.CompletedProcess(argv, 0, stdout=record["environment"]["image"]["id"]+"\n")
+            payload = message()
+            snapshot = dict(sha256=payload["snapshot_sha256"], rows=payload["snapshot"]["rows"],
+                pair_ids_sha256=payload["pair_ids_sha256"], ground_truth_sha256=payload["ground_truth_sha256"])
+            with patch.object(native.subprocess, "run", side_effect=run), patch.object(native.subprocess, "Popen", Process), patch.object(native.select, "select", return_value=([True], [], [])):
+                with native.HoldoutSession({"record": record, "artifact": artifact}, [], baseline_artifact_sha256="b"*64, output=output) as session:
+                    self.assertEqual(["ready"], calls)
+                    observed = session.score(snapshot)
+                    self.assertEqual(4, len(observed["rows"]))
+                    with self.assertRaisesRegex(experiment.ExperimentError, "one_snapshot"):
+                        session.score(snapshot)
+            self.assertEqual(["ready", "snapshot"], calls)
+            self.assertFalse(any("PRIVATE" in path.read_text() for path in output.iterdir() if path.is_file()))
+
+    def test_failed_worker_preflight_never_consumes_guard_or_reads_test(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder);directory = make_study(root)
+            with patch.object(native, "environment", return_value={}), patch.object(native, "_qualified", side_effect=experiment.ExperimentError("preflight")), patch.object(experiment, "HoldoutGuard") as guard:
+                authorization = {"spec_sha256": experiment.study(directory)[1]["spec_sha256"], "holdout_lineage_sha256": experiment.holdout_key(spec()),
+                                 "actor": "root-coordinator", "scope": "one_attempt_synthetic_final_test"}
+                with self.assertRaisesRegex(experiment.ExperimentError, "preflight"):
+                    native.evaluate_e5(directory, root / "absent.sqlite", authorization)
+                guard.assert_not_called()
+            self.assertFalse((root / "absent.sqlite").exists())
 
     def test_no_authorization_reaches_neither_model_preflight_nor_test_guard(self):
         with tempfile.TemporaryDirectory() as folder:

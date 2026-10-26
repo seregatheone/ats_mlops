@@ -13,6 +13,15 @@ five real human/automation pairs exist; an AI run cannot be the manual half.
 The available corpus is publishable synthetic data (`demo_only`). No independent
 real hiring corpus or independent real hiring-quality result is established.
 
+The qualified candidate is the **first required S1 qualification fit**, declared
+before fitting or inspecting metrics in `qualification-plan.json`. Its exact
+private Registry run/version and model are immediately bound in
+`qualified-selection.json`; rejection blocks qualification rather than selecting
+another result. Later three T18 recomputations establish reproducibility and do
+not replace that candidate. The S1 fit plus those three qualification fits are
+separate from formal E1. The private T13 catalog, Airflow and Registry use their
+own real identities; a model number from the default Registry is not transplanted.
+
 ## Evidence matrix
 
 | Scenario | Required actual evidence and semantic checks | R requirements |
@@ -49,6 +58,11 @@ Frozen inputs must include clean candidate/run/artifact and source; authoritativ
 schema2 dataset/admission/DVC/split/reservation identity; feature state/config;
 ML/monitoring locks; exact runtime images/platform; one thread and measured
 resource limits. Draft placeholders are blocked, never passing defaults.
+The effective monitoring-rule fingerprint is frozen separately from raw config
+and calibration artifact hashes. It binds selected Wasserstein threshold/share,
+feature columns/constants, provider identity and eligibility minima, excluding
+data-dependent statistics. E4 uses the qualified model's exact reference and this
+same rule across windows and the subsequent ACTIVE reference refresh.
 
 Declared policies before E1–E5:
 

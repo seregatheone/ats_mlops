@@ -33,7 +33,7 @@ FAULTS = ("corrupt_data", "minio_unavailable", "incomplete_artifact", "bad_candi
 BINDINGS = {"protocol_sha256", "data_manifest_sha256", "admission_sha256", "root_policy_sha256",
             "protected_test_documents_sha256", "test_partition_sha256", "split_sha256", "features_sha256",
             "params_sha256", "environment_sha256", "baseline_artifact_sha256", "model_artifact_sha256",
-            "model_lineage_sha256", "calibration_sha256"}
+            "model_lineage_sha256", "calibration_sha256", "effective_config_sha256"}
 EXECUTION = dict(search_mode="frozen", smoke=False, C=1.0, max_features=2000,
                  model_seed=20261026, data_seed=20261027, threads=1)
 POLICIES = {
