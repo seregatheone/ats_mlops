@@ -60,7 +60,9 @@ def main(argv=None):
         command = {"restart": ["restart"], "stop": ["stop"], "status": ["ps", "--format", "json"], "config": ["config", "--quiet"]}[args.command]
     result = run(compose + command, env=env)
     if args.command == "status":
-        print(result.stdout.decode())
+        rows = [json.loads(line) for line in result.stdout.decode().splitlines() if line.strip()]
+        print(json.dumps([{key: row.get(key) for key in ("Name", "State", "Health", "Publishers", "Image")}
+                          for row in rows], sort_keys=True))
     else:
         print(json.dumps({"outcome": "passed", "command": args.command}))
 

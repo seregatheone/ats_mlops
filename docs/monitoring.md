@@ -36,7 +36,9 @@ Images are pinned by digest in [images.json](../monitoring/images.json):
 [Prometheus 3.15.1](https://prometheus.io/download/) and
 [Grafana OSS 13.2.4](https://grafana.com/grafana/download), plus the cached pinned
 Python stdlib collector image. Prometheus/Grafana use persistent native volumes.
-Their limits are 256 MiB / 0.5 CPU each; the collector is 128 MiB / 0.25 CPU.
+Their limits are 256 MiB / 0.5 CPU for Prometheus and 384 MiB / 0.5 CPU for
+Grafana; the collector is 128 MiB / 0.25 CPU. Grafana's initial startup measured
+222.7 MiB against a trial 256 MiB limit, so its limit was raised before the gate.
 Prometheus configures seven-day / 256 MB retention; WAL/head add storage overhead. Limits do not prove
 capacity; check actual memory and OOM/restart state alongside core/Airflow.
 
