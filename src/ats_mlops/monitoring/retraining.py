@@ -170,11 +170,47 @@ class MonitoringReader:
         except ImportError:
             raise p.PolicyError('monitoring_not_integrated') from None
         config, config_sha = configuration(spec['config'],with_sha=True)
-        reference, _ = load_reference(spec['reference'],spec['reference_sha256'])
+        reference, matrices = load_reference(spec['reference'],spec['reference_sha256'])
         events, export = load_export(spec['export'])
         records, feedback = load_feedback(spec['feedback'])
-        return {'config':config,'config_sha':config_sha,'reference':reference,'events':events,
+        return {'config':config,'config_sha':config_sha,'reference':reference,'reference_matrices':matrices,'events':events,
                 'export':export,'records':records,'feedback':feedback,'assess':assess,'verified':verified}
+
+
+def monitoring_decisions(spec, loaded, calibration, card, selected):
+    """Derive decisions from persisted real-provider results, not declared flags."""
+    from .drift import constants, normalize_evidently, numeric_rows
+    from .feedback import NUMERIC
+    config = loaded['config']; fixed = constants(loaded['reference_matrices']['train'])
+    columns = [name for name in NUMERIC if name not in fixed]
+    p.require(columns and p.canonical(calibration['constant_columns']) == p.canonical(fixed), 'calibration_reference_mismatch')
+    observations = calibration['observations']
+    p.require(isinstance(observations,list) and 0 < len(observations) <= len(config['threshold_grid'])
+              and calibration['seed'] == config['calibration_seed'], 'invalid_calibration_observations')
+    expected_files = set()
+    for index, observation in enumerate(observations):
+        threshold = config['threshold_grid'][index]
+        p.require(set(observation) == {'threshold','results'} and p.canonical(observation['threshold']) == p.canonical(threshold)
+                  and set(observation['results']) == {'control','permuted_control','shifted'}, 'calibration_grid_mismatch')
+        decisions = {}
+        for name in ('control','permuted_control','shifted'):
+            stem = f'threshold-{index}-{name}/evidently'
+            expected_files.update({stem+'.json',stem+'.html'})
+            result = normalize_evidently(document(Path(spec['calibration'])/(stem+'.json')),columns,config,threshold,fixed)
+            p.require(p.canonical(result) == p.canonical(observation['results'][name]),'calibration_decision_mismatch')
+            decisions[name] = result['detected']
+        passed = not decisions['control'] and not decisions['permuted_control'] and decisions['shifted']
+        p.require(passed == (index == len(observations)-1), 'calibration_selection_mismatch')
+    p.require(set(calibration['files']) == expected_files
+              and p.canonical(calibration['threshold']) == p.canonical(observations[-1]['threshold']), 'calibration_selection_mismatch')
+    if card['outcome'] == 'passed':
+        p.require(set(card['files']) == {'quality.json','evidently.json','evidently.html'},'window_artifact_mismatch')
+        current = numeric_rows([dict(item['features'],score=item['score']) for event in selected for item in event['candidates']])
+        p.require(all(all(row[name] == value for row in current) for name,value in fixed.items()),'constant_reference_changed')
+        result = normalize_evidently(document(Path(spec['window'])/'evidently.json'),columns,config,calibration['threshold'],fixed)
+        p.require(p.canonical(result) == p.canonical(card['drift']),'window_drift_decision_mismatch')
+    else:
+        p.require(set(card['files']) == {'quality.json'} and card['drift'] == {'status':'undefined','detected':None},'undefined_window_artifact_mismatch')
 
 
 def verify_window(spec, observed, *, reader=None, source_repository):
@@ -234,6 +270,7 @@ def verify_window(spec, observed, *, reader=None, source_repository):
     if defined:
         p.require(card['drift']['method'] == calibration['method'] and card['drift']['threshold'] == calibration['threshold']
                   and card['drift']['drift_share'] == calibration['drift_share'], 'window_drift_config_mismatch')
+    monitoring_decisions(spec,loaded,calibration,card,selected)
     reference['_config_sha256'] = loaded['config_sha']
     binding = reference_binding(reference,spec['reference_sha256'],spec['bundle'],observed)
     evidence = p.WindowEvidence(card['window_id'],start,end,binding.cohort,spec['window_sha256'],

@@ -16,7 +16,7 @@ import unittest
 from unittest.mock import patch
 
 from ats_mlops.monitoring import policy as p, policy_worker as worker
-from ats_mlops.monitoring.retraining import AirflowAPI, NativePolicy, candidate_conf, file_sha, reference_binding, save_candidate_export, semantic_labelset
+from ats_mlops.monitoring.retraining import AirflowAPI, NativePolicy, candidate_conf, file_sha, monitoring_decisions, reference_binding, save_candidate_export, semantic_labelset
 from ats_mlops.monitoring.retraining_batch import HostBatch, execution_plan
 from tests.unit.test_retraining_policy import START,HOUR,MINUTE,REFERENCE,MODEL,h,window,approval
 
@@ -140,6 +140,38 @@ class AdapterTests(unittest.TestCase):
             expected['worker_sha256']='c'*64
             run.return_value=subprocess.CompletedProcess([],0,json.dumps(expected),'private raw error')
             with self.assertRaisesRegex(Fail,'policy_receipt_failed'):captured[0]()
+
+    def test_policy_signal_is_derived_from_raw_provider_results_and_chosen_calibration(self):
+        from ats_mlops.monitoring.drift import normalize_evidently
+        from ats_mlops.monitoring.feedback import NUMERIC
+        config={'method':'wasserstein','drift_share':.5,'threshold_grid':[.1,.2],'calibration_seed':7}
+        def result(distance):
+            metrics=[{'metric_name':'ValueDrift','config':{'column':name,'method':'wasserstein','threshold':.1},'value':distance} for name in NUMERIC]
+            metrics.append({'metric_name':'DriftedColumnsCount','value':{'share':float(distance>=.1),'count':len(NUMERIC) if distance>=.1 else 0}})
+            return {'metrics':metrics,'tests':[{'status':'FAIL' if distance>=.1 else 'SUCCESS'}]}
+        raw={name:result(distance) for name,distance in (('control',0.),('permuted_control',0.),('shifted',.2))}
+        observations={name:normalize_evidently(value,list(NUMERIC),config,.1,{}) for name,value in raw.items()}
+        calibration={'constant_columns':{},'seed':7,'threshold':.1,'observations':[{'threshold':.1,'results':observations}],'files':{}}
+        for name,value in raw.items():
+            folder=self.root/('threshold-0-'+name);folder.mkdir()
+            (folder/'evidently.json').write_text(json.dumps(value))
+            calibration['files'].update({f'threshold-0-{name}/evidently.json':'a'*64,f'threshold-0-{name}/evidently.html':'b'*64})
+        (self.root/'evidently.json').write_text(json.dumps(result(.2)))
+        card={'outcome':'passed','files':dict.fromkeys(('quality.json','evidently.json','evidently.html'),'c'*64),
+              'drift':normalize_evidently(result(.2),list(NUMERIC),config,.1,{})}
+        loaded={'config':config,'reference_matrices':{'train':[dict.fromkeys(NUMERIC,x) for x in (.2,.4)]}}
+        selected=[{'candidates':[{'features':{name:.3 for name in NUMERIC if name!='score'},'score':.3}]}]
+        spec={'calibration':str(self.root),'window':str(self.root)}
+        monitoring_decisions(spec,loaded,calibration,card,selected)
+        changed=deepcopy(card);changed['drift']['detected']=False
+        with self.assertRaisesRegex(p.PolicyError,'window_drift_decision_mismatch'):
+            monitoring_decisions(spec,loaded,calibration,changed,selected)
+        changed=deepcopy(calibration);changed['observations'][0]['results']['control']['detected']=True
+        with self.assertRaisesRegex(p.PolicyError,'calibration_decision_mismatch'):
+            monitoring_decisions(spec,loaded,changed,card,selected)
+        changed=deepcopy(calibration);changed['threshold']=.2
+        with self.assertRaisesRegex(p.PolicyError,'calibration_selection_mismatch'):
+            monitoring_decisions(spec,loaded,changed,card,selected)
 
     def test_native_helper_cannot_accept_raw_window_or_active_claim(self):
         with self.assertRaises(p.PolicyError):
