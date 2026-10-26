@@ -114,6 +114,13 @@ class MetricsIntegrationTests(unittest.TestCase):
 
         created = False
         try:
+            status, build = http("http://127.0.0.1:9090/api/v1/status/buildinfo")
+            self.assertEqual(200, status)
+            self.assertEqual("3.15.1", json.loads(build)["data"]["version"])
+            status, health = http("http://127.0.0.1:3001/api/health")
+            self.assertEqual(200, status)
+            self.assertEqual("13.2.4", json.loads(health)["version"])
+            report["checks"]["pinned_server_versions"] = True
             self.assertFalse(docker("volume", "ls", "-q", "--filter", "name=^" + volume + "$"), "fresh evidence/volume required")
             docker("volume", "create", "--label", "ats.metrics.proof=" + str(output), volume)
             created = True
@@ -169,7 +176,7 @@ class MetricsIntegrationTests(unittest.TestCase):
             self.assertEqual(200, status)
             dashboard = json.loads(raw)
             self.assertEqual(8, len(dashboard["dashboard"]["panels"]))
-            subprocess.run(["python3", "monitoring/bootstrap.py", "restart"], check=True, capture_output=True)
+            subprocess.run(["python3", "monitoring/bootstrap.py", "restart", "--state-dir", request["monitoring_state"]], check=True, capture_output=True)
             wait_for(lambda: http("http://127.0.0.1:3001/api/health")[0] == 200)
             wait_for(lambda: bool(query(fault_expression, time=historical_time)))
             self.assertEqual(historical, query(fault_expression, time=historical_time))
