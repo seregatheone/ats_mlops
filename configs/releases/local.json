@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "project": "ats-serving",
+  "port": 3000,
+  "registry_uri": "http://127.0.0.1:5050",
+  "model_name": "ats-pair-ranking",
+  "alias": "champion",
+  "events_volume": "ats-serving-prediction-events",
+  "network": "ats-serving-network",
+  "ready_timeout_seconds": 60
+}

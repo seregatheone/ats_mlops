@@ -1,0 +1,237 @@
+{
+  "controller_python": "3.14.3",
+  "default_demo": {
+    "alias": "champion",
+    "approval_sha256": "01cf30a9c04577fd5b6b3b7caf8ef627c0922193cb1e32f077ac1b58d8efdf72",
+    "endpoint": "http://127.0.0.1:3000",
+    "events_volume": "ats-serving-prediction-events",
+    "fresh_cli_status_and_idempotent_activate": true,
+    "generation": 1,
+    "journal_sha256": "ac45189e3052310abde71b1c57012363fbecea3d508c5b54ffa69368480292bf",
+    "manifest_sha256": "6dacc847605267c917c27b32aaf81c23d5473652ca562dc3d4cc47230340ac1e",
+    "metadata_only": true,
+    "model_version": "4",
+    "network": "ats-serving-network",
+    "oom_killed": false,
+    "outcome": "active",
+    "project": "ats-serving",
+    "raw_receipt_sha256": "dbac5be61e715da82c68502f6ef5222c84c54ae9404f954f2269eb6860453cd7",
+    "release_id": "t12-model4-59967b7",
+    "restarts": 0
+  },
+  "evidence_scope": "demo_only",
+  "executable_sha": "5fd94b02fdc5f5e44ccb2fa1c03a9b1150c5fd50",
+  "fixed_findings": [
+    "Docker Desktop ordinary owned bridge required for host loopback publication.",
+    "Typed missing-alias response is HTTP400 in MLflow3.17.2; other errors fail closed.",
+    "Darwin Docker Desktop bind Source accepts exact /host_mnt+expected alias only.",
+    "Per-entry payload checksum verifies final valid-JSON journal entry; old unchecked format rejected.",
+    "Unhealthy target restores local verified previous API before Registry reconciliation."
+  ],
+  "fixture_cleanup": {
+    "completed": true,
+    "packages_and_journal_preserved": true,
+    "prediction_db_sha256": "55120b5b0da4173002f03f93d98ba0405f73f3d9ce18ee85113af3d376c6ec49",
+    "prediction_events": 1,
+    "private_alias_deleted": true
+  },
+  "image_id": "sha256:6123886de312aeea6c0dd0fc2dfd2463bad7a4913c2f0fc76a93cfa51a8b6cf7",
+  "implementation_base_sha": "b53ef8cbde69da6dafef6fcfe1e4d03af7fdfcfb",
+  "limitations": [
+    "Local demo_only; no production/hiring quality claim.",
+    "Single-host nonblocking flock; Registry has no distributed compare-and-swap transaction.",
+    "Host stdlib coordinator3.14; actual ML/model/serving and canonical unit runtime pinned3.11.17.",
+    "The final commit adds documentation/public receipts and removes EOF-only whitespace in two Python files; actual executable remains recorded separately."
+  ],
+  "mlflow_server_version": "3.17.2",
+  "no_fit_or_tune": true,
+  "observed_downtime": {
+    "interpretation": "Surrounding successful metadata probe timestamps bound observed outages; fault case includes readiness timeout. Operation duration is separate.",
+    "probe_interval_seconds": 0.1,
+    "unavailable_upper_bounds_seconds": [
+      23.21286441688426,
+      2.436086958972737,
+      2.388237041886896,
+      2.3987045420799404,
+      2.2006728751584888
+    ]
+  },
+  "oom_killed": false,
+  "operations": [
+    {
+      "elapsed_seconds": 2.2367,
+      "name": "first_A"
+    },
+    {
+      "elapsed_seconds": 23.34167,
+      "name": "unhealthy_B_restore_A"
+    },
+    {
+      "elapsed_seconds": 0.057391,
+      "name": "reconcile_restored_A"
+    },
+    {
+      "elapsed_seconds": 2.602605,
+      "name": "crash_ready_B"
+    },
+    {
+      "elapsed_seconds": 0.056087,
+      "name": "reconcile_B"
+    },
+    {
+      "elapsed_seconds": 2.542569,
+      "name": "crash_alias_D"
+    },
+    {
+      "elapsed_seconds": 0.060226,
+      "name": "reconcile_D"
+    },
+    {
+      "elapsed_seconds": 2.529678,
+      "name": "rollback_B"
+    },
+    {
+      "elapsed_seconds": 2.476444,
+      "name": "registry_connection_refused_after_ready_D"
+    },
+    {
+      "elapsed_seconds": 0.051984,
+      "name": "reconcile_registry_recovered_D"
+    }
+  ],
+  "outcome": "passed",
+  "preserved_failed_evidence": [
+    "lifecycle-001: missing-alias HTTP400 before effects",
+    "lifecycle-002: exact Docker Desktop bind alias mismatch; previous B restored/reconciled before cleanup",
+    "D-readiness-probe: captured exact metadata/image/mount mismatch before fix"
+  ],
+  "releases": {
+    "A": {
+      "check_outcome": "passed",
+      "check_sha256": "ff0d6c025b362949d91547f1ef8cff193be00f4054f1164d7d4e7dad87b420b1",
+      "expected_incumbent": null,
+      "gate_sha256": "4629a39f659771f95713ebc98cc9247cea72cc5cd4b8447e60c00aa0d77aec35",
+      "manifest_sha256": "6dacc847605267c917c27b32aaf81c23d5473652ca562dc3d4cc47230340ac1e",
+      "model_name": "ats-pair-ranking",
+      "model_sha256": "e5d6f3bc87aa129d3b4fc31c88128084d72b91303b43bf966f77e134c79490fb",
+      "model_version": "4",
+      "release_id": "t12-model4-59967b7",
+      "required_checks_passed": 12,
+      "run_id": "418211bd1ce84cf1bdbbef4f372b1fb4"
+    },
+    "B": {
+      "check_outcome": "passed",
+      "check_sha256": "c1778efc75c505391131ed226e22a9615965073afd9101a17954fd7bd4ce2272",
+      "expected_incumbent": {
+        "model_name": "ats-pair-ranking",
+        "model_sha256": "e5d6f3bc87aa129d3b4fc31c88128084d72b91303b43bf966f77e134c79490fb",
+        "model_version": "4",
+        "release_id": "t12-model4-59967b7",
+        "release_is_fixture": false,
+        "run_id": "418211bd1ce84cf1bdbbef4f372b1fb4"
+      },
+      "gate_sha256": "e678420bf0d0ea8f41f4c24da446a6376b2120f25e5e636a4886256e97774269",
+      "manifest_sha256": "7bb892e38433b4ed89680d930552ef44199570f11e8a052a41a753234a80c4a0",
+      "model_name": "ats-pair-ranking",
+      "model_sha256": "e5d6f3bc87aa129d3b4fc31c88128084d72b91303b43bf966f77e134c79490fb",
+      "model_version": "4",
+      "release_id": "t13-B-4b7e73e",
+      "required_checks_passed": 12,
+      "run_id": "418211bd1ce84cf1bdbbef4f372b1fb4"
+    },
+    "C": {
+      "check_outcome": "passed",
+      "check_sha256": "564f403c0d62a763ceaee419476de596a993c728ec36e9bb3f2af39b4ea18bee",
+      "expected_incumbent": {
+        "model_name": "ats-pair-ranking",
+        "model_sha256": "e5d6f3bc87aa129d3b4fc31c88128084d72b91303b43bf966f77e134c79490fb",
+        "model_version": "4",
+        "release_id": "t12-model4-59967b7",
+        "release_is_fixture": false,
+        "run_id": "418211bd1ce84cf1bdbbef4f372b1fb4"
+      },
+      "gate_sha256": "e678420bf0d0ea8f41f4c24da446a6376b2120f25e5e636a4886256e97774269",
+      "manifest_sha256": "897cc94d609896ba4fc9588a669c8215099efb2fbe1c629a4f96d3806603dd13",
+      "model_name": "ats-pair-ranking",
+      "model_sha256": "e5d6f3bc87aa129d3b4fc31c88128084d72b91303b43bf966f77e134c79490fb",
+      "model_version": "4",
+      "release_id": "t13-C-4b7e73e",
+      "required_checks_passed": 12,
+      "run_id": "418211bd1ce84cf1bdbbef4f372b1fb4"
+    },
+    "D": {
+      "check_outcome": "passed",
+      "check_sha256": "1c816e4208562e168a2c1b6951be5ebdbbb687b4b91d237807df874ce20cc56d",
+      "expected_incumbent": {
+        "model_name": "ats-pair-ranking",
+        "model_sha256": "e5d6f3bc87aa129d3b4fc31c88128084d72b91303b43bf966f77e134c79490fb",
+        "model_version": "4",
+        "release_id": "t13-B-4b7e73e",
+        "release_is_fixture": false,
+        "run_id": "418211bd1ce84cf1bdbbef4f372b1fb4"
+      },
+      "gate_sha256": "980015a8166ad1b1b1ff32b12ef9bffbf3ffdc84597ecd3b58d52d0d8f1e8caf",
+      "manifest_sha256": "fee4c8f10224abfe089141310e11b7aa79352ebd925e49bbabd0cd5c8ee0755d",
+      "model_name": "ats-pair-ranking",
+      "model_sha256": "2e1ce3fd09c571ad624bdf1860077f1a79ce37128d6556214a210707d81af5e1",
+      "model_version": "5",
+      "release_id": "t13-D-4b7e73e",
+      "required_checks_passed": 12,
+      "run_id": "d267ecd265bc405a8d6497865823e883"
+    }
+  },
+  "restarts": 0,
+  "retained_previous": [
+    "t13-B-4b7e73e",
+    "t12-model4-59967b7"
+  ],
+  "reused_evidence": [
+    "T7/T9 fitted numeric model versions4/5 and their immutable lineage; no new MLflow training or registration.",
+    "T11 existing quality policy and actual validation-only gate for new B/C/D.",
+    "T12 first-release A package/check and pinned generic image; new B/C/D actual package/check."
+  ],
+  "schema_version": 1,
+  "serving_python": "3.11.17",
+  "serving_source_sha": "59967b72f963fd86472688c785c466ca4cd47f52",
+  "task": "T13 / issue14",
+  "test_partition_read": false,
+  "tests": {
+    "actual_lifecycle": {
+      "checks": {
+        "ABA_C_activate": true,
+        "API_state_alias_consistent": true,
+        "actual_unhealthy_container_restores_A": true,
+        "concurrent_process_refused": true,
+        "explicit_rollback_persistent_original_response": true,
+        "first_release_ready_alias": true,
+        "missing_approval": true,
+        "old_response_survives_update": true,
+        "process_exit_alias_confirmed": true,
+        "process_exit_target_ready": true,
+        "reconcile_idempotent": true,
+        "registry_outage_keeps_healthy_API_pending": true,
+        "rejected_check": true,
+        "stale_C_activate": true,
+        "stale_C_approve": true,
+        "tampered_package": true,
+        "two_previous_retained": true,
+        "unhealthy_target_registry_outage_local_restore": true
+      },
+      "passed": 1,
+      "raw_log_sha256": "8cdee8bc9452f6f2b1cbd0732419d6e68f16cd6c58cee29b74a4023ff95959be",
+      "raw_report_sha256": "60fd6b9a8c10f6a7a3053c1bfcd5e9abdc1672561d6736d8f0a3b5f7c7c2919c",
+      "seconds": 37.128
+    },
+    "canonical_locked_3_11": {
+      "log_sha256": "70e3fe37d57e9b0c1f16df8ac3a2b967187f960279d97ac338b05781ec6bc6e7",
+      "owner": "root",
+      "passed": 135,
+      "seconds": 11.25
+    },
+    "focused_locked_3_11": {
+      "log_sha256": "961c634dfd2f71f5227e6615bd02def95e6df071bcb9b2a0cfd568994b247b16",
+      "passed": 14,
+      "seconds": 0.545
+    }
+  }
+}

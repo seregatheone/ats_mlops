@@ -15,6 +15,10 @@ from ats_mlops.data import DataError, audit_manifest, generate_dataset
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["release"]:
+        from ats_mlops.release.cli import main as release_main
+
+        return release_main(argv[1:])
     if argv[:1] == ["orchestration"]:
         from ats_mlops.orchestration import main as orchestration_main
 
