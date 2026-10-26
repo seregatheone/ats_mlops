@@ -17,7 +17,7 @@ def spec(groups=2):
     value['source_git_sha']='a'*40;value['qualified_model_source_git_sha']='b'*40
     value['bindings']=dict.fromkeys(e.BINDINGS,'b'*64)
     value['bindings']['root_policy_sha256']=e.ROOT_POLICY_SHA256
-    value['test_inventory']={'pairs':2*groups,'groups':groups,'group_ids_sha256':e.sha(e.canonical([f'g{i:02}' for i in range(groups)]))}
+    value['test_inventory']={'pairs':2*groups,'groups':groups,'group_ids_sha256':e.sha(e.canonical([f'g{i:02}' for i in range(groups)])), 'pair_ids_sha256':e.sha(e.canonical([f'g{i:02}/{c}' for i in range(groups) for c in ('a','b')]))}
     value['registry_before']={'runs':['old-run'],'versions':['13']}
     value['adapter_bindings']={name:{'entrypoint':'tests.unit.test_experiment:toy_adapter','source_sha256':'c'*64} for name in e.SERIES}
     return value
@@ -53,11 +53,16 @@ def numeric(value):
                 baseline_artifact_sha256=value['bindings']['baseline_artifact_sha256'],evaluated_groups_once=len(groups),warmup='train_validation_only')
 
 
+def snapshot(value,observed=None):
+    observed=observed or numeric(value)
+    return {'sha256':value['bindings']['test_partition_sha256'], 'rows':[{'vacancy_id':row['group_id'],'candidate_id':row['candidate_id'],'relevance':row['relevance']} for row in observed['rows']]}
+
+
 def concurrent_evaluate(study,guard,marker):
     value=e.study(study)[0]
     def load():
         with Path(marker).open('a') as stream:stream.write('read\n')
-        return {'sha256':value['bindings']['test_partition_sha256']}
+        return snapshot(value)
     try:e.evaluate_once(study,guard,load,lambda _:numeric(value))
     except e.ExperimentError:pass
 
@@ -163,7 +168,7 @@ class ExperimentTests(unittest.TestCase):
 
     def test_guard_precedes_reader_and_prevents_cross_candidate_bypass(self):
         value=spec();directory=make_study(self.root,value=value);guard=self.root/'native-guard.sqlite3';calls=[]
-        def load():calls.append('read');return {'sha256':value['bindings']['test_partition_sha256']}
+        def load():calls.append('read');return snapshot(value)
         e.evaluate_once(directory,guard,load,lambda snapshot:(calls.append('both') or numeric(value)))
         self.assertEqual(['read','both'],calls);self.assertEqual('passed',e.summarize(directory)['series']['E5']['status'])
         other=deepcopy(value);other['bindings']['model_artifact_sha256']='c'*64;other['bindings']['protocol_sha256']='d'*64
@@ -181,12 +186,54 @@ class ExperimentTests(unittest.TestCase):
     def test_recovery_only_committed_numeric_no_reader_or_model(self):
         directory=make_study(self.root);value=e.study(directory)[0];guard=self.root/'guard'
         with patch.object(e.HoldoutGuard,'complete',side_effect=KeyboardInterrupt):
-            with self.assertRaises(KeyboardInterrupt):e.evaluate_once(directory,guard,lambda:{'sha256':value['bindings']['test_partition_sha256']},lambda _:numeric(value))
+            with self.assertRaises(KeyboardInterrupt):e.evaluate_once(directory,guard,lambda:snapshot(value),lambda _:numeric(value))
         self.assertEqual('recovery_required',e.summarize(directory)['series']['E5']['status'])
         binding=e.read(directory/'E5/numeric.json')['binding']
+        (directory/'E5/commit.json').unlink()  # crash after SQL-bound numeric, before commit publication
         e.HoldoutGuard(guard).complete(e.holdout_key(value),binding)
         self.assertEqual('passed',e.summarize(directory)['series']['E5']['status'])
         self.assertTrue((directory/'E5/failure.json').exists())
+
+    def test_ground_truth_is_durable_before_callback_and_cannot_be_substituted(self):
+        for mutation in ('candidate','ground_truth','duplicate','bool'):
+            value=spec();directory=make_study(self.root,mutation,value);guard=self.root/(mutation+'-guard')
+            def score(_snapshot):
+                original=e.read(directory/'E5/snapshot.json')
+                with e.HoldoutGuard(guard).connection() as db:
+                    row=db.execute('SELECT snapshot_sha256 FROM holdouts').fetchone()
+                self.assertEqual(e.sha(e.canonical(original)),row[0])
+                result=numeric(value)
+                if mutation=='candidate':result['rows'][0]['candidate_id']='substituted'
+                if mutation=='ground_truth':result['rows'][0]['relevance']=0
+                if mutation=='duplicate':result['rows'][1]=deepcopy(result['rows'][0])
+                if mutation=='bool':result['rows'][0]['relevance']=True
+                return result
+            with self.subTest(mutation=mutation),self.assertRaises(e.ExperimentError):
+                e.evaluate_once(directory,guard,lambda:snapshot(value),score)
+            self.assertFalse((directory/'E5/numeric.json').exists())
+            self.assertEqual('recovery_required',e.summarize(directory)['series']['E5']['status'])
+
+    def test_pair_metadata_is_checked_before_score_and_snapshot_bind_is_no_overwrite(self):
+        value=spec();directory=make_study(self.root,'wrongpair',value);guard=self.root/'wrongpair-guard'
+        wrong=snapshot(value);wrong['rows'][0]['candidate_id']='replacement'
+        with self.assertRaisesRegex(e.ExperimentError,'inventory_mismatch'):
+            e.evaluate_once(directory,guard,lambda:wrong,lambda _:self.fail('scoring must not start'))
+        directory=make_study(self.root,'correct',value);guard=self.root/'correct-guard'
+        e.evaluate_once(directory,guard,lambda:snapshot(value),lambda _:numeric(value))
+        raw=e.read(directory/'E5/numeric.json');ledger=e.HoldoutGuard(guard);key=e.holdout_key(value)
+        snapshot_sha=e.sha((directory/'E5/snapshot.json').read_bytes());numeric_sha=e.sha((directory/'E5/numeric.json').read_bytes())
+        ledger.bind_snapshot(key,raw['binding'],snapshot_sha);ledger.bind_numeric(key,raw['binding'],numeric_sha)
+        with self.assertRaisesRegex(e.ExperimentError,'snapshot_conflict'):ledger.bind_snapshot(key,raw['binding'],'f'*64)
+        with self.assertRaisesRegex(e.ExperimentError,'numeric_conflict'):ledger.bind_numeric(key,raw['binding'],'f'*64)
+
+    def test_retained_numeric_or_snapshot_tamper_blocks_recovery(self):
+        directory=make_study(self.root);value=e.study(directory)[0];guard=self.root/'guard'
+        with patch.object(e.HoldoutGuard,'complete',side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):e.evaluate_once(directory,guard,lambda:snapshot(value),lambda _:numeric(value))
+        raw=e.read(directory/'E5/numeric.json');truth=e.read(directory/'E5/snapshot.json')
+        truth['rows'][0]['relevance']=0;(directory/'E5/snapshot.json').write_bytes(e.canonical(truth))
+        with self.assertRaisesRegex(e.ExperimentError,'retained_result_changed'):
+            e.HoldoutGuard(guard).complete(e.holdout_key(value),raw['binding'])
 
     def test_two_processes_one_holdout_read(self):
         first=make_study(self.root,'first');second=make_study(self.root,'second');guard=self.root/'guard';marker=self.root/'reads'
@@ -198,7 +245,7 @@ class ExperimentTests(unittest.TestCase):
 
     def test_numeric_rebuild_without_test_or_model_and_bootstrap(self):
         value=spec(groups=10);directory=make_study(self.root,value=value)
-        e.evaluate_once(directory,self.root/'guard',lambda:{'sha256':value['bindings']['test_partition_sha256']},lambda _:numeric(value))
+        e.evaluate_once(directory,self.root/'guard',lambda:snapshot(value),lambda _:numeric(value))
         raw=directory/'E5/numeric.json';first=e.rebuild(raw,self.root/'tables');second=e.rebuild_numeric(raw)
         self.assertEqual(first,second);self.assertEqual(10,first['eligible_groups'])
         self.assertIsNotNone(first['paired_group_bootstrap']['ndcg_at_10']['percentile_95'])
@@ -208,14 +255,14 @@ class ExperimentTests(unittest.TestCase):
     def test_small_or_zero_positive_quality_no_fabricated_ci(self):
         value=spec();directory=make_study(self.root,value=value);raw=numeric(value)
         for row in raw['rows']:row['relevance']=0
-        e.evaluate_once(directory,self.root/'guard',lambda:{'sha256':value['bindings']['test_partition_sha256']},lambda _:raw)
+        e.evaluate_once(directory,self.root/'guard',lambda:snapshot(value,raw),lambda _:raw)
         result=e.rebuild_numeric(directory/'E5/numeric.json')
         self.assertEqual(0,result['eligible_groups']);self.assertIsNone(result['paired_group_bootstrap']['ndcg_at_10']['delta'])
         self.assertIsNone(result['paired_group_bootstrap']['ndcg_at_10']['percentile_95'])
 
     def test_numeric_corruption_or_wrong_snapshot_never_silently_rebuilds(self):
         directory=make_study(self.root);value=e.study(directory)[0]
-        e.evaluate_once(directory,self.root/'guard',lambda:{'sha256':value['bindings']['test_partition_sha256']},lambda _:numeric(value))
+        e.evaluate_once(directory,self.root/'guard',lambda:snapshot(value),lambda _:numeric(value))
         p=directory/'E5/numeric.json';raw=e.read(p);raw['observations']['rows'][0]['model_score']=True;p.write_bytes(e.canonical(raw))
         with self.assertRaises(e.ExperimentError):e.rebuild_numeric(p)
         second=make_study(self.root,'second',dict(spec(),study_id='second'))

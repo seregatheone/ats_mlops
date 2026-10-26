@@ -146,10 +146,11 @@ def validate_spec(value, *, template=False):
     for series in SERIES:
         require(canonical(value[series]) == canonical(POLICIES[series]), "unfrozen_experiment_policy")
     inventory = value["test_inventory"]
-    require(isinstance(inventory, dict) and set(inventory) == {"pairs", "groups", "group_ids_sha256"}, "invalid_test_inventory")
+    require(isinstance(inventory, dict) and set(inventory) == {"pairs", "groups", "group_ids_sha256", "pair_ids_sha256"}, "invalid_test_inventory")
     for key in ("pairs", "groups"):
         require(template and inventory[key] is None or type(inventory[key]) is int and inventory[key] > 0, "unqualified_test_inventory")
     require(digest(inventory["group_ids_sha256"]) or template and inventory["group_ids_sha256"] is None, "unqualified_test_groups")
+    require(digest(inventory["pair_ids_sha256"]) or template and inventory["pair_ids_sha256"] is None, "unqualified_test_pairs")
     registry = value["registry_before"]
     require(isinstance(registry, dict) and set(registry) == {"runs", "versions"}, "invalid_registry_before")
     for key in registry:
@@ -399,7 +400,9 @@ def summarize(directory):
             raw=read(numeric);intent=read(numeric.parent/"intent.json");completed=read(numeric.parent/"completed.json")
             require(raw["binding"]==_e5_binding(spec,header)
                     and intent["holdout_lineage_sha256"]==holdout_key(spec)
-                    and completed=={"outcome":"completed","holdout_lineage_sha256":holdout_key(spec),"binding_sha256":sha(canonical(raw["binding"])),"numeric_sha256":sha(canonical(raw))},"e5_completion_mismatch")
+                    and raw['snapshot']==read(numeric.parent/'snapshot.json')
+                    and completed=={"outcome":"completed","holdout_lineage_sha256":holdout_key(spec),"binding_sha256":sha(canonical(raw["binding"])),"numeric_sha256":sha(canonical(raw)),
+                        "ground_truth_snapshot_sha256":sha((numeric.parent/'snapshot.json').read_bytes())},"e5_completion_mismatch")
             rebuild_numeric(numeric);result["E5"]={"status":"passed","numeric_sha256":sha(numeric.read_bytes())}
         except (ValueError,KeyError,TypeError):result["E5"]={"status":"failed"}
     statuses=[value["status"] for value in result.values()]
@@ -413,7 +416,8 @@ class HoldoutGuard:
         self.path=Path(path);require(not self.path.is_symlink(),"invalid_guard_path");self.path.parent.mkdir(parents=True,exist_ok=True)
         with self.connection() as db:
             db.execute("PRAGMA journal_mode=WAL")
-            db.execute("CREATE TABLE IF NOT EXISTS holdouts (lineage TEXT PRIMARY KEY,binding_sha256 TEXT NOT NULL,binding_json TEXT NOT NULL,intent_sha256 TEXT NOT NULL,result_root TEXT NOT NULL,status TEXT NOT NULL,numeric_sha256 TEXT)")
+            db.execute("CREATE TABLE IF NOT EXISTS holdouts (lineage TEXT PRIMARY KEY,binding_sha256 TEXT NOT NULL,binding_json TEXT NOT NULL,intent_sha256 TEXT NOT NULL,result_root TEXT NOT NULL,status TEXT NOT NULL,numeric_sha256 TEXT,snapshot_sha256 TEXT)")
+            require([row[1] for row in db.execute('PRAGMA table_info(holdouts)')] == ['lineage','binding_sha256','binding_json','intent_sha256','result_root','status','numeric_sha256','snapshot_sha256'], 'holdout_ledger_schema_mismatch')
         _sync_directory(self.path.parent)
 
     @contextmanager
@@ -428,19 +432,40 @@ class HoldoutGuard:
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             require(db.execute("SELECT lineage FROM holdouts WHERE lineage=?",(key,)).fetchone() is None,"holdout_already_consumed")
-            db.execute("INSERT INTO holdouts VALUES (?,?,?,?,?,'consumed_intent',NULL)",(key,sha(canonical(binding)),canonical(binding).decode(),sha(canonical(intent)),str(Path(result_root).resolve())))
+            db.execute("INSERT INTO holdouts VALUES (?,?,?,?,?,'consumed_intent',NULL,NULL)",(key,sha(canonical(binding)),canonical(binding).decode(),sha(canonical(intent)),str(Path(result_root).resolve())))
+
+    def bind_snapshot(self,key,binding,snapshot_sha256):
+        require(digest(snapshot_sha256),'invalid_ground_truth_snapshot_hash')
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT binding_sha256,snapshot_sha256 FROM holdouts WHERE lineage=?',(key,)).fetchone()
+            require(row is not None and row[0]==sha(canonical(binding)) and row[1] in (None,snapshot_sha256),'holdout_snapshot_conflict')
+            if row[1] is None:db.execute("UPDATE holdouts SET snapshot_sha256=?,status='snapshot_committed' WHERE lineage=?",(snapshot_sha256,key))
+
+    def bind_numeric(self,key,binding,numeric_sha256):
+        require(digest(numeric_sha256),'invalid_retained_numeric_hash')
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT binding_sha256,snapshot_sha256,numeric_sha256 FROM holdouts WHERE lineage=?',(key,)).fetchone()
+            require(row is not None and row[0]==sha(canonical(binding)) and digest(row[1]) and row[2] in (None,numeric_sha256),'holdout_numeric_conflict')
+            if row[2] is None:db.execute("UPDATE holdouts SET numeric_sha256=?,status='numeric_retained' WHERE lineage=?",(numeric_sha256,key))
 
     def complete(self,key,binding):
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
-            row=db.execute("SELECT binding_sha256,intent_sha256,result_root FROM holdouts WHERE lineage=?",(key,)).fetchone()
-            require(row is not None and row[0]==sha(canonical(binding)),"holdout_binding_conflict")
-            root=Path(row[2]);commit=read(root/"commit.json");raw=read(root/"numeric.json")
-            require(commit=={"binding_sha256":row[0],"intent_sha256":row[1],"numeric_sha256":sha(canonical(raw))}
-                    and raw["binding"]==binding,"holdout_numeric_commit_mismatch")
+            row=db.execute("SELECT binding_sha256,intent_sha256,result_root,numeric_sha256,snapshot_sha256 FROM holdouts WHERE lineage=?",(key,)).fetchone()
+            require(row is not None and row[0]==sha(canonical(binding)) and digest(row[3]) and digest(row[4]),"holdout_binding_or_retained_result_missing")
+            root=Path(row[2]);raw=read(root/"numeric.json");snapshot=read(root/'snapshot.json')
+            require(sha((root/'numeric.json').read_bytes())==row[3] and sha((root/'snapshot.json').read_bytes())==row[4]
+                    and raw['snapshot']==snapshot and raw["binding"]==binding,"holdout_retained_result_changed")
+            expected={"binding_sha256":row[0],"intent_sha256":row[1],"numeric_sha256":row[3],"ground_truth_snapshot_sha256":row[4]}
+            # Numeric-only crash recovery: no loader or scorer callback is used.
+            if not (root/'commit.json').exists():immutable(root/'commit.json',expected)
+            commit=read(root/'commit.json')
+            require(commit==expected,"holdout_numeric_commit_mismatch")
             rebuild_numeric(root/"numeric.json")  # numeric-only recovery, never loader/scorer callbacks
             db.execute("UPDATE holdouts SET status='completed',numeric_sha256=? WHERE lineage=?",(commit["numeric_sha256"],key))
-        completion={"outcome":"completed","holdout_lineage_sha256":key,"binding_sha256":sha(canonical(binding)),"numeric_sha256":sha(canonical(raw))}
+        completion={"outcome":"completed","holdout_lineage_sha256":key,"binding_sha256":sha(canonical(binding)),"numeric_sha256":sha(canonical(raw)),"ground_truth_snapshot_sha256":row[4]}
         if (root/"completed.json").exists():require(read(root/"completed.json")==completion,"holdout_completion_changed")
         else:immutable(root/"completed.json",completion)
         return raw
@@ -449,6 +474,28 @@ class HoldoutGuard:
 def _e5_binding(spec,header):
     return {"spec_sha256":header["spec_sha256"],"freeze_sha256":header["freeze_sha256"],"bindings":spec["bindings"],
             "test_inventory":spec["test_inventory"],"policy":spec["E5"],"evidence_scope":spec["evidence_scope"]}
+
+def _truth(rows,group_key):
+    require(isinstance(rows,list) and rows,'missing_original_numeric_snapshot')
+    result=[];seen=set()
+    for row in rows:
+        group,candidate=row[group_key],row['candidate_id'];label=row['relevance']
+        require(identifier(group) and identifier(candidate) and type(label) is int and label in (0,1),'invalid_ground_truth_row')
+        require((group,candidate) not in seen,'duplicate_ground_truth_pair');seen.add((group,candidate))
+        result.append({'group_id':group,'candidate_id':candidate,'relevance':label})
+    return sorted(result,key=lambda row:(row['group_id'],row['candidate_id']))
+
+def _verify_snapshot(snapshot,binding):
+    require(isinstance(snapshot,dict) and set(snapshot)=={'schema_version','snapshot_sha256','pair_ids_sha256','ground_truth_sha256','rows'}
+            and type(snapshot['schema_version']) is int and snapshot['schema_version']==1,'invalid_ground_truth_snapshot')
+    rows=_truth(snapshot['rows'],'group_id');inventory=binding['test_inventory']
+    groups=sorted({row['group_id'] for row in rows});pairs=sorted(row['group_id']+'/'+row['candidate_id'] for row in rows)
+    require(rows==snapshot['rows'] and snapshot['snapshot_sha256']==binding['bindings']['test_partition_sha256']
+            and snapshot['ground_truth_sha256']==sha(canonical(rows))
+            and snapshot['pair_ids_sha256']==sha(canonical(pairs))==inventory['pair_ids_sha256']
+            and len(rows)==inventory['pairs'] and len(groups)==inventory['groups']
+            and sha(canonical(groups))==inventory['group_ids_sha256'],'ground_truth_inventory_mismatch')
+    return rows
 
 
 def evaluate_once(directory,guard_path,read_snapshot:Callable,score_both:Callable):
@@ -464,11 +511,20 @@ def evaluate_once(directory,guard_path,read_snapshot:Callable,score_both:Callabl
     try:
         snapshot=read_snapshot()
         require(snapshot["sha256"]==spec["bindings"]["test_partition_sha256"],"holdout_snapshot_mismatch")
+        truth=_truth(snapshot['rows'],'vacancy_id')
+        frozen_snapshot={'schema_version':1,'snapshot_sha256':snapshot['sha256'],
+            'pair_ids_sha256':sha(canonical(sorted(row['group_id']+'/'+row['candidate_id'] for row in truth))),
+            'ground_truth_sha256':sha(canonical(truth)),'rows':truth}
+        _verify_snapshot(frozen_snapshot,binding)
+        immutable(root/'snapshot.json',frozen_snapshot)
+        guard.bind_snapshot(holdout_key(spec),binding,sha(canonical(frozen_snapshot)))
+        snapshot=dict(snapshot,pair_ids_sha256=frozen_snapshot['pair_ids_sha256'],ground_truth_sha256=frozen_snapshot['ground_truth_sha256'])
         scored=score_both(snapshot)
-        raw={"schema_version":1,"binding":binding,"observations":scored}
+        raw={"schema_version":1,"binding":binding,"snapshot":frozen_snapshot,"observations":scored}
         _numeric_results(raw)
         immutable(root/"numeric.json",raw)
-        immutable(root/"commit.json",{"binding_sha256":sha(canonical(binding)),"intent_sha256":sha(canonical(intent)),"numeric_sha256":sha(canonical(raw))})
+        guard.bind_numeric(holdout_key(spec),binding,sha(canonical(raw)))
+        immutable(root/"commit.json",{"binding_sha256":sha(canonical(binding)),"intent_sha256":sha(canonical(intent)),"numeric_sha256":sha(canonical(raw)),"ground_truth_snapshot_sha256":sha(canonical(frozen_snapshot))})
         return guard.complete(holdout_key(spec),binding)
     except BaseException as error:
         immutable(root/"failure.json",{"outcome":"consumed_unknown","error_type":type(error).__name__})
@@ -476,8 +532,9 @@ def evaluate_once(directory,guard_path,read_snapshot:Callable,score_both:Callabl
 
 
 def _numeric_results(raw):
-    require(set(raw)=={"schema_version","binding","observations"} and type(raw["schema_version"]) is int and raw["schema_version"]==1,"invalid_numeric_record")
+    require(set(raw)=={"schema_version","binding","snapshot","observations"} and type(raw["schema_version"]) is int and raw["schema_version"]==1,"invalid_numeric_record")
     observed=raw["observations"];binding=raw["binding"];policy=binding["policy"]
+    truth=_verify_snapshot(raw['snapshot'],binding)
     require(canonical(policy)==canonical(POLICIES["E5"]),"unfrozen_bootstrap")
     require(set(observed)=={"rows","groups","latencies","snapshot_sha256","model_artifact_sha256","baseline_artifact_sha256","evaluated_groups_once","warmup"},"invalid_e5_observations")
     require(all(observed[k]==binding["bindings"][k] for k in ("model_artifact_sha256","baseline_artifact_sha256"))
@@ -495,6 +552,7 @@ def _numeric_results(raw):
             value=row[name+"_score"];require(number(value) and value<=1,"invalid_e5_score");scores[name][key]=value
         data.append({"vacancy_id":key[0],"candidate_id":key[1],"relevance":row["relevance"]})
     require(len(data)==binding["test_inventory"]["pairs"],"e5_pair_inventory_mismatch")
+    require(canonical(_truth(observed['rows'],'group_id'))==canonical(truth),'e5_ids_or_ground_truth_substituted')
     latencies=observed["latencies"]
     require(isinstance(latencies,list) and len(latencies)==len(groups) and {r["group_id"] for r in latencies}==set(groups)
             and all(set(r)=={"group_id","baseline_seconds","model_seconds"} and all(number(r[k]) for k in ("baseline_seconds","model_seconds")) for r in latencies),"invalid_e5_latency")

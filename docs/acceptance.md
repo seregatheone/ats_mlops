@@ -76,6 +76,16 @@ and reads only reservation metadata. No E5 ledger is initialized in preparation.
 The local guard is an operational control, not a signature against an administrator;
 there is no public force/reset path.
 
+The exact full-pair inventory digest is separately derived from sorted manifest
+`splits.test.pair_ids` metadata, without reading test rows. After durable consume,
+the reader produces one snapshot. Its numeric IDs/ground truth are fsynced and
+SQL-bound **before** invoking any scoring callback. Dropped, duplicated or
+substituted candidate IDs and any label substitution (including bools) fail.
+Retained numeric results include this truth binding; recovery verifies its
+ledger-bound hash and the retained result hash, then commits without rereading
+text or rescoring. Failure after intent without a retained result remains
+consumed/unknown. Numeric IDs/GT are private proof; publication is aggregate only.
+
 ## Later runtime window — not an instruction to execute now
 
 Only after T17 actual acceptance, zero open material defects and executable source

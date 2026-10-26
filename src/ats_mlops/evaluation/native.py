@@ -101,7 +101,7 @@ def environment(spec, *, series):
 def owned_core(commands, config):
     """Prove namespace/role ownership before any worker, disconnect or stop."""
     core = config["core"]
-    require(isinstance(core, dict) and set(core) == {"containers"} and set(core["containers"]) == {"postgres", "minio", "mlflow"}, "isolated_core_identity_required")
+    require(isinstance(core, dict) and set(core) == {"containers", "ports", "images"} and set(core["containers"]) == {"postgres", "minio", "mlflow"}, "isolated_core_identity_required")
     observations = {}
     for role, name in core["containers"].items():
         require(isinstance(name, str) and re.fullmatch(r"[a-z0-9][a-z0-9_.-]{2,127}", name), "invalid_owned_container")
@@ -109,6 +109,7 @@ def owned_core(commands, config):
         value = decode(commands.run(["docker", "inspect", "--format", fmt, name]).stdout)
         labels = value["Labels"]
         require(labels["com.docker.compose.project"] == config["project"] and labels["com.docker.compose.service"] == role
+                and value["Image"] == core["images"][role]
                 and value["State"]["Running"] is True and value["State"]["OOMKilled"] is False
                 and value["State"]["Health"]["Status"] == "healthy"
                 and set(value["Networks"]) == {config["network"]}, "foreign_or_unhealthy_core")
@@ -302,19 +303,20 @@ def _sample_http(controller, samples, stop):
         stop.wait(.1)
 
 
-def _package_io_attempt(spec, config, root, commands, *, expect_failure=True):
+def _package_io_attempt(spec, config, root, commands, *, expect_failure=True, inputs=None, release_id=None, output_name="io-package"):
     """Fresh Bento store/download through private MLflow; no credential mounts."""
-    inputs = config["fixtures"]["package_inputs"]
+    inputs = config["fixtures"]["package_inputs"] if inputs is None else inputs
     require(set(inputs) == {"gate_report", "run_manifest", "pipeline_manifest", "serving_identity"}, "package_fixture_inputs_required")
     private = Path(root) / "package-inputs";private.mkdir(exist_ok=True)
-    request = {"release_id": config["project"] + "-io-fault"}
+    request = {"release_id": release_id or config["project"] + "-io-fault"}
     for name, reference in inputs.items():
         document(reference)
         (private / (name + ".json")).write_bytes(Path(reference["path"]).read_bytes())
         require(sha((private / (name + ".json")).read_bytes()) == reference["sha256"], "package_fixture_changed")
         request[name] = "/input/" + name + ".json"
     (private / "request.json").write_bytes(canonical(request))
-    code = "import sys,json;from pathlib import Path;sys.path.insert(0,'/source');from service.package import package;package(json.loads(Path('/input/request.json').read_bytes()),Path('/output/io-package'))"
+    require(re.fullmatch(r"[a-z][a-z0-9-]{0,50}", output_name), "invalid_package_output_name")
+    code = "import sys,json;from pathlib import Path;sys.path.insert(0,'/source');from service.package import package;package(json.loads(Path('/input/request.json').read_bytes()),Path('/output/" + output_name + "'))"
     name = config["project"] + "-package-" + uuid.uuid4().hex[:8]
     command = ["docker", "run", "--rm", "--name", name, "--network", config["network"], "--cpus", "1", "--memory", "1536m",
         "--user", f"{os.getuid()}:{os.getgid()}", "--tmpfs", "/tmp:rw,size=256m,mode=1777", "-e", "HOME=/tmp", "-e", "USER=ats-package", "-e", "LOGNAME=ats-package",
@@ -326,9 +328,77 @@ def _package_io_attempt(spec, config, root, commands, *, expect_failure=True):
     finally:
         subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=20)
     if expect_failure:
-        require(result.returncode != 0 and not (Path(root) / "io-package").exists(), "minio_fault_was_not_observed")
+        require(result.returncode != 0 and not (Path(root) / output_name).exists(), "minio_fault_was_not_observed")
     else:
-        require(result.returncode == 0 and (Path(root) / "io-package/release_manifest.json").is_file(), "minio_recovery_not_verified")
+        require(result.returncode == 0 and (Path(root) / output_name / "release_manifest.json").is_file(), "package_io_not_verified")
+
+
+def clean_start(spec, root):
+    """S1's real isolated core → fit → T11/T12 → A3 → API/catalog/Registry.
+
+    Explicit invocation only in root's maintenance window. Existing resources
+    cause rejection; this routine never stops another core to make room.
+    """
+    from ats_mlops.quality.gate import run_gate
+    from ats_mlops.release.controller import load_package
+    from service.release_check import stage
+
+    config = environment(spec, series="E1");root = Path(root);commands = Commands(root)
+    require(not (root / "core").exists(), "fresh_core_state_required")
+    for kind in ("ps", "volume", "network"):
+        argv = ["docker", "ps", "-aq"] if kind == "ps" else ["docker", kind, "ls", "-q"]
+        existing = commands.run([*argv, "--filter", "label=com.docker.compose.project=" + config["project"]]).stdout.strip()
+        require(not existing, "fresh_core_namespace_required")
+    ports = config["core"]["ports"]
+    require(set(ports) == {"minio", "console", "mlflow"} and len(set(ports.values())) == 3
+            and all(type(port) is int and 10000 <= port <= 65535 for port in ports.values())
+            and urlparse(config["release"]["registry_uri"]).port == ports["mlflow"], "private_core_ports_required")
+    repo = Path(config["repo"])
+    commands.run([sys.executable, "-B", repo / "scripts/bootstrap_core.py", "init", "--state-dir", root / "core", "--project", config["project"],
+        "--minio-port", ports["minio"], "--console-port", ports["console"], "--mlflow-port", ports["mlflow"]])
+    images = config["core"]["images"]
+    require(set(images) == {"postgres", "minio", "minio-init", "mlflow"}
+            and all(re.fullmatch(r"sha256:[0-9a-f]{64}", image) for image in images.values()), "pinned_core_images_required")
+    immutable(root / "core-images.json", {"services": {name: {"image": image} for name, image in images.items()}})
+    compose = ["docker", "compose", "--project-directory", str(repo), "--env-file", str(root / "core/core.env"), "-p", config["project"],
+               "-f", str(repo / "compose.yaml"), "-f", str(root / "core-images.json"), "--profile", "core"]
+    commands.run([*compose, "up", "-d", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "180"], timeout=210)
+    owned_core(commands, config)
+    run, repro, _ = run_pipeline(spec, config, root, commands)
+    workspace = run / "workspace";final = workspace / "artifacts/training/final"
+    gate_request = {"validation_manifest": str(workspace / "artifacts/prepared/data_manifest.json"),
+        "admission_report": str(workspace / "artifacts/prepared/admission.json"), "dataset_binding": str(workspace / "dataset-binding.json"),
+        "thresholds": str(repo / "configs/quality.yaml"), "candidate": {"run_manifest": str(final / "run_manifest.json"),
+            "pipeline_manifest": str(workspace / "artifacts/evaluation/pipeline_manifest.json"), "model_dir": str(final / "model")}, "incumbent": None}
+    gate = run_gate(gate_request, root / "model-gate.json")
+    require(gate["outcome"] == "passed", "clean_start_model_gate_rejected")
+    def reference(path):
+        return {"path": str(path), "sha256": sha(Path(path).read_bytes())}
+    inputs = {"gate_report": reference(root / "model-gate.json"), "run_manifest": reference(final / "run_manifest.json"),
+              "pipeline_manifest": reference(workspace / "artifacts/evaluation/pipeline_manifest.json"),
+              "serving_identity": config["fixtures"]["serving_identity"]}
+    _package_io_attempt(spec, config, root, commands, expect_failure=False, inputs=inputs,
+                        release_id=config["project"] + "-startup", output_name="package")
+    record = read(final / "run_manifest.json");identity = record["mlflow"]
+    code = "import mlflow,json;c=mlflow.MlflowClient();v=c.create_model_version(" + repr(identity["model_name"]) + ",source=" + repr(identity["source"]) + ",run_id=" + repr(identity["run_id"]) + ",await_creation_for=120);print(json.dumps({'version':str(v.version)}))"
+    alias_version = decode(worker(commands, config, run, ["-c", code]).stdout.strip().splitlines()[-1])["version"]
+    check_request = {"package": str(root / "package"), **{key: gate_request[key] for key in ("validation_manifest", "admission_report", "dataset_binding")},
+                     "alias_other_version": alias_version, "registry_transport": {"network": config["network"], "tracking_uri": config["tracking_uri"]}}
+    checked = stage(check_request, root / "release-check.json")
+    require(checked["outcome"] == "passed", "clean_start_release_check_rejected")
+    manifest, manifest_sha, check_sha = load_package(root / "package", root / "release-check.json")
+    controller = _controller(config, root)
+    controller.stage(root / "package", root / "release-check.json")
+    controller.approve(manifest["release_id"], "agent-operator", "A3")
+    controller.activate(manifest["release_id"])
+    state, observed = _consistent(controller)
+    result = {"schema_version": 1, "outcome": "passed", "source_git_sha": spec["source_git_sha"],
+        "repro": repro, "mlflow": identity, "release_id": manifest["release_id"], "manifest_sha256": manifest_sha,
+        "check_sha256": check_sha, "alias_fixture_version": alias_version, "state": state, "observation": observed,
+        "command_evidence_sha256": commands.finish(), "retained_private_core": True,
+        "scope": "T18 clean startup qualification; no E1 experimental observation"}
+    immutable(root / "startup.json", result)
+    return result
 
 
 def e3(spec, root):
@@ -556,7 +626,9 @@ def evaluate_e5(directory, guard_path, authorization):
             and sha(canonical(protected)) == spec["bindings"]["protected_test_documents_sha256"]
             and manifest["artifacts"]["test"]["sha256"] == spec["bindings"]["test_partition_sha256"]
             and manifest["splits"]["test"]["rows"] == spec["test_inventory"]["pairs"]
-            and sha(canonical(sorted(manifest["splits"]["test"]["vacancy_ids"]))) == spec["test_inventory"]["group_ids_sha256"], "holdout_metadata_binding_mismatch")
+            and manifest["splits"]["test"]["groups"] == spec["test_inventory"]["groups"]
+            and sha(canonical(sorted(manifest["splits"]["test"]["vacancy_ids"]))) == spec["test_inventory"]["group_ids_sha256"]
+            and sha(canonical(sorted(manifest["splits"]["test"]["pair_ids"]))) == spec["test_inventory"]["pair_ids_sha256"], "holdout_metadata_binding_mismatch")
     def read_snapshot():
         require(document(holdout["manifest"]) == manifest, "holdout_metadata_changed")
         rows = load_partition(Path(holdout["manifest"]["path"]), "test", final_evaluation=True)

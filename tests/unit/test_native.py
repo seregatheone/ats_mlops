@@ -41,7 +41,7 @@ class NativeTransportTests(unittest.TestCase):
             with patch.object(commands, "run", return_value=result) as run:
                 with self.assertRaisesRegex(experiment.ExperimentError, "foreign_or_unhealthy"):
                     native.owned_core(commands, {"project": "ats-experiment-case", "network": "ats-experiment-case_default",
-                        "core": {"containers": dict.fromkeys(("postgres", "minio", "mlflow"), "some-container")}})
+                        "core": {"containers": dict.fromkeys(("postgres", "minio", "mlflow"), "some-container"), "ports": {}, "images": {"postgres": "sha256:" + "a"*64}}})
                 self.assertEqual(1, run.call_count)
                 self.assertEqual(["docker", "inspect"], run.call_args.args[0][:2])
                 self.assertNotIn(".Config.Env", run.call_args.args[0][3])
