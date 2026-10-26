@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from ats_mlops import orchestration as runner
+from ats_mlops.lineage.manifest import inventory_hash
 
 
 def request():
@@ -81,11 +82,12 @@ class OrchestrationTests(unittest.TestCase):
             root = Path(temporary)
             model = {"run_id": "old-run", "exact_uri": "models:/model/7"}
             path = root / "run/workspace/artifacts/evaluation/pipeline_manifest.json"
-            runner.write(path, {"training": {"mlflow": model}})
             training = root / "run/workspace/artifacts/training/final"
             (training / "model").mkdir(parents=True)
             (training / "model/payload").write_text("model")
-            runner.write(training / "run_manifest.json", {"mlflow": model, "model": {"files": {"payload": runner.file_hash(training / "model/payload")}}})
+            files = {"payload": runner.file_hash(training / "model/payload")}
+            runner.write(training / "run_manifest.json", {"mlflow": model, "model": {"files": files, "sha256": inventory_hash(files)}})
+            runner.write(path, {"training": {"mlflow": model, "run_manifest_sha256": runner.file_hash(training / "run_manifest.json"), "model_sha256": inventory_hash(files)}})
             receipt = {"request_id": "r", "candidate_id": "c", "outcome": "cache_hit", "mlflow": model,
                        "receipt_uri": (root / "candidate.json").as_uri(), "pipeline_manifest_sha256": runner.file_hash(path)}
             runner.write(root / "candidate.json", receipt)
@@ -94,6 +96,10 @@ class OrchestrationTests(unittest.TestCase):
             self.assertEqual(xcom["mlflow_run_id"], "old-run")
             self.assertNotIn("outcome", xcom)
             self.assertTrue(all(key.endswith(("_id", "_uri")) for key in xcom))
+            record = runner.read(training / "run_manifest.json")
+            runner.write(training / "run_manifest.json", {**record, "seed": 999})
+            with patch.object(runner, "execute", side_effect=AssertionError("must not execute")), self.assertRaisesRegex(runner.Failure, "completed_training_manifest_mismatch"):
+                runner.verify_result(root)
             path.write_text("{}")
             with self.assertRaisesRegex(runner.Failure, "completed_manifest_mismatch"):
                 runner.verify_result(root)

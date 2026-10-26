@@ -204,15 +204,21 @@ def verify_result(root, expected_hash=None, conf=None):
     pipeline = root / "run/workspace/artifacts/evaluation/pipeline_manifest.json"
     if file_hash(pipeline) != result["pipeline_manifest_sha256"]:
         raise Failure("completed_manifest_mismatch")
-    if read(pipeline)["training"]["mlflow"] != result["mlflow"]:
+    pipeline_training = read(pipeline)["training"]
+    if pipeline_training["mlflow"] != result["mlflow"]:
         raise Failure("completed_model_mismatch")
     if conf and result.get("request_sha256") != digest(conf):
         raise Failure("completed_request_mismatch")
     training = root / "run/workspace/artifacts/training/final"
     record = read(training / "run_manifest.json")
+    if file_hash(training / "run_manifest.json") != pipeline_training["run_manifest_sha256"]:
+        raise Failure("completed_training_manifest_mismatch")
     actual = {path.relative_to(training / "model").as_posix(): file_hash(path)
               for path in (training / "model").rglob("*") if path.is_file()}
-    if record["model"]["files"] != actual or record["mlflow"] != result["mlflow"]:
+    from ats_mlops.lineage.manifest import inventory_hash
+    if (record["model"]["files"] != actual or record["mlflow"] != result["mlflow"]
+            or inventory_hash(actual) != record["model"]["sha256"]
+            or record["model"]["sha256"] != pipeline_training["model_sha256"]):
         raise Failure("completed_model_mismatch")
     return result
 
