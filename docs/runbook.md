@@ -108,4 +108,23 @@ do not edit the journal, receipts or cached state. A stale candidate requires
 new gate/package/check/approval against the current release ID and generation.
 [T13 evidence](../reports/releases/t13.json) records actual crash recovery,
 rollback, source identities and measured stop/start downtime. The active local
-demo is `t12-model4-59967b7` / model4 / champion4 with A3 `demo_only` approval.
+demo initially used `t12-model4-59967b7` / model4 / champion4 with A3 `demo_only`
+approval; T15 below records the current release.
+
+## Technical monitoring (T15)
+
+[Monitoring operation](monitoring.md) provides the pinned local Prometheus/Grafana
+profile, read-only collector and isolated acceptance protocol. Start or inspect it
+with `python3 monitoring/bootstrap.py up|status`; Grafana Viewer is at
+`http://127.0.0.1:3001/d/ats-technical`, Prometheus at `http://127.0.0.1:9090`.
+Use the stable serving bridge; do not add host secrets or Docker sockets to
+inference. A source read/snapshot mismatch sets source_up0 and suppresses stale
+payload metrics. Keep the verified Airflow runtime override with its matching
+identity so future bootstrap preserves the numeric snapshot hooks.
+
+The current working service is `t15-metrics-23145b9` / model4 / champion4,
+generation2, with separate A3 approval and the same persistent events volume.
+The earlier T13 release remains available for rollback. Working HTTP probes used
+metadata only; the traffic/error fixture was backed up and owner-cleaned.
+[T15 receipt](../reports/monitoring/technical.json) binds actual source/image,
+Grafana frontend/query/UI proof, persistence, limits and cgroup diagnostics.

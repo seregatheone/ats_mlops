@@ -5,6 +5,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import stat
 import subprocess
@@ -56,6 +57,29 @@ def configure(state, core, port, repository=None):
     return values
 
 
+def runtime_override(state):
+    """Only a source-overlay image override is allowed, bound to host identity."""
+    path = state / "runtime-override.json"
+    if path.is_symlink():
+        raise ValueError("invalid_runtime_override")
+    if not path.exists():
+        return None
+    if not path.is_file() or path.stat().st_size > 8192:
+        raise ValueError("invalid_runtime_override")
+    value = json.loads(path.read_bytes())
+    try:
+        if (set(value) != {"services"} or set(value["services"]) != {"airflow"}
+                or set(value["services"]["airflow"]) != {"image"}):
+            raise ValueError("invalid_runtime_override")
+        image = value["services"]["airflow"]["image"]
+        if (not isinstance(image, str) or not re.fullmatch(r"sha256:[a-f0-9]{64}", image)
+                or image != json.loads((state / "image.json").read_bytes())["id"]):
+            raise ValueError("runtime_override_identity_mismatch")
+    except (KeyError, TypeError) as error:
+        raise ValueError("invalid_runtime_override") from error
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("init", "refresh-source", "config", "build", "up", "stop", "status"))
@@ -72,6 +96,11 @@ def main():
         env = {**os.environ, **values}
         base = ["docker", "compose", "--project-directory", str(ROOT), "--env-file", str(args.core_env),
                 "-p", "ats-core", "-f", str(ROOT / "compose.yaml"), "--profile", "orchestration"]
+        override = runtime_override(state)
+        if override:
+            base += ["-f", str(override)]
+            if args.action == "build":
+                raise ValueError("build_overlay_separately_then_update_identity")
         if args.action == "init":
             print("Private orchestration configuration ready")
         elif args.action == "refresh-source":

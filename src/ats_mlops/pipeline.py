@@ -113,6 +113,7 @@ def create_bundle(source_root: Path, config_path: Path, output: Path) -> dict:
                    "workspace_pointers": pointer_binding(staging, manifest, admission=True)}
         write_json(staging / "dataset-binding.json", binding)
         files = ["data_manifest.json", "admission/data-admission.json", "dataset-binding.json",
+                 manifest["reservation"]["policy"]["path"],
                  *POINTERS.values(), *(manifest["artifacts"][name]["path"] for name in PARTITIONS)]
         output.mkdir()
         for name in files:
@@ -128,14 +129,19 @@ def create_bundle(source_root: Path, config_path: Path, output: Path) -> dict:
 
 
 def verify_bundle(bundle: Path, expected_hash: str) -> dict:
+    from ats_mlops.data.dataset import load_manifest
+    from ats_mlops.data.reservation import manifest_policy
+
     descriptor = read_json(bundle / "bundle.json")
     files = descriptor.get("files", {})
     required = {"data_manifest.json", "admission/data-admission.json", "dataset-binding.json", *POINTERS.values()}
     if (descriptor.get("schema_version") != 1 or not required.issubset(files)
             or expected_hash != inventory_hash(files) or descriptor.get("sha256") != expected_hash):
         raise ValueError("bundle_identity_mismatch")
-    manifest = read_json(bundle / "data_manifest.json")
-    allowed = required | {manifest["artifacts"][name]["path"] for name in PARTITIONS}
+    manifest = load_manifest(bundle / "data_manifest.json")
+    manifest_policy(bundle / "data_manifest.json", manifest)
+    allowed = required | {manifest["artifacts"][name]["path"] for name in PARTITIONS} | {
+        manifest["reservation"]["policy"]["path"]}
     if set(files) != allowed:
         raise ValueError("bundle_files_must_be_train_validation_only")
     for name, digest in files.items():
@@ -300,6 +306,10 @@ def stage(name: str, workspace: Path, source_root: Path) -> dict:
                     path.write_bytes(content)
                 shutil.copyfile(manifest_path, staging / "data_manifest.json")
                 shutil.copyfile(receipt, staging / "admission.json")
+                relative = manifest["reservation"]["policy"]["path"]
+                target = safe_path(staging, relative)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(safe_path(workspace, relative), target)
                 params = parameters(workspace, source_root)
                 for key in ("model", "search"):
                     write_json(staging / (key + ".json"), params[key])

@@ -148,6 +148,9 @@ def _validate(manifest_path: Path, report_dir: Path, mode: str,
         report["manifest_sha256"] = sha256(manifest_bytes)
         report["config_hashes"] = _config_hashes()
         manifest = load_manifest(manifest_path)
+        from .reservation import manifest_policy, validate_partitions
+
+        policy = manifest_policy(manifest_path, manifest)
         if manifest != json.loads(manifest_bytes):
             raise DataError("manifest_changed_during_validation")
         if mode == "training":
@@ -177,6 +180,7 @@ def _validate(manifest_path: Path, report_dir: Path, mode: str,
                 if loaded[name] != rows:
                     raise DataError("artifact_changed_during_validation")
         if not report["reasons"]:
+            report["reservation"] = validate_partitions(loaded, manifest["generator"]["config"]["near_duplicate_jaccard"], policy)
             if mode == "admission":
                 audit_manifest(manifest_path)
             if manifest_path.read_bytes() != manifest_bytes:

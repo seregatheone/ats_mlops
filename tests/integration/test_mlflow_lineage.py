@@ -24,7 +24,12 @@ from ats_mlops.data.dataset import generate_dataset
 from ats_mlops.data.validate import validate_dataset
 root = Path('/work')
 generate_dataset(Path('/source/configs/data.json'), root/'data_manifest.json', root/'data')
-assert (root/'data_manifest.json').read_bytes() == Path('/source/data_manifest.json').read_bytes()
+original = json.loads(Path('/source/data_manifest.json').read_text())
+current = json.loads((root/'data_manifest.json').read_text())
+assert current['schema_version'] == 2
+assert current['frozen_test'] == original['frozen_test']
+assert all(current['artifacts'][name]['sha256'] == original['artifacts'][name]['sha256']
+           for name in ('train', 'validation', 'test', 'split_lists'))
 report = validate_dataset(root/'data_manifest.json', root/'admission')
 assert report['outcome'] == 'passed', report['reasons']
 for name in ('test.jsonl', 'source.jsonl', 'corpus.jsonl', 'split.json'):

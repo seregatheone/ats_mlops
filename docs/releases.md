@@ -98,9 +98,9 @@ OOM=false and restarts=0. These are one local exercise's observations, not a
 capacity or availability guarantee. Earlier missing-alias and Docker Desktop
 bind-prefix failures were preserved and are listed in the receipt.
 
-The durable local demo is active at `http://127.0.0.1:3000`, using the default
+The original T13 durable local demo was activated at `http://127.0.0.1:3000`, using the default
 state directory, project `ats-serving`, volume `ats-serving-prediction-events`
-and bridge `ats-serving-network`. Its release is `t12-model4-59967b7`, model4,
+and bridge `ats-serving-network`. Its original release was `t12-model4-59967b7`, model4,
 champion4 and generation1. A3 approval is separate, and champion was updated
 after readiness. Activation/status probes used metadata only. A fresh CLI
 idempotent activate confirmed the same generation. Check current metadata with:
@@ -108,6 +108,11 @@ idempotent activate confirmed the same generation. Check current metadata with:
 ```sh
 curl -s -X POST http://127.0.0.1:3000/metadata -H 'Content-Type: application/json' -d '{}'
 ```
+
+T15 subsequently activated `t15-metrics-23145b9`, generation2, on the same model4,
+champion4, network and events volume. See [monitoring](monitoring.md) for the
+current deployment and its separately attributed receipts; the original T13
+receipt remains historical evidence.
 
 The final documentation/receipt commit also removes two EOF-only blank lines;
 it does not replace the tested executable source identity above.
