@@ -1,6 +1,7 @@
 """Artifact-only, offline scoring in a fresh pinned container for each model."""
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -104,10 +105,12 @@ class DockerScorer:
                        ("vacancy_id", "candidate_id", "vacancy_text", "candidate_text")} for row in rows]}
             Path(directory, "request.json").write_bytes(canonical_json(payload))
             args = ["docker", "run", "--rm", "--pull=never", "--name", name,
+                    "--user", f"{os.getuid()}:{os.getgid()}",
                     "--network", "none", "--read-only", "--tmpfs", "/tmp:rw,nosuid,nodev,size=128m",
                     "--cpus", "1", "--memory", "1536m", "--workdir", "/tmp",
                     "--mount", f"type=bind,source={model['artifact'].resolve()},target=/artifact,readonly",
                     "--mount", f"type=bind,source={directory},target=/input,readonly",
+                    "-e", "HOME=/tmp", "-e", "USER=ats-offline", "-e", "LOGNAME=ats-offline",
                     "-e", "PYTHONPATH=", "-e", "MLFLOW_TRACKING_URI=", "-e", "AWS_ACCESS_KEY_ID=",
                     "-e", "AWS_SECRET_ACCESS_KEY=", "-e", "AWS_SESSION_TOKEN=",
                     "-e", "OMP_NUM_THREADS=1", "-e", "OPENBLAS_NUM_THREADS=1", "-e", "MKL_NUM_THREADS=1",

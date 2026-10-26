@@ -100,6 +100,25 @@ class Lifecycle:
                  source / "docker/ci/worker.py", phase, self.root]
         self.command(phase, args, timeout=600)
 
+    def permission_probe(self):
+        """Actual Linux volume semantics also on Desktop; no model or private payload."""
+        volume = self.project + "-uid-probe"
+        self.command("uid-volume", ["docker", "volume", "create", volume])
+        base = ["docker", "run", "--rm", "--network", "none", "--mount", f"type=volume,source={volume},target=/probe",
+                "--entrypoint", "/opt/ml-venv/bin/python"]
+        uid, gid = os.getuid(), os.getgid()
+        try:
+            setup = "from pathlib import Path;import os;p=Path('/probe/input');p.mkdir(mode=0o700);p.joinpath('request.json').write_text('{}');os.chown(p," + str(uid) + "," + str(gid) + ")"
+            self.command("uid-setup", [*base, "--user", "0:0", self.ml_image["id"], "-I", "-B", "-c", setup])
+            denied = "from pathlib import Path\ntry:Path('/probe/input/request.json').read_text()\nexcept PermissionError:pass\nelse:raise AssertionError('private_directory_was_readable')"
+            other = 50000 if uid != 50000 else 50001
+            self.command("uid-denied", [*base, "--user", f"{other}:{other}", self.ml_image["id"], "-I", "-B", "-c", denied])
+            allowed = "from pathlib import Path;assert Path('/probe/input/request.json').read_text()=='{}'"
+            self.command("uid-readable", [*base, "--user", f"{uid}:{gid}", self.ml_image["id"], "-I", "-B", "-c", allowed])
+            self.report["checks"]["private_input_uid_permission_boundary"] = True
+        finally:
+            self.command("uid-cleanup", ["docker", "volume", "rm", volume])
+
     def execute(self):
         status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=ROOT,
                                 capture_output=True, text=True, check=True).stdout
@@ -112,6 +131,7 @@ class Lifecycle:
         self.command("compose-config", [*self.compose, "config", "--quiet"])
         self.command("build", [*self.compose, "build"], timeout=2400)
         self.ml_image = self.image(self.values["ATS_CI_ML_IMAGE"])
+        self.permission_probe()
         write(self.root / "ml-image.json", self.ml_image)
         self.report["images"] = {name: self.image(self.values["ATS_CI_" + name.upper() + "_IMAGE"])
                                  for name in ("ml", "postgres", "minio", "mc")}
@@ -151,6 +171,7 @@ class Lifecycle:
                    "candidate": {"run_manifest": str(final / "run_manifest.json"), "pipeline_manifest": str(pipeline), "model_dir": str(final / "model")},
                    "incumbent": None}
         gate = run_gate(request, self.root / "model-gate.json")
+        self.report["model_gate"] = {"outcome": gate["outcome"], "reasons": gate["reasons"]}
         assert gate["outcome"] == "passed", gate["reasons"]
         self.report["checks"]["offline_validation_only_model_gate"] = True
         serving_tag = self.project + "-serving:test"
@@ -176,9 +197,11 @@ class Lifecycle:
                          "alias_other_version": read(self.root / "alias-fixture.json")["model_version"],
                          "registry_transport": {"network": self.project + "_default", "tracking_uri": "http://mlflow:5000"}}
         checked = stage(check_request, self.root / "release-check.json")
+        self.report["api_checks"] = checked["checks"]
+        if checked["outcome"] != "passed":
+            self.report["api_failure"] = {key: checked.get(key) for key in ("failed_step", "error_type", "reasons")}
         assert checked["outcome"] == "passed", {key: checked.get(key) for key in ("failed_step", "reasons", "error_type")}
         self.report["checks"]["actual_api_sqlite_privacy_isolation"] = all(checked["checks"].values())
-        self.report["api_checks"] = checked["checks"]
         self.report["score_comparison"] = checked["score_comparison"]
         self.release(checked)
         self.report["checks"]["reserved_bytes_absent"] = all(not (workspace / "data" / name).exists()
@@ -208,6 +231,7 @@ class Lifecycle:
         failures = []
         # Only the request's exact worker and owned release resources; never global prune.
         subprocess.run(["docker", "rm", "-f", self.project + "-worker"], capture_output=True, timeout=30)
+        subprocess.run(["docker", "volume", "rm", self.project + "-uid-probe"], capture_output=True, timeout=30)
         release_config = self.root / "release-config.json"
         if release_config.exists():
             from ats_mlops.release.runtime import DockerRuntime
@@ -238,6 +262,7 @@ def cleanup_existing(directory):
     if not re.fullmatch(r"ats-ci-[0-9a-f]{12}", project):
         raise ValueError("invalid_ci_cleanup_owner")
     subprocess.run(["docker", "rm", "-f", project + "-worker"], capture_output=True, timeout=30)
+    subprocess.run(["docker", "volume", "rm", project + "-uid-probe"], capture_output=True, timeout=30)
     config_path = directory / "release-config.json"
     if config_path.exists():
         from ats_mlops.release.runtime import DockerRuntime
