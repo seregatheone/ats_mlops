@@ -67,5 +67,27 @@ class ExercisePreparationTests(unittest.TestCase):
         for content in (airflow,numeric):
             self.assertNotIn('pip install',content);self.assertNotIn('COPY . ',content)
 
+    def test_build_requires_verified_local_base_tag_and_unchanged_committed_context(self):
+        import hashlib
+        root=Path(__file__).resolve().parents[2];spec=importlib.util.spec_from_file_location('overlay_build',root/'docker/retraining/build.py')
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        content=b'FROM cached\n';context=self.root/'context';context.mkdir();name='docker/retraining/airflow.Dockerfile'
+        path=context/name;path.parent.mkdir(parents=True);path.write_bytes(content)
+        (context/'context.json').write_text(json.dumps({'source_git_sha':'a'*40,'files':{name:hashlib.sha256(content).hexdigest()}}))
+        calls=[]
+        def run(command,**kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(command,0,content if command[0]=='git' else 'sha256:'+'b'*64+'\n','')
+        command=module.checked_command(context,'airflow','ats-t17-base-airflow:frozen','sha256:'+'b'*64,'ats-core-airflow:t17',run=run)
+        self.assertIn('BASE_IMAGE=ats-t17-base-airflow:frozen',command);self.assertIn('--pull=false',command)
+        self.assertEqual(2,len(calls));self.assertFalse(any(value[:2]==['docker','build'] for value in calls))
+        with self.assertRaisesRegex(ValueError,'frozen_owned_local_base_tag_required'):
+            module.checked_command(context,'airflow','sha256:'+'b'*64,'sha256:'+'b'*64,'ats-core-airflow:t17',run=run)
+        with self.assertRaisesRegex(ValueError,'cached_base_tag_id_mismatch'):
+            module.checked_command(context,'airflow','ats-t17-base-airflow:frozen','sha256:'+'c'*64,'ats-core-airflow:t17',run=run)
+        path.write_bytes(b'changed')
+        with self.assertRaisesRegex(ValueError,'overlay_context_changed'):
+            module.checked_command(context,'airflow','ats-t17-base-airflow:frozen','sha256:'+'b'*64,'ats-core-airflow:t17',run=run)
+
 
 if __name__=='__main__':unittest.main()

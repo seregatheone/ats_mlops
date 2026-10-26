@@ -25,15 +25,22 @@ source SHA are saved in `context.json`. Root supplies the exact frozen SHA as
 
 After root verifies SQL0active runs, backup existing runtime override/image
 receipt/private airflow.env identities and sanitized source Git identity. Root
-alone may execute source-only builds (network none, cached dependencies):
+alone may assign owned local base tags, verify their exact IDs, then execute
+source-only builds (network none, cached dependencies). Raw sha256 image IDs are
+valid run/inspect references but are not used as Dockerfile FROM references:
 
 ```sh
-docker build --pull=false --network=none --build-arg BASE_IMAGE=sha256:53ee2a88e991a0e00c0eed85505ce0d53731ccdc8b11b0d90605f0454f362e6f --build-arg SOURCE_SHA="$SOURCE_SHA" -f /private/tmp/ats-t17-overlay-context/docker/retraining/airflow.Dockerfile -t ats-core-airflow:t17-source /private/tmp/ats-t17-overlay-context
-docker build --pull=false --network=none --build-arg BASE_IMAGE=sha256:7aace0273f8ee4468063e45d54d726ce3daf310f092308824e4043e84463b556 --build-arg SOURCE_SHA="$SOURCE_SHA" -f /private/tmp/ats-t17-overlay-context/docker/retraining/monitoring.Dockerfile -t ats-monitoring:t17-source /private/tmp/ats-t17-overlay-context
+docker tag sha256:53ee2a88e991a0e00c0eed85505ce0d53731ccdc8b11b0d90605f0454f362e6f ats-t17-base-airflow:53ee2a88e991
+docker tag sha256:7aace0273f8ee4468063e45d54d726ce3daf310f092308824e4043e84463b556 ats-t17-base-monitoring:7aace0273f8e
+python3 -B docker/retraining/build.py --context /private/tmp/ats-t17-overlay-context --kind airflow --base-tag ats-t17-base-airflow:53ee2a88e991 --expected-base-id sha256:53ee2a88e991a0e00c0eed85505ce0d53731ccdc8b11b0d90605f0454f362e6f --tag ats-core-airflow:t17-source --execute
+python3 -B docker/retraining/build.py --context /private/tmp/ats-t17-overlay-context --kind monitoring --base-tag ats-t17-base-monitoring:7aace0273f8e --expected-base-id sha256:7aace0273f8ee4468063e45d54d726ce3daf310f092308824e4043e84463b556 --tag ats-monitoring:t17-source --execute
 ```
 
-The monitoring base is the existing Pandas2 dependency-only image; its
-entrypoint/CMD must be supplied by this overlay. Root must retain the old image
+The build helper rejects raw-ID base arguments, verifies tag→ID and every
+context file against the committed Git blob before invoking build; without
+`--execute` it checks and prints the command only. The monitoring base is the
+existing Pandas2 dependency-only image; the overlay supplies its actual
+entrypoint/CMD. Root must retain the old image
 receipt, save the new actual image ID/OS/architecture/labels and update the
 existing native `/state/image.json` and runtime override coherently before
 recreating **only** Airflow. Existing core/foreign services, volumes, credentials
@@ -107,7 +114,9 @@ Review `actual/candidate.json`, staged gate/check/package hashes and
 `actual/reference-ready.json`. Only root may separately approve/activate that
 named staged release via existing T13 (`ats-mlops release --state-dir STATE
 approve RELEASE --actor agent-operator`, then `activate RELEASE`). This is the
-final human/operator boundary; no activation is implied by waiting_approval.
+separate coordinator-controlled operator step; existing agent-operator
+authorization applies and no additional user confirmation is requested.
+No activation is implied by waiting_approval.
 After root's actual ready/alias/journal check:
 
 ```sh
