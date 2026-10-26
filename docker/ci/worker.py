@@ -67,7 +67,8 @@ def alias_fixture(root):
     client = mlflow.MlflowClient()
     before = list(client.search_runs([identity["experiment_id"]]))
     # An alias-only existing-version fixture reuses the same fitted source/run.
-    other = client.create_model_version(identity["model_name"], identity["source"], run_id=identity["run_id"])
+    other = client.create_model_version(identity["model_name"], identity["source"], run_id=identity["run_id"],
+                                        model_id=identity["source"].removeprefix("models:/"))
     after = list(client.search_runs([identity["experiment_id"]]))
     assert len(before) == len(after) == 1
     write(root / "alias-fixture.json", {"model_version": other.version, "new_training_runs": 0, "training_runs": len(after)})

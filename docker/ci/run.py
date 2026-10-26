@@ -43,6 +43,8 @@ def free_ports():
 class Lifecycle:
     def __init__(self, directory, public):
         self.root, self.public = directory.resolve(), public.resolve()
+        if self.root.is_relative_to(ROOT) or self.public.is_relative_to(ROOT) or self.public.is_relative_to(self.root):
+            raise ValueError("external_separate_ci_directories_required")
         if self.root.exists():
             raise ValueError("new_external_ci_directory_required")
         self.root.mkdir(parents=True, mode=0o700)

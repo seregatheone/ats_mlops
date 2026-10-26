@@ -13,6 +13,10 @@ spec.loader.exec_module(ci)
 
 
 class CITests(unittest.TestCase):
+    def test_private_outputs_cannot_enter_checkout(self):
+        with self.assertRaisesRegex(ValueError, "external_separate"):
+            ci.Lifecycle(ROOT / ".local/forbidden-ci", Path("/tmp/ci-public"))
+
     def test_cleanup_rejects_foreign_project_before_docker(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(ci.subprocess, "run") as run:
             (Path(folder) / "control.json").write_text(json.dumps({"project": "ats-core"}))
