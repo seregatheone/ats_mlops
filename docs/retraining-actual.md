@@ -56,7 +56,7 @@ not tags. The command reads metadata and file existence only; password/dvc.env
 contents are never read or copied. It saves private mode0600 input JSON.
 
 ```sh
-python3 -B docker/retraining/configure.py --repository "$PWD" --evidence /private/tmp/ats-issue-18-actual-20261026 --training-image "$TRAINING_IMAGE_ID" --monitoring-image "$MONITORING_IMAGE_ID" --orchestration-state '/Users/sergey/Library/Mobile Documents/iCloud~md~obsidian/Documents/ATS/ats_mlops/.local/orchestration' --core-state '/Users/sergey/Library/Mobile Documents/iCloud~md~obsidian/Documents/ATS/ats_mlops/.local/core' --baseline-bundle /private/tmp/ats-issue-17-canonical-admission-20261026/bundle --baseline-reference /private/tmp/ats-issue-17-evidence-20261026/actual-007/reference --airflow-url http://127.0.0.1:8080 --port 3018
+python3 -B docker/retraining/configure.py --repository "$PWD" --evidence /private/tmp/ats-issue-18-actual-20261026 --training-image "$TRAINING_IMAGE_ID" --monitoring-image "$MONITORING_IMAGE_ID" --orchestration-state "$ORCHESTRATION_STATE" --core-state "$CORE_STATE" --baseline-bundle "$BASELINE_BUNDLE" --baseline-reference "$BASELINE_REFERENCE" --airflow-url http://127.0.0.1:8080 --port 3018
 ```
 
 The default T13 state is `~/.local/state/ats-mlops`; override `--release-state`

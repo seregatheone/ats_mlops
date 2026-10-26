@@ -1,0 +1,1 @@
+{"candidates_per_group":20,"generator":"synthetic-skills-v1","namespace":"ats-t17-v2-20261027","near_duplicate_jaccard":0.9,"positives_per_group":5,"schema_version":1,"seed":20261027,"split_ratios":{"test":0.2,"train":0.6,"validation":0.2},"vacancy_groups":60}

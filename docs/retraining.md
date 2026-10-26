@@ -1,8 +1,13 @@
-# Retraining: component checkpoint and batch boundary
+# Retraining: native policy and batch boundary
 
-Implementation is in progress. Policy-only21 tests and the frozen-params189-unit
-checkpoint are separate proofs; full T17 acceptance, adapters and fault/runtime
-evidence must pass before this task is marked complete. No E5/test metric claim.
+The actual T17 loop passed on executable `48b6d3a`: qualified incumbent13 → two
+real signal windows → one waiting request → approved synthetic v2 → ordinary
+Airflow candidate14 → validation gate/package/check → separate operator A3 →
+ACTIVE reference reconciliation → fresh cooldown windows with no new request.
+Public evidence and exact backing hashes are in
+[reports/retraining/t17.json](../reports/retraining/t17.json); see
+[the execution receipt](retraining-evidence.md). Final review/CI/merge is tracked
+separately. These are integration proofs, not the formal E1–E5 series.
 
 `monitoring.policy` owns one native SQLite ledger and immutable outbox. Two closed
 adjacent eligible signal windows (200pairs/10distinct vacancies, same exact
@@ -111,8 +116,12 @@ SHA+approved monitoring source list; caller-provided effective hashes are not
 accepted. Host verifies these artifacts again before installing an intent or
 reconciling the cursor.
 
-Runtime acceptance remains separate: source publication/overlay review, genuine
-T16 ACTIVE-bound windows, waiting→approvedv2→ordinary candidate→gate→waiting
-approval, explicit release/reference update, concurrency/cooldown and crash
-deduplication evidence. The lazy root CLI route `ats retraining` delegates to
-the same standalone batch module after the serial T16 merge.
+Actual evidence distinguishes real transport probes from hash/count bindings:
+exact receipts passed through repeated real monitor DAG deliveries; a process
+exited86 after an accepted real T10 POST and a fresh process resumed the same
+run/outbox; the registered model/run delta remained one. Native repro records one
+ordinary final train event and frozen selection records zero trials. The two
+retained repro JSON files are semantically equal with different actual bytes.
+Original test bodies and the actual E5 ledger/scorer were not used. Synthetic
+teacher labels and controlled perturbations remain demo_only. The lazy root CLI
+route `ats-mlops retraining` delegates to the standalone batch module.
