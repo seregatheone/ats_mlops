@@ -118,6 +118,50 @@ class SourceGraphs(unittest.TestCase):
         self.new = self.commit("weakened phase scope")
         with self.assertRaises(audit.EvidenceError): self.validate()
 
+    def test_decorated_audit_function_and_class_rejected(self):
+        for before in ('def execution(', 'class Artifacts:'):
+            with self.subTest(node=before):
+                path = self.repo / "tests/e2e/audit.py"
+                original = self.current["tests/e2e/audit.py"].decode()
+                self.assertIn(before, original)
+                path.write_text(original.replace(before, '@replace_semantics\n' + before, 1))
+                self.new = self.commit("decorated semantic node")
+                with self.assertRaises(audit.EvidenceError): self.validate()
+
+    def test_decorated_runtime_phase_or_collector_method_rejected(self):
+        for before, after in (('def phase(', '@replace_phase\ndef phase('),
+                              ('    def copy(', '    @replace_copy\n    def copy(')):
+            with self.subTest(node=before):
+                path = self.repo / "tests/e2e/driver.py"
+                original = self.current["tests/e2e/driver.py"].decode()
+                self.assertIn(before, original); path.write_text(original.replace(before, after, 1))
+                self.new = self.commit("decorated runtime driver")
+                with self.assertRaises(audit.EvidenceError): self.validate()
+
+    def test_envelope_definition_cannot_execute_decorators_annotations_or_defaults(self):
+        original = self.current["tests/e2e/driver.py"].decode()
+        mutations = (("    def envelope(", "    @replace_envelope\n    def envelope("),
+            ("execution_source=None", "execution_source=side_effect()"),
+            ("execution_source=None", "execution_source:side_effect()=None"),
+            ("phase_attestations=None):", "phase_attestations=None) -> side_effect():"),
+            (",*,execution_source", ",*args,execution_source"),
+            ("phase_attestations=None):", "phase_attestations=None,**kwargs):"))
+        for before, after in mutations:
+            with self.subTest(definition=after):
+                path = self.repo / "tests/e2e/driver.py"
+                changed = original.replace(before, after, 1)
+                self.assertNotEqual(original, changed); path.write_text(changed)
+                self.new = self.commit("unsafe metadata method definition")
+                with self.assertRaises(audit.EvidenceError): self.validate()
+
+    def test_driver_module_effect_or_import_outside_envelope_rejected(self):
+        for prefix in (b"MODULE_EFFECT = side_effect()\n", b"import importlib as extra_runtime_import\n"):
+            with self.subTest(prefix=prefix):
+                path = self.repo / "tests/e2e/driver.py"
+                path.write_bytes(prefix + self.current["tests/e2e/driver.py"])
+                self.new = self.commit("outside-envelope module change")
+                with self.assertRaises(audit.EvidenceError): self.validate()
+
     def test_same_source_needs_no_fake_historical_snapshot(self):
         mapping = {key: self.new for key in audit.SCENARIOS}
         self.assertEqual(audit.validate_execution_sources(audit.Artifacts(self.files.root), mapping, {},
@@ -443,6 +487,17 @@ class PhaseAttestations(unittest.TestCase):
 
 
 class CollectorSources(unittest.TestCase):
+    def test_physical_node_proof_contains_function_class_and_method_decorators(self):
+        examples = ((b"def run():\n    return 1\n", b"@replace\ndef run():\n    return 1\n", "run"),
+            (b"class Guard:\n    pass\n", b"@replace\nclass Guard:\n    pass\n", "Guard"),
+            (b"class Guard:\n    def run(self):\n        return 1\n",
+             b"class Guard:\n    @replace\n    def run(self):\n        return 1\n", "Guard.run"))
+        for old, changed, name in examples:
+            with self.subTest(name=name):
+                proof = audit._node_bytes(changed, name)
+                self.assertIn(b"@replace", proof)
+                self.assertNotEqual(audit._node_bytes(old, name), proof)
+
     def test_envelope_records_actual_source_without_changing_final_spec_hash(self):
         with tempfile.TemporaryDirectory() as directory:
             collector = Collector(Path(directory).resolve() / "bundle")
