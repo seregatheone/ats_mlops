@@ -1,6 +1,7 @@
 """Manage only the ATS monitoring project; never print rendered config or secrets."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -33,6 +34,7 @@ def main(argv=None):
     images = json.loads((ROOT / "monitoring/images.json").read_text())
     env = dict(os.environ, ATS_MONITORING_SOURCE=str(ROOT), ATS_RELEASE_STATE=str(args.release_state.resolve()),
                ATS_MONITORING_STATE=str(state),
+               ATS_COLLECTOR_SHA256=hashlib.sha256((ROOT / "src/ats_mlops/monitoring/technical.py").read_bytes()).hexdigest(),
                ATS_PROMETHEUS_IMAGE=images["prometheus"]["reference"], ATS_GRAFANA_IMAGE=images["grafana"]["reference"])
     compose = ["docker", "compose", "--env-file", "/dev/null", "-p", "ats-monitoring", "-f", str(ROOT / "monitoring/compose.yaml")]
     if args.command == "up":
