@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "issue": 36,
+  "evidence_scope": "demo_only; no_training_or_test_scoring",
+  "outcome": "passed_focused_checks; independent_review_pending",
+  "executable_git_sha": "ada48ea68c2b6a46b1b31350311f89b954ac92c5",
+  "canonical_manifest_sha256": "81bde9b3a96ecdf6a970ee4a04bb1c2ea06c3af6da4123c1471cf94a780ef0f9",
+  "canonical_partitions_sha256": {
+    "train": "adef4de05783391cef598098b8886221bf4d8f28d9e296d74f94e8cf66a72ea7",
+    "validation": "1cdd5f3189ba4241f5bb2399f33dac47f6b38e21a04819aa0c07900d1e29e0a8",
+    "test": "35a6a0fc5c379c384ccd6ba645a4673f0f508df024d34f05355a40a1c9f14d65"
+  },
+  "reservation": {
+    "policy_sha256": "4ca6c42155d3e34e1436596381838bf31cc36339986c12b91278d760df5d265b",
+    "row_generator_sha256": "8d363ace727035a88e0b5b769717faeb3a5f6a3a7211745d4ef62de626653ff7",
+    "documents": 1260,
+    "input_scope": "pinned legacy generator and frozen manifest metadata; no original partition files"
+  },
+  "host_no_fit": {
+    "reservation_regressions": 9,
+    "split_tests": 17,
+    "orchestration_tests": 10,
+    "policy_builder": "passed; all_three_partition_sha256_oracles"
+  },
+  "pinned_no_fit": {
+    "image_id": "sha256:574c48deb107cba3f0bdc982d3aa0ab1500de58ab1694052bb92efbcab13ec91",
+    "python": "3.11.17",
+    "cpu_limit": 1,
+    "memory_limit_mib": 1536,
+    "network": "none",
+    "checkout": "clean committed clone, readonly mount",
+    "first_run": {
+      "test_methods_passed": 53,
+      "suites": ["reservation", "split", "orchestration", "real_GX_validation", "two_actual_T5_rejected_stage_checks"],
+      "outcome": "partial; pipeline class setup could not write harness readonly /var/tmp/dvc",
+      "elapsed_seconds": 37.725
+    },
+    "second_run": {
+      "tests_passed": 11,
+      "suite": "real_DVC_bundle_binding_and_prepared_snapshot",
+      "harness_correction": "writable /var/tmp tmpfs; same executable source",
+      "elapsed_test_seconds": 5.569,
+      "policy_builder": "passed; same hashes as host",
+      "wheel_build_install_isolated_resource_probe": "passed; 1260 documents and exact policy/generator hashes",
+      "elapsed_total_seconds": 8.515
+    },
+    "fit_calls": 0,
+    "skipped": 0
+  },
+  "limits": [
+    "Focused evidence, not a new full ML lifecycle or E5 evaluation.",
+    "Initial worktree mount failed before tests because its git admin pointer was outside the container; replaced by a readonly committed clone.",
+    "Original canonical manifest/data and historical models/reports were not rewritten.",
+    "Models 4/5 and active A4 remain engineering-only evidence; future clean candidate requires fresh guarded lineage.",
+    "Token Jaccard is not a semantic paraphrase detector; explicit parent policy is required to extend reservations for a noncanonical data branch."
+  ]
+}

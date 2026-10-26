@@ -34,3 +34,5 @@ PYTHONPATH=src python -m ats_mlops.cli data generate \
 ```
 
 Повторный запуск разрешён только с тем же frozen test. Schema 1 на месте не перезаписывается. Восстановление исторических байтов из DVC и `data audit` остаются отдельными операциями с прежними hashes и явным чтением артефактов при полном аудите.
+
+Focused proof на executable `ada48ea68c2b6a46b1b31350311f89b954ac92c5`: 36 host stdlib checks; под pinned Python 3.11.17 — 53 no-fit test methods с настоящим GX и двумя отказами конкретного training stage, затем 11 DVC/bundle/prepared checks после исправления harness tmpfs для `/var/tmp/dvc`. Builder подтвердил все три исходных SHA на обеих версиях Python. Wheel собран и установлен без сети; отдельный isolated process загрузил 1260 reservations из installed package вне checkout. Fit заблокирован в harness, вызовов 0, skips 0. Первый readonly-DVC setup failure сохранён как частичный прогон; он не выдаётся за полный PASS. Подробности: [data-reservations.json](../reports/data-reservations.json).
