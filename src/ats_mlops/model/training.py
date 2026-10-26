@@ -2,10 +2,13 @@
 
 import argparse
 from collections.abc import Mapping
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import re
+import shutil
 import sys
+import tempfile
 import warnings
 
 from sklearn.exceptions import ConvergenceWarning
@@ -61,6 +64,25 @@ def fit_rows(rows: list[dict], config: dict) -> Pipeline:
     return model
 
 
+@contextmanager
+def portable_code(source_root: Path):
+    """Keep source immutable while MLflow copies/cleans a writable byte snapshot.
+
+    MLflow preserves directory modes through copytree, then removes its own
+    temporary code tree. A read-only source mode otherwise breaks that cleanup
+    for the unprivileged LocalExecutor user after remote work may have started.
+    """
+    original = source_root / "src/ats_mlops"
+    with tempfile.TemporaryDirectory(prefix="ats-model-code-") as temporary:
+        snapshot = Path(temporary) / "ats_mlops"
+        shutil.copytree(original, snapshot, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        for path in [snapshot, *snapshot.rglob("*")]:
+            path.chmod(0o755 if path.is_dir() else 0o644)
+        if tree_inventory(snapshot) != tree_inventory(original):
+            raise ValueError("packaged_source_snapshot_mismatch")
+        yield snapshot
+
+
 def train(manifest_path: Path, report_dir: Path, *, admission_report: Path,
           config_path: Path, source_root: Path, image_identity: dict,
           runtime_lock: Path = Path("/opt/requirements-ml.lock"),
@@ -114,7 +136,6 @@ def train(manifest_path: Path, report_dir: Path, *, admission_report: Path,
 
     import mlflow
     from mlflow.models import infer_signature
-    import shutil
 
     mlflow.set_experiment(experiment)
     with mlflow.start_run(tags={"training_git_sha": provenance["git_sha"], "evidence_scope": "demo_only",
@@ -125,15 +146,16 @@ def train(manifest_path: Path, report_dir: Path, *, admission_report: Path,
                            **{f"classifier.{k}": v for k, v in config["classifier"].items()}})
         mlflow.log_metrics({name: metrics[name] for name in ("ndcg_at_10", "recall_at_10", "eligible_group_count")})
         example = pair_frame(rows["validation"][:2])
-        info = mlflow.sklearn.log_model(
-            model, name="pair-model", code_paths=[str(source_root / "src" / "ats_mlops")],
-            serialization_format="cloudpickle", pyfunc_predict_fn="predict_proba",
-            pip_requirements=[f"{name}=={value}" for name, value in provenance["environment"]["packages"].items()],
-            signature=infer_signature(example, model.predict_proba(example)), input_example=example,
-            metadata={"feature_version": FEATURE_VERSION, "classes": [0, 1],
-                      "training_git_sha": provenance["git_sha"], "features_sha256": provenance["features_sha256"]},
-            extra_files=[str(report_dir / "input-provenance.json")],
-        )
+        with portable_code(source_root) as code:
+            info = mlflow.sklearn.log_model(
+                model, name="pair-model", code_paths=[str(code)],
+                serialization_format="cloudpickle", pyfunc_predict_fn="predict_proba",
+                pip_requirements=[f"{name}=={value}" for name, value in provenance["environment"]["packages"].items()],
+                signature=infer_signature(example, model.predict_proba(example)), input_example=example,
+                metadata={"feature_version": FEATURE_VERSION, "classes": [0, 1],
+                          "training_git_sha": provenance["git_sha"], "features_sha256": provenance["features_sha256"]},
+                extra_files=[str(report_dir / "input-provenance.json")],
+            )
         version = mlflow.register_model(info.model_uri, registered_model)
         exact_uri = f"models:/{registered_model}/{version.version}"
         registered = mlflow.MlflowClient().get_model_version(registered_model, version.version)

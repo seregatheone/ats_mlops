@@ -32,6 +32,7 @@ COPY --from=ml_runtime /opt/ml-venv /opt/ml-venv
 COPY --from=ml_runtime /opt/requirements-ml.lock /opt/requirements-ml.lock
 COPY src/ /opt/project/src/
 COPY dags/ /opt/airflow/dags/
+COPY docker/orchestration/ /opt/orchestration/
 RUN mkdir -p /work /artifacts /opt/airflow/auth \
     && chown -R 50000:0 /work /artifacts /opt/airflow/auth
 ENV PYTHONPATH=/opt/project/src \

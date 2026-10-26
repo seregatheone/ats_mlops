@@ -1,0 +1,510 @@
+{
+  "attempt_journal": {
+    "exhausted": [
+      {
+        "attempt": 1,
+        "kind": "io_transient",
+        "outcome": "retryable",
+        "phase": "download"
+      },
+      {
+        "attempt": 2,
+        "kind": "io_transient",
+        "outcome": "retryable",
+        "phase": "download"
+      },
+      {
+        "attempt": 3,
+        "kind": "io_transient",
+        "outcome": "failed",
+        "phase": "download"
+      }
+    ],
+    "invalid": [
+      {
+        "attempt": 1,
+        "kind": "bundle_identity_mismatch",
+        "outcome": "failed",
+        "phase": "download"
+      }
+    ],
+    "transient": [
+      {
+        "attempt": 1,
+        "kind": "io_transient",
+        "outcome": "retryable",
+        "phase": "download"
+      },
+      {
+        "attempt": 2,
+        "kind": null,
+        "outcome": "completed",
+        "phase": "repro"
+      }
+    ]
+  },
+  "bundle_inventory_sha256": "7c906236ec3574900c070ce92bfcf0ded5f322d3b830013ab81fc0f5e553c949",
+  "cache_hit": {
+    "bundle_inventory_sha256": "7c906236ec3574900c070ce92bfcf0ded5f322d3b830013ab81fc0f5e553c949",
+    "candidate_id": "candidate-bb9a3507839c52af9d3a3269",
+    "dvc_lock_sha256": "7fd90bfa774a3677847711c9f7ffcf4581b484520c6447e047d0f91c2f2b8e62",
+    "git_sha": "9e83ec6fb69d6214e847ac093ebc92e56a0d4f61",
+    "mlflow": {
+      "exact_uri": "models:/ats-pair-ranking/11",
+      "experiment_id": "3",
+      "model_name": "ats-pair-ranking",
+      "model_version": "11",
+      "run_id": "58719a4f06bd4a6a84e81d4ffe7d0335",
+      "source": "models:/m-37948977825a4e2a9ad548695391ab94"
+    },
+    "outcome": "cache_hit",
+    "params_hash": "c27d3144bec3c53e11654b7fded54bc757d2fc78a1b50f16927ee8cd7c7236ba",
+    "pipeline_manifest_sha256": "e7c1d2bddf407439ce2965d10ccce72dc3c760ccd59ff35fe3236c372f0aab55",
+    "receipt_uri": "file:///work/requests/ci-t10-cd0016774184-cached/candidate.json",
+    "request_id": "ci-t10-cd0016774184-cached",
+    "request_sha256": "97dabd6ed4c108f20ce9ab83d7243938ed5935274102889ca3e213dc60129e82",
+    "run_id": "ci-t10-cd0016774184-cached",
+    "schema_version": 1
+  },
+  "commands": [
+    "locked ML runtime: python -m unittest discover -s tests/unit",
+    "pinned Airflow3.3.2: DagBag(/opt/airflow/dags), import_errors empty, train_candidate.max_active_runs=1",
+    "ATS_RUN_AIRFLOW=1 ATS_AIRFLOW_PORT=8088 ATS_AIRFLOW_STATE=<private-state> ATS_DVC_ENV_FILE=<existing-dvc-client-env> python3 -m unittest discover -s tests/integration -p test_airflow_run.py -v"
+  ],
+  "dag_runs": {
+    "ci-t10-cd0016774184-cached-cached-c798e2": {
+      "state": "success",
+      "tasks": [
+        {
+          "state": "success",
+          "task_id": "train_candidate",
+          "try_number": 1
+        }
+      ],
+      "xcom": {
+        "candidate_id": "candidate-bb9a3507839c52af9d3a3269",
+        "mlflow_run_id": "58719a4f06bd4a6a84e81d4ffe7d0335",
+        "model_uri": "models:/ats-pair-ranking/11",
+        "receipt_uri": "file:///work/requests/ci-t10-cd0016774184-cached/candidate.json",
+        "request_id": "ci-t10-cd0016774184-cached"
+      }
+    },
+    "ci-t10-cd0016774184-exhausted-exhausted-3aec40": {
+      "state": "failed",
+      "tasks": [
+        {
+          "state": "failed",
+          "task_id": "train_candidate",
+          "try_number": 3
+        }
+      ]
+    },
+    "ci-t10-cd0016774184-exhausted-exhausted-replay-bebdc8": {
+      "state": "failed",
+      "tasks": [
+        {
+          "state": "failed",
+          "task_id": "train_candidate",
+          "try_number": 1
+        }
+      ]
+    },
+    "ci-t10-cd0016774184-invalid-invalid-93dd75": {
+      "state": "failed",
+      "tasks": [
+        {
+          "state": "failed",
+          "task_id": "train_candidate",
+          "try_number": 1
+        }
+      ]
+    },
+    "ci-t10-cd0016774184-normal-conflict-c8b505": {
+      "state": "failed",
+      "tasks": [
+        {
+          "state": "failed",
+          "task_id": "train_candidate",
+          "try_number": 1
+        }
+      ]
+    },
+    "ci-t10-cd0016774184-normal-normal-4a3f1c": {
+      "state": "success",
+      "tasks": [
+        {
+          "state": "success",
+          "task_id": "train_candidate",
+          "try_number": 1
+        }
+      ],
+      "xcom": {
+        "candidate_id": "candidate-bafa1de35b1477114e334e82",
+        "mlflow_run_id": "58719a4f06bd4a6a84e81d4ffe7d0335",
+        "model_uri": "models:/ats-pair-ranking/11",
+        "receipt_uri": "file:///work/requests/ci-t10-cd0016774184-normal/candidate.json",
+        "request_id": "ci-t10-cd0016774184-normal"
+      }
+    },
+    "ci-t10-cd0016774184-normal-replay-927209": {
+      "state": "success",
+      "tasks": [
+        {
+          "state": "success",
+          "task_id": "train_candidate",
+          "try_number": 1
+        }
+      ],
+      "xcom": {
+        "candidate_id": "candidate-bafa1de35b1477114e334e82",
+        "mlflow_run_id": "58719a4f06bd4a6a84e81d4ffe7d0335",
+        "model_uri": "models:/ats-pair-ranking/11",
+        "receipt_uri": "file:///work/requests/ci-t10-cd0016774184-normal/candidate.json",
+        "request_id": "ci-t10-cd0016774184-normal"
+      }
+    },
+    "ci-t10-cd0016774184-transient-transient-47fae8": {
+      "state": "success",
+      "tasks": [
+        {
+          "state": "success",
+          "task_id": "train_candidate",
+          "try_number": 2
+        }
+      ],
+      "xcom": {
+        "candidate_id": "candidate-7d64e4409b29fe8c9ac45bff",
+        "mlflow_run_id": "d5098579c1e34f439a75cffd0bec6801",
+        "model_uri": "models:/ats-pair-ranking/12",
+        "receipt_uri": "file:///work/requests/ci-t10-cd0016774184-transient/candidate.json",
+        "request_id": "ci-t10-cd0016774184-transient"
+      }
+    }
+  },
+  "image": {
+    "architecture": "arm64",
+    "id": "sha256:abdbc3dddf511fc38d894e7bd6284ff0b61433ccdeda88ef74e2f00c395945df",
+    "os": "linux",
+    "reference": "ats-core-airflow:t10",
+    "repo_digests": [
+      "ats-core-airflow@sha256:abdbc3dddf511fc38d894e7bd6284ff0b61433ccdeda88ef74e2f00c395945df"
+    ]
+  },
+  "limitations": [
+    "Synthetic admitted train/validation fixture; smoke2, not main20 performance evidence.",
+    "No final test bytes read by regular DAG; admission and bundle publication happen before trigger.",
+    "No exactly-once transaction across SQLite and MLflow: ambiguous post-fit/register crash blocks automatic refit and requires operator recovery.",
+    "T10 produces candidate receipt only; release/gate/alias promotion belongs to later tasks.",
+    "Retry proof is request-scoped real connection-refused before fit; shared core endpoints/services remain available."
+  ],
+  "manual_api_check": {
+    "counts_after": {
+      "runs": 10,
+      "versions": 12
+    },
+    "counts_before": {
+      "runs": 10,
+      "versions": 12
+    },
+    "manual_api_runs": [
+      {
+        "attempts": [
+          {
+            "attempt": 1,
+            "kind": null,
+            "outcome": "completed",
+            "phase": "repro"
+          }
+        ],
+        "dag_run_id": "manual-completed-replay-99338b807c5a",
+        "receipt": {
+          "bundle_inventory_sha256": "7c906236ec3574900c070ce92bfcf0ded5f322d3b830013ab81fc0f5e553c949",
+          "candidate_id": "candidate-bafa1de35b1477114e334e82",
+          "dvc_lock_sha256": "7fd90bfa774a3677847711c9f7ffcf4581b484520c6447e047d0f91c2f2b8e62",
+          "git_sha": "9e83ec6fb69d6214e847ac093ebc92e56a0d4f61",
+          "mlflow": {
+            "exact_uri": "models:/ats-pair-ranking/11",
+            "experiment_id": "3",
+            "model_name": "ats-pair-ranking",
+            "model_version": "11",
+            "run_id": "58719a4f06bd4a6a84e81d4ffe7d0335",
+            "source": "models:/m-37948977825a4e2a9ad548695391ab94"
+          },
+          "outcome": "new_training",
+          "params_hash": "c27d3144bec3c53e11654b7fded54bc757d2fc78a1b50f16927ee8cd7c7236ba",
+          "pipeline_manifest_sha256": "e7c1d2bddf407439ce2965d10ccce72dc3c760ccd59ff35fe3236c372f0aab55",
+          "receipt_uri": "file:///work/requests/ci-t10-cd0016774184-normal/candidate.json",
+          "request_id": "ci-t10-cd0016774184-normal",
+          "request_sha256": "2417cc7364eb8a79be1455386f335dffb8a73ae32470e7c93ceba66ff65bc9a1",
+          "run_id": "ci-t10-cd0016774184-normal",
+          "schema_version": 1
+        },
+        "state": "success",
+        "task_tries": [
+          1
+        ],
+        "xcom": {
+          "candidate_id": "candidate-bafa1de35b1477114e334e82",
+          "mlflow_run_id": "58719a4f06bd4a6a84e81d4ffe7d0335",
+          "model_uri": "models:/ats-pair-ranking/11",
+          "receipt_uri": "file:///work/requests/ci-t10-cd0016774184-normal/candidate.json",
+          "request_id": "ci-t10-cd0016774184-normal"
+        }
+      },
+      {
+        "attempts": [
+          {
+            "attempt": 1,
+            "kind": "io_transient",
+            "outcome": "retryable",
+            "phase": "download"
+          },
+          {
+            "attempt": 2,
+            "kind": null,
+            "outcome": "completed",
+            "phase": "repro"
+          }
+        ],
+        "dag_run_id": "manual-controlled-io-f7f61983859f",
+        "receipt": {
+          "bundle_inventory_sha256": "7c906236ec3574900c070ce92bfcf0ded5f322d3b830013ab81fc0f5e553c949",
+          "candidate_id": "candidate-fb35a02f3eae0173478b990a",
+          "dvc_lock_sha256": "7fd90bfa774a3677847711c9f7ffcf4581b484520c6447e047d0f91c2f2b8e62",
+          "git_sha": "9e83ec6fb69d6214e847ac093ebc92e56a0d4f61",
+          "mlflow": {
+            "exact_uri": "models:/ats-pair-ranking/11",
+            "experiment_id": "3",
+            "model_name": "ats-pair-ranking",
+            "model_version": "11",
+            "run_id": "58719a4f06bd4a6a84e81d4ffe7d0335",
+            "source": "models:/m-37948977825a4e2a9ad548695391ab94"
+          },
+          "outcome": "cache_hit",
+          "params_hash": "c27d3144bec3c53e11654b7fded54bc757d2fc78a1b50f16927ee8cd7c7236ba",
+          "pipeline_manifest_sha256": "e7c1d2bddf407439ce2965d10ccce72dc3c760ccd59ff35fe3236c372f0aab55",
+          "receipt_uri": "file:///work/requests/ci-t10-cd0016774184-normal-manual-io/candidate.json",
+          "request_id": "ci-t10-cd0016774184-normal-manual-io",
+          "request_sha256": "da2ec41abbddab8bed35a9b3a3b897c2a363397ecdacc77131f61b580edd7fde",
+          "run_id": "ci-t10-cd0016774184-normal-manual-io",
+          "schema_version": 1
+        },
+        "state": "success",
+        "task_tries": [
+          2
+        ],
+        "xcom": {
+          "candidate_id": "candidate-fb35a02f3eae0173478b990a",
+          "mlflow_run_id": "58719a4f06bd4a6a84e81d4ffe7d0335",
+          "model_uri": "models:/ats-pair-ranking/11",
+          "receipt_uri": "file:///work/requests/ci-t10-cd0016774184-normal-manual-io/candidate.json",
+          "request_id": "ci-t10-cd0016774184-normal-manual-io"
+        }
+      }
+    ],
+    "new_fit": false,
+    "source_git_sha": "9e83ec6fb69d6214e847ac093ebc92e56a0d4f61",
+    "status": "passed"
+  },
+  "manual_raw_sha256": "aa1342d0967ed48338bdd9ea1a836b685e126d1bcb5945de6b24b9ad2eab30f0",
+  "normal": {
+    "bundle_inventory_sha256": "7c906236ec3574900c070ce92bfcf0ded5f322d3b830013ab81fc0f5e553c949",
+    "candidate_id": "candidate-bafa1de35b1477114e334e82",
+    "dvc_lock_sha256": "7fd90bfa774a3677847711c9f7ffcf4581b484520c6447e047d0f91c2f2b8e62",
+    "git_sha": "9e83ec6fb69d6214e847ac093ebc92e56a0d4f61",
+    "mlflow": {
+      "exact_uri": "models:/ats-pair-ranking/11",
+      "experiment_id": "3",
+      "model_name": "ats-pair-ranking",
+      "model_version": "11",
+      "run_id": "58719a4f06bd4a6a84e81d4ffe7d0335",
+      "source": "models:/m-37948977825a4e2a9ad548695391ab94"
+    },
+    "outcome": "new_training",
+    "params_hash": "c27d3144bec3c53e11654b7fded54bc757d2fc78a1b50f16927ee8cd7c7236ba",
+    "pipeline_manifest_sha256": "e7c1d2bddf407439ce2965d10ccce72dc3c760ccd59ff35fe3236c372f0aab55",
+    "receipt_uri": "file:///work/requests/ci-t10-cd0016774184-normal/candidate.json",
+    "request_id": "ci-t10-cd0016774184-normal",
+    "request_sha256": "2417cc7364eb8a79be1455386f335dffb8a73ae32470e7c93ceba66ff65bc9a1",
+    "run_id": "ci-t10-cd0016774184-normal",
+    "schema_version": 1
+  },
+  "raw_evidence_sha256": "5bca9ed8ccdec39a9e9d001bf7240634f1c616e7388c7b2b7764dcb61a6d4d3d",
+  "resources": {
+    "after": {
+      "ats-core-airflow-1": {
+        "memory_limit": 3221225472,
+        "oom": false,
+        "restarts": 0,
+        "status": "running"
+      },
+      "ats-core-minio-1": {
+        "memory_limit": 1073741824,
+        "oom": false,
+        "restarts": 0,
+        "status": "running"
+      },
+      "ats-core-mlflow-1": {
+        "memory_limit": 2147483648,
+        "oom": false,
+        "restarts": 0,
+        "status": "running"
+      },
+      "ats-core-postgres-1": {
+        "memory_limit": 536870912,
+        "oom": false,
+        "restarts": 0,
+        "status": "running"
+      },
+      "snapshot": [
+        "ats-core-postgres-1 93.13MiB / 512MiB",
+        "ats-core-minio-1 230.4MiB / 1GiB",
+        "ats-core-mlflow-1 1.719GiB / 2GiB",
+        "ats-core-airflow-1 1.077GiB / 3GiB",
+        "unrelated_container_1 460.9MiB / 7.748GiB",
+        "unrelated_container_2 25.3MiB / 7.748GiB"
+      ],
+      "unrelated_container_1": {
+        "memory_limit": 0,
+        "oom": false,
+        "restarts": 0,
+        "status": "running"
+      },
+      "unrelated_container_2": {
+        "memory_limit": 0,
+        "oom": false,
+        "restarts": 0,
+        "status": "running"
+      }
+    },
+    "before": {
+      "ats-core-airflow-1": {
+        "memory_limit": 3221225472,
+        "oom": false,
+        "restarts": 0,
+        "status": "running"
+      },
+      "ats-core-minio-1": {
+        "memory_limit": 1073741824,
+        "oom": false,
+        "restarts": 0,
+        "status": "running"
+      },
+      "ats-core-mlflow-1": {
+        "memory_limit": 2147483648,
+        "oom": false,
+        "restarts": 0,
+        "status": "running"
+      },
+      "ats-core-postgres-1": {
+        "memory_limit": 536870912,
+        "oom": false,
+        "restarts": 0,
+        "status": "running"
+      },
+      "snapshot": [
+        "ats-core-postgres-1 88.92MiB / 512MiB",
+        "ats-core-minio-1 216.5MiB / 1GiB",
+        "ats-core-mlflow-1 1.718GiB / 2GiB",
+        "ats-core-airflow-1 941.5MiB / 3GiB",
+        "unrelated_container_1 460.9MiB / 7.748GiB",
+        "unrelated_container_2 25.3MiB / 7.748GiB"
+      ],
+      "unrelated_container_1": {
+        "memory_limit": 0,
+        "oom": false,
+        "restarts": 0,
+        "status": "running"
+      },
+      "unrelated_container_2": {
+        "memory_limit": 0,
+        "oom": false,
+        "restarts": 0,
+        "status": "running"
+      }
+    },
+    "docker_vm_bytes": 8319213568,
+    "health_after": "Airflow/PostgreSQL/MinIO/MLflow healthy; unrelated containers unchanged",
+    "interpretation": "point samples and configured limits, not peak or capacity benchmark",
+    "sql_connections_sample": {
+      "airflow": 9,
+      "max_connections": 100
+    }
+  },
+  "retained_prior_runs": [
+    {
+      "outcome": "failed bootstrap before DAG",
+      "raw_sha256": "48bc0eba3778e858f16545efe6a29d550ca367e6622b9ccbc6ada9291b1f40ca",
+      "reason": "SQL pool2 overflow0 exhausted during migration; bounded pool5 fixed"
+    },
+    {
+      "initial_report_status_field": "running; failed unittest traceback retained",
+      "outcome": "failed fixture preparation before DAG",
+      "raw_sha256": "b6e30866071d902aaeea1b09a74c5b74df959279eeec1d7342b075baab5891f7",
+      "reason": "ML PATH missing dvc; harness fixed"
+    },
+    {
+      "outcome": "failed train; recovery_required; never retriggered",
+      "raw_sha256": "ab607a803a4d2df70fdf70ba92301219770d76a533df39a0597bcabca069a441",
+      "reason": "MLflow copytree preserved readonly code modes; nonroot temporary cleanup failed; byte-identical writable packaging snapshot fixed"
+    },
+    {
+      "outcome": "passed preliminary gate on6544202",
+      "raw_sha256": "de900f5e922a59105411c0d711b798278830e18fd5ecead5c2b13ae2e765cfb8"
+    },
+    {
+      "outcome": "passed preliminary API gate on343d424 before stricter ingress boundary",
+      "raw_sha256": "706e6c4728df05af3c01f69e5f32ef6f2a0795d8269a2b071b31ffc422592707"
+    }
+  ],
+  "schema_version": 1,
+  "scope": "demo_only",
+  "source_git_sha": "9e83ec6fb69d6214e847ac093ebc92e56a0d4f61",
+  "status": "passed",
+  "task": "T-10 / issue #11",
+  "transient": {
+    "bundle_inventory_sha256": "7c906236ec3574900c070ce92bfcf0ded5f322d3b830013ab81fc0f5e553c949",
+    "candidate_id": "candidate-7d64e4409b29fe8c9ac45bff",
+    "dvc_lock_sha256": "f5e1f308d80e8e54b70f98b24b20a0d501f2eacb33342ee74a10dfccf11d1195",
+    "git_sha": "9e83ec6fb69d6214e847ac093ebc92e56a0d4f61",
+    "mlflow": {
+      "exact_uri": "models:/ats-pair-ranking/12",
+      "experiment_id": "3",
+      "model_name": "ats-pair-ranking",
+      "model_version": "12",
+      "run_id": "d5098579c1e34f439a75cffd0bec6801",
+      "source": "models:/m-d91f3614282744d29efdb55705f70a87"
+    },
+    "outcome": "new_training",
+    "params_hash": "ad0bd9d1fefc94c18ecdb2b0150a785213f69bc83333ef917acfc15c6b36dc2d",
+    "pipeline_manifest_sha256": "9b44c4254fb06f623e0476e3f14e4325781d09aa8d66edcfd7300d2d80961212",
+    "receipt_uri": "file:///work/requests/ci-t10-cd0016774184-transient/candidate.json",
+    "request_id": "ci-t10-cd0016774184-transient",
+    "request_sha256": "66c6d5513299dbe984270375bdd1e74a6d6ac89a19dc142f6285ad02a70bfa18",
+    "run_id": "ci-t10-cd0016774184-transient",
+    "schema_version": 1
+  },
+  "validation": {
+    "cache_hit_existing_mlflow_ids": "passed",
+    "completed_replay_same_candidate": "passed",
+    "dag_import": "passed Airflow3.3.2",
+    "exhausted_io_total_attempts": 3,
+    "focused_ledger_tests": 10,
+    "ingress_plan_before_partition_get": "unit and independent RecordingS3 passed; 10 boundary cases; forbidden object requests0",
+    "invalid_bundle_attempts": 1,
+    "invalid_bundle_before_repro_intent": true,
+    "local_executor": "passed",
+    "max_active_runs": 1,
+    "new_mlflow_runs": 2,
+    "new_model_versions": 2,
+    "nonroot_readonly_source_packaging_cleanup": "passed without fit or remote calls",
+    "payload_conflict": "passed",
+    "real_api_gate_seconds": 89.95,
+    "retrigger_cannot_reset_budget": true,
+    "source_clean_exact_sha_and_lock": "passed",
+    "third_attempt_complete_receipt_recovery": "unit and independent candidate/repro-only shadow recovery passed on9e83; DVC/download/fit/register calls0; no fourth attempt",
+    "transient_io_then_success_attempts": 2,
+    "unit_tests": 90,
+    "xcom_ids_uris_only": true
+  }
+}

@@ -3,6 +3,7 @@
 from copy import deepcopy
 import json
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -14,10 +15,41 @@ from ats_mlops.data.dataset import generate_dataset
 from ats_mlops.data.validate import ValidationError, require_valid, validate_dataset
 from ats_mlops.features.pairs import FEATURE_NAMES, PairFeatures, tokenize
 from ats_mlops.model.scoring import pair_frame, positive_scores, score_rows
-from ats_mlops.model.training import fit_rows, make_pipeline, train
+from ats_mlops.model.training import fit_rows, make_pipeline, portable_code, train
+from ats_mlops.lineage.manifest import tree_inventory
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = json.loads((ROOT / "configs/model.json").read_text())
+
+
+class PortableCodeTests(unittest.TestCase):
+    def test_readonly_source_copy_is_byte_identical_and_cleanable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            package = source / "src/ats_mlops"
+            package.mkdir(parents=True)
+            (package / "module.py").write_bytes(b"immutable source\n")
+            (package / "module.py").chmod(0o444)
+            package.chmod(0o555)
+            try:
+                with portable_code(source) as snapshot:
+                    self.assertEqual((snapshot / "module.py").read_bytes(), b"immutable source\n")
+                    self.assertTrue(snapshot.stat().st_mode & 0o200)
+                    self.assertTrue((snapshot / "module.py").stat().st_mode & 0o200)
+                    # Exercise pinned MLflow's actual copy/cleanup operations;
+                    # this also runs under UID50000 in the runtime smoke probe.
+                    from mlflow.utils.model_utils import _validate_and_copy_code_paths
+                    artifact = source / "artifact"
+                    artifact.mkdir()
+                    _validate_and_copy_code_paths([str(snapshot)], str(artifact))
+                    self.assertEqual(tree_inventory(artifact / "code/ats_mlops"), tree_inventory(package))
+                    shutil.rmtree(artifact)
+                    snapshot_path = snapshot
+                self.assertFalse(snapshot_path.exists())
+                self.assertFalse(package.stat().st_mode & 0o200)
+                self.assertFalse((package / "module.py").stat().st_mode & 0o200)
+            finally:
+                package.chmod(0o755)
 
 
 def fixture():
