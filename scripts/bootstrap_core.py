@@ -76,9 +76,9 @@ def initialize(state_dir: Path, project: str, ports: tuple[int, int, int]) -> di
     return values
 
 
-def compose_command(state_dir: Path, project: str) -> list[str]:
+def compose_command(state_dir: Path, project: str, compose_file: Path = ROOT / "compose.yaml") -> list[str]:
     return ["docker", "compose", "--project-directory", str(ROOT), "--env-file",
-            str(state_dir / "core.env"), "-p", project, "-f", str(ROOT / "compose.yaml"), "--profile", "core"]
+            str(state_dir / "core.env"), "-p", project, "-f", str(compose_file.resolve()), "--profile", "core"]
 
 
 def main() -> int:
@@ -86,6 +86,7 @@ def main() -> int:
     parser.add_argument("action", choices=("init", "config", "up", "restart", "down", "status"))
     parser.add_argument("--state-dir", type=Path, default=ROOT / ".local/core")
     parser.add_argument("--project", default="ats-core")
+    parser.add_argument("--compose-file", type=Path, default=ROOT / "compose.yaml")
     parser.add_argument("--minio-port", type=int, default=9000)
     parser.add_argument("--console-port", type=int, default=9001)
     parser.add_argument("--mlflow-port", type=int, default=5050)
@@ -99,7 +100,7 @@ def main() -> int:
         operations = {"config": ["config", "--quiet"], "up": ["up", "--build", "--wait", "--wait-timeout", "180"],
                       "restart": ["restart", "postgres", "minio", "mlflow"], "down": ["down", "--remove-orphans"],
                       "status": ["ps"]}
-        return subprocess.run(compose_command(state, args.project) + operations[args.action],
+        return subprocess.run(compose_command(state, args.project, args.compose_file) + operations[args.action],
                               env=os.environ | values, check=False).returncode
     except (OSError, ValueError) as exc:
         print(f"Core configuration failed: {exc}", file=sys.stderr)
