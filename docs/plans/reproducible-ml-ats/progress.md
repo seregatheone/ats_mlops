@@ -13,7 +13,7 @@
 - [x] T-8 — Optuna
 - [x] T-9 — DVC DAG
 - [x] T-10 — Airflow
-- [ ] T-11 — Gate кандидата
+- [x] T-11 — Gate кандидата
 - [ ] T-12 — BentoML API
 - [ ] T-13 — Выпуск и откат
 - [ ] T-14 — GitHub Actions
@@ -26,6 +26,8 @@
 
 ## Learnings
 <!-- Добавлять наблюдения по мере выполнения задач. -->
+
+- T-11: modelgate связывает exactmodel/pipeline/authoritative-data hashes с validation-onlycohort, NDCGdrop≤0.005 противbaseline/incumbent, outcome/scope разделены. Firstrelease и fixtureincumbent прошли actualisolated artifact gates на240rows; bytecode/cross-artifact rejected. Оба P2 metadataTOCTOU/outputrace исправлены; независимаяacceptance VERIFIED, 102unit наfixsource и113 integratedunitPASS послеAirflowbase. Qualityreport неapprove/activate; incumbent recheck принадлежитT13.
 
 - T-10: Airflow3.3.2 LocalExecutor вызывает отдельный locked ML venv/immutable source и admittedbundle; SQLiteledger сохраняет idempotency/retrybudget. 90 unit, DAGimport, actual APIgate89.950s и independentacceptance VERIFIED; normal/transient2runs, replay/cache/conflict/fatal/exhausted0extra. XCom только5IDs/URIs, noOOM/restarts. Исправлены nonroot readonly code packaging, childmanifest replaybinding, attempt3recovery и forbiddeningress. Report reports/airflow/t10.json; ambiguouspostregister остаётся recovery_required, не exactly-onceclaim.
 
