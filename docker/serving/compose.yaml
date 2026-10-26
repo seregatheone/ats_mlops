@@ -1,0 +1,18 @@
+services:
+  ranking:
+    image: ${ATS_SERVING_IMAGE:?exact serving image ID required}
+    read_only: true
+    user: "50000:50000"
+    ports:
+      - "127.0.0.1:${ATS_SERVING_PORT:-3000}:3000"
+    tmpfs:
+      - /tmp:uid=50000,gid=50000
+      - /runtime:uid=50000,gid=50000
+    volumes:
+      - ${ATS_RELEASE_PACKAGE:?package path required}:/release:ro
+      - ${ATS_RELEASE_PACKAGE}/bentoml/models:/runtime/bento/models:ro
+      - prediction-events:/events
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+volumes:
+  prediction-events:
