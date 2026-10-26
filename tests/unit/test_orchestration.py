@@ -54,6 +54,20 @@ class OrchestrationTests(unittest.TestCase):
                 with self.assertRaisesRegex(runner.Failure, status):
                     runner.claim(db, "r", "payload")
 
+    def test_real_t9_train_failure_shape_is_ambiguous_without_optional_flag(self):
+        receipt = {"outcome": "failed", "events": {"failure-train": {"error_type": "ValueError", "retryable": False, "reason": "registered_run_mismatch"}}}
+        self.assertEqual(runner.repro_failure_kind(receipt), "recovery_required")
+        self.assertEqual(runner.repro_failure_kind({"events": {}, "outcome": "failed"}), "recovery_required")
+        self.assertEqual(runner.repro_failure_kind({"events": {"failure-validate": {"error_type": "DataError"}}}), "data_or_config_invalid")
+
+    def test_recovery_completes_running_attempt_in_same_transaction(self):
+        with tempfile.TemporaryDirectory() as temporary, runner.database(Path(temporary) / "ledger") as db:
+            runner.claim(db, "r", "payload")
+            runner.begin_attempt(db, "r")
+            runner.recovered(db, "r", "receipt")
+            self.assertEqual(db.execute("SELECT status FROM requests").fetchone()[0], "completed")
+            self.assertEqual(tuple(db.execute("SELECT phase,outcome FROM attempts").fetchone()), ("recovered", "completed"))
+
     def test_ml_environment_drops_airflow_sql_and_root_credentials(self):
         with patch.dict(os.environ, {"AIRFLOW__DATABASE__SQL_ALCHEMY_CONN": "secret", "MINIO_ROOT_PASSWORD": "secret",
                                      "MLFLOW_SECRET_ACCESS_KEY": "secret", "AWS_SECRET_ACCESS_KEY": "dvc", "MLFLOW_TRACKING_URI": "http://mlflow:5000"}):

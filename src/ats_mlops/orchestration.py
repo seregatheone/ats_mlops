@@ -119,6 +119,21 @@ def finish(db, request_id, attempt, status, *, kind=None, receipt_hash=None, pha
         db.execute("UPDATE attempts SET phase=?,outcome=?,kind=? WHERE request_id=? AND attempt=?", (phase, status, kind, request_id, attempt))
 
 
+def recovered(db, request_id, receipt_hash):
+    with db:
+        db.execute("UPDATE requests SET status='completed',kind=NULL,receipt_hash=? WHERE request_id=?", (receipt_hash, request_id))
+        db.execute("UPDATE attempts SET phase='recovered',outcome='completed',kind=NULL WHERE request_id=? AND outcome='running'", (request_id,))
+
+
+def repro_failure_kind(receipt):
+    events = receipt.get("events", {})
+    # A train failure may follow a remote registration, including a ValueError
+    # in post-registration verification. Missing diagnostics are also ambiguous.
+    if "failure-train" in events or "train" in events or (not events and "preflight" not in receipt):
+        return "recovery_required"
+    return "data_or_config_invalid"
+
+
 def ml_env(source=None):
     # Do not inherit Airflow SQL/auth/JWT, host credentials or MLflow bucket IAM.
     allowed = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_DEFAULT_REGION", "MLFLOW_TRACKING_URI")
@@ -224,8 +239,7 @@ def run(conf):
         # Candidate published before a lost SQLite commit: recover exact evidence.
         if (root / "candidate.json").exists():
             result = verify_result(root, conf=conf)
-            with db:
-                db.execute("UPDATE requests SET status='completed',receipt_hash=? WHERE request_id=?", (file_hash(root / "candidate.json"), conf["request_id"]))
+            recovered(db, conf["request_id"], file_hash(root / "candidate.json"))
             return xcom(result)
         if (root / "repro-intent.json").exists():
             # Recover a complete audited repro receipt; never run DVC again here.
@@ -237,8 +251,7 @@ def run(conf):
                     db.execute("UPDATE requests SET status='recovery_required',kind='recovery_required' WHERE request_id=?", (conf["request_id"],))
                 raise Failure("recovery_required")
             result = verify_result(root, conf=conf)
-            with db:
-                db.execute("UPDATE requests SET status='completed',receipt_hash=? WHERE request_id=?", (file_hash(root / "candidate.json"), conf["request_id"]))
+            recovered(db, conf["request_id"], file_hash(root / "candidate.json"))
             return xcom(result)
         attempt = begin_attempt(db, conf["request_id"])
         phase = "download"
@@ -249,11 +262,18 @@ def run(conf):
             if run_root.exists():
                 shutil.rmtree(run_root)
             from ats_mlops.pipeline import initialize
-            initialize(Path(os.environ["ATS_SOURCE_REPO"]), conf["git_sha"], run_root, root / "bundle",
+            repository = root / "repository.git"
+            if not repository.exists():
+                external = Path(os.environ["ATS_SOURCE_REPO"])
+                command(["git", "-c", f"safe.directory={external}", "-c", f"safe.directory={external / '.git'}",
+                         "clone", "--bare", "--no-local", "--", str(external), str(repository)], env=ml_env())
+            initialize(repository, conf["git_sha"], run_root, root / "bundle",
                        conf["bundle_inventory_sha256"], identity)
             source, workspace = run_root / "source", run_root / "workspace"
             if file_hash(source / "requirements-ml.lock") != file_hash("/opt/requirements-ml.lock"):
                 raise Failure("lock_mismatch")
+            if not (source / "src/ats_mlops/orchestration.py").is_file():
+                raise Failure("unsupported_source_revision")
             manifest = read(workspace / "data_manifest.json")
             if manifest["generator"]["config"]["namespace"] != conf["dataset_version"]:
                 raise Failure("dataset_version_mismatch")
@@ -301,9 +321,7 @@ def execute(root, recover=False):
         result = reproduce(workspace, source)
     write(root / "repro.json", result)
     if result["outcome"] == "failed":
-        failures = [v for k, v in result.get("events", {}).items() if k.startswith("failure-")]
-        uncertain = any(v.get("remote_commit_uncertain") for v in failures)
-        raise Failure("recovery_required" if uncertain else "pipeline_failed")
+        raise Failure(repro_failure_kind(result))
     manifest_path = workspace / "artifacts/evaluation/pipeline_manifest.json"
     manifest = read(manifest_path)
     mlflow = manifest["training"]["mlflow"]
