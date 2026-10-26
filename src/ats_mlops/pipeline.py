@@ -89,7 +89,7 @@ def check_binding(workspace: Path) -> dict:
     return binding
 
 
-def create_bundle(source_root: Path, config_path: Path, output: Path) -> dict:
+def create_bundle(source_root: Path, config_path: Path, output: Path, *, reservation_parent=None, admission_report=None) -> dict:
     """One-time admission, with split bytes; never invoked by init or DVC stages."""
     from ats_mlops.data.dataset import generate_dataset
     from ats_mlops.data.validate import validate_dataset
@@ -101,8 +101,19 @@ def create_bundle(source_root: Path, config_path: Path, output: Path) -> dict:
     with tempfile.TemporaryDirectory(prefix="ats-admission-", dir=output.parent) as temporary:
         staging = Path(temporary)
         run_command(["dvc", "init", "--no-scm", "-q"], cwd=staging)
-        generate_dataset(config_path, staging / "data_manifest.json", staging / "data")
+        if reservation_parent is None:
+            generate_dataset(config_path, staging / "data_manifest.json", staging / "data")
+        else:
+            from ats_mlops.data.dataset import generate_rows,prepare_dataset
+            from ats_mlops.data.reservation import Registry
+            parent=read_json(reservation_parent);Registry(parent)
+            config=read_json(config_path)
+            prepare_dataset(generate_rows(config),config,staging/"data",staging/"data_manifest.json",reservation_policy=parent)
         receipt = validate_dataset(staging / "data_manifest.json", staging / "admission")
+        if admission_report is not None:
+            target=Path(admission_report)
+            if target.exists():raise ValueError("new_admission_report_required")
+            target.write_bytes((staging/"admission/data-admission.json").read_bytes())
         if receipt["outcome"] != "passed":
             raise ValueError("admission_failed")
         run_command(["dvc", "add", "data/train.jsonl", "data/validation.jsonl", "data/split.json"], cwd=staging)
@@ -128,6 +139,27 @@ def create_bundle(source_root: Path, config_path: Path, output: Path) -> dict:
     return descriptor
 
 
+def bundle_files(manifest):
+    """Approve train/validation-only ingress before opening any data bodies."""
+    required = {"data_manifest.json", "admission/data-admission.json", "dataset-binding.json", *POINTERS.values()}
+    if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 2:
+        raise ValueError("anchored_schema2_bundle_required")
+    artifacts = manifest["artifacts"]
+    raw = {artifacts[name]["path"] for name in PARTITIONS}
+    forbidden = {artifacts[name]["path"] for name in ("source", "corpus", "test", "split_lists")}
+    policy = manifest.get("reservation", {}).get("policy", {}).get("path")
+    if (not isinstance(policy, str) or not policy.endswith("/reservation_policy.json")
+            or policy in raw | forbidden | required or raw.intersection(forbidden) or len(raw) != 2):
+        raise ValueError("unsafe_train_validation_carrier")
+    allowed = required | raw | {policy}
+    for name in allowed:
+        if (not isinstance(name, str) or not name or "\\" in name or Path(name).is_absolute()
+                or ".." in Path(name).parts or Path(name).as_posix() != name
+                or Path(name).name in {"source.jsonl", "corpus.jsonl", "test.jsonl", "split.json"}):
+            raise ValueError("unsafe_train_validation_carrier")
+    return allowed
+
+
 def verify_bundle(bundle: Path, expected_hash: str) -> dict:
     from ats_mlops.data.dataset import load_manifest
     from ats_mlops.data.reservation import manifest_policy
@@ -138,12 +170,12 @@ def verify_bundle(bundle: Path, expected_hash: str) -> dict:
     if (descriptor.get("schema_version") != 1 or not required.issubset(files)
             or expected_hash != inventory_hash(files) or descriptor.get("sha256") != expected_hash):
         raise ValueError("bundle_identity_mismatch")
-    manifest = load_manifest(bundle / "data_manifest.json")
-    manifest_policy(bundle / "data_manifest.json", manifest)
-    allowed = required | {manifest["artifacts"][name]["path"] for name in PARTITIONS} | {
-        manifest["reservation"]["policy"]["path"]}
+    metadata = read_json(bundle / "data_manifest.json")
+    allowed = bundle_files(metadata)
     if set(files) != allowed:
         raise ValueError("bundle_files_must_be_train_validation_only")
+    manifest = load_manifest(bundle / "data_manifest.json")
+    manifest_policy(bundle / "data_manifest.json", manifest)
     for name, digest in files.items():
         if file_hash(safe_path(bundle, name)) != digest:
             raise ValueError("bundle_content_mismatch")
@@ -209,6 +241,18 @@ def context(workspace: Path, source_root: Path) -> tuple[dict, dict]:
     return spec, actual
 
 
+def selection_mode(search, smoke):
+    """Lightweight request preflight, also used before orchestration effects."""
+    if not isinstance(search, dict) or type(smoke) is not bool:
+        raise ValueError("invalid_selection_mode")
+    mode = search.get("mode", "optuna")
+    if type(mode) is not str or mode not in {"optuna", "frozen"}:
+        raise ValueError("invalid_selection_mode")
+    if mode == "frozen" and (set(search) != {"mode"} or smoke):
+        raise ValueError("invalid_frozen_selection")
+    return mode
+
+
 def parameters(workspace: Path, source_root: Path) -> dict:
     import yaml
     from ats_mlops.model.training import make_pipeline
@@ -235,9 +279,12 @@ def parameters(workspace: Path, source_root: Path) -> dict:
         return base
 
     model = merge(read_json(source_root / "configs/model.json"), params["model"])
-    search = merge(read_json(source_root / "configs/search.json"), params["search"])
+    mode = selection_mode(params["search"], params["smoke"])
+    search = ({"mode": "frozen"} if mode == "frozen" else merge(read_json(source_root / "configs/search.json"),
+              {key: value for key, value in params["search"].items() if key != "mode"}))
     make_pipeline(model)
-    validate_search(search)
+    if mode != "frozen":
+        validate_search(search)
     return {"model": model, "search": search, "smoke": params["smoke"]}
 
 
@@ -269,6 +316,20 @@ def verify_prepared(workspace: Path, source_root: Path, binding: dict) -> dict:
     return expected
 
 
+def frozen_selection(prepared, source):
+    """A config selection receipt, not an Optuna study or a training result."""
+    selected = read_json(prepared / "model.json")
+    return {"schema_version": 1, "kind": "frozen", "outcome": "selected", "new_trials": 0,
+            "selected_config": selected, "selected_config_sha256": file_hash(prepared / "model.json"),
+            "effective_fit_sha256": file_hash(prepared / "fit-params.json"),
+            "prepared_inventory_sha256": inventory_hash(tree_inventory(prepared)),
+            "data_manifest_sha256": file_hash(prepared / "data_manifest.json"),
+            "admission_sha256": file_hash(prepared / "admission.json"),
+            "source": {"git_sha": source["git_sha"], "source_tree_sha256": source["source_tree_sha256"],
+                       "image_id": source["environment"]["image"]["id"],
+                       "lockfile_sha256": source["environment"]["lockfile_sha256"]}}
+
+
 def stage(name: str, workspace: Path, source_root: Path) -> dict:
     """Real stages publish fresh generated outputs; old immutable studies stay intact."""
     from ats_mlops.data.dataset import load_manifest
@@ -279,6 +340,7 @@ def stage(name: str, workspace: Path, source_root: Path) -> dict:
     workspace, source_root = workspace.resolve(), source_root.resolve()
     spec, source = context(workspace, source_root)
     binding = check_binding(workspace)
+    parameters(workspace, source_root)  # Reject a bad mode before publishing any stage effects.
     artifacts = workspace / "artifacts"
     artifacts.mkdir(exist_ok=True)
     output = artifacts / {"validate": "validation", "prepare": "prepared", "train": "training", "evaluate": "evaluation"}[name]
@@ -318,20 +380,28 @@ def stage(name: str, workspace: Path, source_root: Path) -> dict:
                 write_json(staging / "feature-contract.json", FEATURE_CONTRACT)
             write_json(staging / "prepared.json" if name == "prepare" else staging / "validated.json", result)
         elif name == "train":
-            from ats_mlops.model.tune import tune
             from ats_mlops.model.training import train
 
             prepared = artifacts / "prepared"
             fit_params = verify_prepared(workspace, source_root, binding)
-            study = tune(prepared / "data_manifest.json", staging / "study", admission_report=prepared / "admission.json",
-                         config_path=prepared / "model.json", search_path=prepared / "search.json",
-                         source_root=source_root, image_identity=spec["image"], smoke=fit_params["smoke"])
-            if study["outcome"] != "passed":
-                raise ValueError("study_failed")
+            if selection_mode(fit_params["search"], fit_params["smoke"]) == "frozen":
+                selection = frozen_selection(prepared, source)
+                write_json(staging / "selection.json", selection)
+                selected_path = prepared / "model.json"
+                selected_sha = selection["selected_config_sha256"]
+            else:
+                from ats_mlops.model.tune import tune
+                study = tune(prepared / "data_manifest.json", staging / "study", admission_report=prepared / "admission.json",
+                             config_path=prepared / "model.json", search_path=prepared / "search.json",
+                             source_root=source_root, image_identity=spec["image"], smoke=fit_params["smoke"])
+                if study["outcome"] != "passed":
+                    raise ValueError("study_failed")
+                selected_path = staging / "study/selected-model.json"
+                selected_sha = study["selected_config_sha256"]
             result = train(prepared / "data_manifest.json", staging / "final", admission_report=prepared / "admission.json",
-                           config_path=staging / "study/selected-model.json", source_root=source_root,
+                           config_path=selected_path, source_root=source_root,
                            image_identity=spec["image"], experiment="ats-t9", registered_model="ats-pair-ranking")
-            if (result["params_sha256"] != study["selected_config_sha256"]
+            if (result["params_sha256"] != selected_sha
                     or result["data_manifest_sha256"] != binding["manifest_sha256"]):
                 raise ValueError("selected_config_or_data_binding_mismatch")
         else:
@@ -362,13 +432,27 @@ def evaluate(workspace, source_root, output, source, binding):
     from ats_mlops.model.scoring import pair_frame, score_rows
 
     prepared, training = workspace / "artifacts/prepared", workspace / "artifacts/training"
-    verify_prepared(workspace, source_root, binding)
+    fit_params = verify_prepared(workspace, source_root, binding)
     record = read_json(training / "final/run_manifest.json")
-    study = read_json(training / "study/study.json")
-    if (record["git_sha"] != source["git_sha"] or study["outcome"] != "passed"
+    frozen = selection_mode(fit_params["search"], fit_params["smoke"]) == "frozen"
+    if frozen:
+        receipt = read_json(training / "selection.json")
+        if canonical_json(receipt) != canonical_json(frozen_selection(prepared, source)) or (training / "study").exists():
+            raise ValueError("frozen_selection_binding_mismatch")
+        lineage = {"selection": {"kind": "frozen", "receipt": receipt,
+                                  "receipt_sha256": file_hash(training / "selection.json")}}
+        selected_sha = receipt["selected_config_sha256"]
+    else:
+        study = read_json(training / "study/study.json")
+        if (study["outcome"] != "passed" or (training / "selection.json").exists()
+                or file_hash(training / "study/selected-model.json") != study["selected_config_sha256"]):
+            raise ValueError("training_model_or_study_binding_mismatch")
+        selected_sha = study["selected_config_sha256"]
+        lineage = {"study": {"sha256": file_hash(training / "study/study.json"), "configured_budget": study["configured_budget"],
+                             "effective_budget": study["effective_budget"], "outcome": study["outcome"]}}
+    if (record["git_sha"] != source["git_sha"]
             or record["data_manifest_sha256"] != binding["manifest_sha256"]
-            or record["params_sha256"] != study["selected_config_sha256"]
-            or file_hash(training / "study/selected-model.json") != study["selected_config_sha256"]
+            or record["params_sha256"] != selected_sha
             or tree_inventory(training / "final/model") != record["model"]["files"]):
         raise ValueError("training_model_or_study_binding_mismatch")
     rows = require_valid(prepared / "data_manifest.json", output / "guard", admission_report=prepared / "admission.json")
@@ -396,16 +480,17 @@ def evaluate(workspace, source_root, output, source, binding):
                          "pipeline_inputs_sha256": file_hash(workspace / "pipeline-inputs.json")},
               "parameters": {"params_file_sha256": file_hash(workspace / "params.yaml"),
                              "effective_fit": read_json(prepared / "fit-params.json"),
-                             "selected_config_sha256": study["selected_config_sha256"],
+                             "selected_config_sha256": selected_sha,
                              "evaluation": evaluation_params},
-              "study": {"sha256": file_hash(training / "study/study.json"), "configured_budget": study["configured_budget"],
-                        "effective_budget": study["effective_budget"], "outcome": study["outcome"]},
+              **lineage,
               "training": {"run_manifest_sha256": file_hash(training / "final/run_manifest.json"),
                            "mlflow": record["mlflow"], "model_sha256": record["model"]["sha256"],
                            "legacy_source_pointers_role": "source_snapshot_only",
                            "authoritative_dataset_pointers": "inputs.binding.workspace_pointers"},
               "evaluation": {name: file_hash(output / name) for name in ("metrics.json", "scores.json", "features.json")},
               "limitations": record["limitations"], "test_read": False}
+    from ats_mlops.quality.artifacts import validate_selection
+    validate_selection(result, record, result["inputs"]["prepared_files"])
     write_json(output / "pipeline_manifest.json", result)
     return result
 
@@ -419,6 +504,7 @@ def reproduce(workspace: Path, source_root: Path, *, force=False) -> dict:
         command.extend(["-f", "--no-run-cache"])
     try:
         context(workspace, source_root)
+        parameters(workspace, source_root)
     except Exception as error:
         result = {"schema_version": 1, "invocation": invocation, "command": ["dvc", *command[1:]],
                   "exit_code": 1, "outcome": "failed", "events": {}, "preflight": {
@@ -451,6 +537,8 @@ def add_parser(commands):
     bundle.add_argument("--source-root", type=Path, required=True)
     bundle.add_argument("--config", type=Path, required=True)
     bundle.add_argument("--output", type=Path, required=True)
+    bundle.add_argument("--reservation-parent",type=Path)
+    bundle.add_argument("--admission-report",type=Path)
     init = sub.add_parser("init", help="install an already admitted bundle into sibling source/workspace clones")
     for name in ("repo", "directory", "bundle", "image-identity"):
         init.add_argument("--" + name, type=Path, required=True)
@@ -469,7 +557,7 @@ def add_parser(commands):
 def dispatch(args):
     command = args.pipeline_command
     if command == "bundle":
-        return create_bundle(args.source_root, args.config, args.output)
+        return create_bundle(args.source_root, args.config, args.output,reservation_parent=args.reservation_parent,admission_report=args.admission_report)
     if command == "init":
         return initialize(args.repo, args.git_sha, args.directory, args.bundle, args.bundle_sha, read_json(args.image_identity))
     if command == "stage":

@@ -136,9 +136,12 @@ class Controller:
         identity.update(release_id=active["release_id"], release_is_fixture=False)
         require(expected == identity, "stale_incumbent")
 
-    def stage(self, package, report):
+    def stage(self, package, report, *, expected_generation=None):
+        require(expected_generation is None or (type(expected_generation) is int and expected_generation >= 0),
+                "invalid_expected_generation")
         with self.store.lock():
             state = self.store.read()
+            require(expected_generation is None or state["generation"] == expected_generation, "stale_generation")
             self._consistent(state)
             manifest, digest, check_sha = load_package(package, report)
             require(manifest["candidate"]["model_name"] == self.config["model_name"], "model_name_mismatch")

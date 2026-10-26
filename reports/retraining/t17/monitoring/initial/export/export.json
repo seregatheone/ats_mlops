@@ -1,0 +1,1 @@
+{"contains_text":false,"cutoff":"2026-10-26T08:29:23.544580+00:00","events_sha256":"fec435c79a40704d2a7236a5dc00216b234b72fec7481d2891b4fb82e68e2d66","full_group":true,"groups":24,"legacy_unverified_groups":0,"pairs":480,"read_mode":"sqlite mode=ro; BEGIN consistent transaction; committed responses","schema_version":1,"verified_groups":24}
