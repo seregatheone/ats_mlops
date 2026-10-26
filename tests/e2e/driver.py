@@ -9,6 +9,7 @@ from pathlib import Path
 import argparse
 import json
 import os
+import re
 import subprocess
 
 from ats_mlops.evaluation import native
@@ -136,11 +137,15 @@ class Collector:
         require(bool(result),'actual_command_log_required')
         return result
 
-    def envelope(self,scenario,spec,started,finished,native_refs,commands):
+    def envelope(self,scenario,spec,started,finished,native_refs,commands,*,execution_source=None,phase_attestations=None):
         require(scenario in SCENARIOS,'unknown_scenario')
+        actual_source=spec['source_git_sha'] if execution_source is None else execution_source
+        require(isinstance(actual_source,str) and re.fullmatch('[0-9a-f]{40}',actual_source),'invalid_actual_execution_source')
+        attestations=[] if phase_attestations is None else phase_attestations
+        require(isinstance(attestations,list),'invalid_phase_attestations')
         value={'schema_version':1,'outcome':'passed','execution_kind':'actual_acceptance','evidence_scope':'demo_only',
-            'source_git_sha':spec['source_git_sha'],'spec_sha256':sha(canonical(spec)),'started_at':started,'finished_at':finished,
-            'scenario':scenario,'name':SCENARIOS[scenario][0],'commands':commands,'native':native_refs}
+            'source_git_sha':actual_source,'spec_sha256':sha(canonical(spec)),'started_at':started,'finished_at':finished,
+            'scenario':scenario,'name':SCENARIOS[scenario][0],'commands':commands,'native':native_refs,'phase_attestations':attestations}
         return self.json('scenarios/'+scenario+'.json',value)
 
     def source(self,repo,source_sha,files):
