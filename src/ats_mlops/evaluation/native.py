@@ -10,6 +10,7 @@ from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime, timezone
 import importlib.util
+import base64
 import json
 import math
 import os
@@ -34,7 +35,8 @@ ENV_KEYS = {"schema_version", "project", "repo", "bundle", "bundle_sha256", "ima
 def document(reference):
     require(isinstance(reference, dict) and set(reference) == {"path", "sha256"} and digest(reference["sha256"]), "invalid_native_reference")
     path = Path(reference["path"])
-    require(path.is_file() and not path.is_symlink(), "missing_native_input")
+    require(path.suffix.lower() in (".json", ".yaml", ".yml"), "metadata_file_required_before_read")
+    require(path.is_file() and not path.is_symlink() and path.resolve().suffix.lower() in (".json", ".yaml", ".yml"), "missing_native_input")
     content = path.read_bytes()
     require(sha(content) == reference["sha256"], "native_input_hash_mismatch")
     return decode(content)
@@ -82,7 +84,7 @@ def environment(spec, *, series):
     """All mutable locations and effect targets are part of the frozen binding."""
     validate_spec(spec)
     path = os.environ.get("ATS_EXPERIMENT_ENVIRONMENT")
-    require(path is not None and not Path(path).is_symlink(), "native_environment_required")
+    require(path is not None and Path(path).suffix.lower() == ".json" and not Path(path).is_symlink(), "native_environment_required")
     content = Path(path).read_bytes()
     require(sha(content) == spec["bindings"]["environment_sha256"], "native_environment_hash_mismatch")
     value = decode(content)
@@ -404,7 +406,7 @@ def clean_start(spec, root):
     _package_io_attempt(spec, config, root, commands, expect_failure=False, inputs=inputs,
                         release_id=config["project"] + "-startup", output_name="package")
     record = read(final / "run_manifest.json");identity = record["mlflow"]
-    code = "import mlflow,json;c=mlflow.MlflowClient();v=c.create_model_version(" + repr(identity["model_name"]) + ",source=" + repr(identity["source"]) + ",run_id=" + repr(identity["run_id"]) + ",await_creation_for=120);print(json.dumps({'version':str(v.version)}))"
+    code = "import mlflow,json;c=mlflow.MlflowClient();v=c.create_model_version(" + repr(identity["model_name"]) + "," + repr(identity["source"]) + ",run_id=" + repr(identity["run_id"]) + ",model_id=" + repr(identity["source"].removeprefix("models:/")) + ");print(json.dumps({'version':str(v.version)}))"
     alias_version = decode(worker(commands, config, run, ["-c", code]).stdout.strip().splitlines()[-1])["version"]
     check_request = {"package": str(root / "package"), **{key: gate_request[key] for key in ("validation_manifest", "admission_report", "dataset_binding")},
                      "alias_other_version": alias_version, "registry_transport": {"network": config["network"], "tracking_uri": config["tracking_uri"]}}
@@ -541,6 +543,114 @@ def registry_outage(spec, root):
             _cleanup_release(controller, commands)
         finally:evidence_sha = commands.finish()
     return {"outcome": "passed", "native_receipt_sha256": sha(canonical(proof)), "evidence_sha256": evidence_sha}
+
+
+def collect_ci(spec, root, *, repository, positive_run, negative_run, negative_head):
+    """S7 fetches real upstream metadata and the exact public Actions artifact."""
+    environment(spec, series="E1");root = Path(root);commands = Commands(root)
+    require(repository == "seregatheone/ats_mlops" and type(positive_run) is int and positive_run > 0
+            and type(negative_run) is int and negative_run > 0 and positive_run != negative_run
+            and isinstance(negative_head, str) and re.fullmatch(r"[0-9a-f]{40}", negative_head), "invalid_actions_identity")
+    metadata = {}
+    for role, identifier in (("positive", positive_run), ("negative", negative_run)):
+        prefix = f"repos/{repository}/actions/runs/{identifier}"
+        run = decode(commands.run(["gh", "api", prefix]).stdout)
+        jobs = decode(commands.run(["gh", "api", prefix + "/jobs?per_page=100&filter=latest"]).stdout)
+        require(run["status"] == "completed" and run["repository"]["full_name"] == repository
+                and run["head_repository"]["full_name"] == repository and run["path"] == ".github/workflows/ci.yml"
+                and jobs["total_count"] == len(jobs["jobs"]), "unverified_actions_run")
+        expected = spec["source_git_sha"] if role == "positive" else negative_head
+        require(run["head_sha"] == expected, "actions_head_mismatch")
+        states = {job["name"]: job["conclusion"] for job in jobs["jobs"]}
+        require(set(states) == {"static", "lifecycle"}, "actions_job_inventory_changed")
+        if role == "positive":
+            require(run["conclusion"] == "success" and all(value == "success" for value in states.values()), "actual_positive_ci_required")
+        else:
+            require(run["conclusion"] == "failure" and states == {"static": "failure", "lifecycle": "skipped"}, "actual_negative_ci_required")
+            log = commands.run(["gh", "run", "view", str(identifier), "--repo", repository, "--log-failed"]).stdout
+            require(b"AssertionError" in log and b"docker/ci/static.py" in log, "wrong_negative_ci_failure")
+        metadata[role] = {"run": run, "jobs": jobs}
+    negative_commit = decode(commands.run(["gh", "api", f"repos/{repository}/commits/{negative_head}"]).stdout)
+    require({item["filename"] for item in negative_commit["files"]} == {"tests/fixtures/ci-contract.json"}, "negative_ci_not_isolated_contract_change")
+    # Fetch fixture bytes at BOTH immutable heads, not the current working tree.
+    fixtures = {}
+    for role, commit in (("positive", spec["source_git_sha"]), ("negative", negative_head)):
+        value = decode(commands.run(["gh", "api", f"repos/{repository}/contents/tests/fixtures/ci-contract.json?ref={commit}"]).stdout)
+        require(value["encoding"] == "base64", "unexpected_github_contents_encoding")
+        fixtures[role] = decode(base64.b64decode(value["content"], validate=False))
+    require(canonical(fixtures["negative"]) != canonical(fixtures["positive"]), "negative_fixture_not_broken")
+    attempt = metadata["positive"]["run"]["run_attempt"]
+    artifact_name = f"isolated-ci-{positive_run}-{attempt}"
+    artifacts = decode(commands.run(["gh", "api", f"repos/{repository}/actions/runs/{positive_run}/artifacts?per_page=100"]).stdout)
+    found = [item for item in artifacts["artifacts"] if item["name"] == artifact_name and item["expired"] is False]
+    require(len(found) == 1, "actual_ci_artifact_unavailable")
+    destination = root / "positive-artifact"
+    commands.run(["gh", "run", "download", str(positive_run), "--repo", repository, "--name", artifact_name, "--dir", destination])
+    require([path.name for path in destination.iterdir()] == ["ci.json"] and not (destination / "ci.json").is_symlink(), "unexpected_ci_public_artifact")
+    receipt = read(destination / "ci.json")
+    required = {"full_unit_boundary", "synthetic_gx_admission_dvc_roundtrip", "smoke_two_then_final_fit", "unchanged_dvc_cache_hit",
+                "offline_validation_only_model_gate", "actual_api_sqlite_privacy_isolation", "ephemeral_release_approve_activate_idempotence",
+                "reserved_bytes_absent", "scoped_cleanup"}
+    require(receipt["outcome"] == "passed" and receipt["git_sha"] == spec["source_git_sha"]
+            and required <= set(receipt["checks"]) and all(value is True for value in receipt["checks"].values())
+            and type(receipt["unit_tests"]) is int and receipt["unit_tests"] > 0
+            and len(receipt["api_checks"]) == 12 and all(value is True for value in receipt["api_checks"].values()), "incomplete_actual_ci_lifecycle")
+    proof = {"schema_version": 1, "outcome": "passed", "source_git_sha": spec["source_git_sha"],
+        "positive_run_id": positive_run, "negative_run_id": negative_run, "negative_head": negative_head,
+        "positive_artifact_id": found[0]["id"], "positive_artifact_name": artifact_name,
+        "positive_receipt_sha256": sha((destination / "ci.json").read_bytes()), "metadata": metadata,
+        "fixtures_sha256": {role: sha(canonical(value)) for role, value in fixtures.items()},
+        "scope": "genuine hosted Actions; historical negative explicitly attributed to its exact head"}
+    immutable(root / "actions.json", proof)
+    return {"outcome": "passed", "native_receipt_sha256": sha(canonical(proof)), "evidence_sha256": commands.finish()}
+
+
+def claim_traceability(register, evidence_root):
+    """S8 checks numeric claims against retained JSON values; no invented E results."""
+    require(isinstance(register, dict) and set(register) == {"schema_version", "evidence_scope", "independent_real_corpus", "experiments", "claims"}
+            and type(register["schema_version"]) is int and register["schema_version"] == 1
+            and register["evidence_scope"] == "demo_only" and register["independent_real_corpus"] is False, "unqualified_claim_register")
+    states = register["experiments"]
+    require(set(states) == {"E1", "E2", "E3", "E4", "E5"}
+            and all(state in ("not_run", "passed", "failed", "incomplete", "recovery_required") for state in states.values()), "invalid_experiment_statuses")
+    require(isinstance(register["claims"], list), "invalid_claims")
+    metric_units = {"ndcg_at_10": "ratio", "recall_at_10": "ratio", "wall_seconds": "seconds", "active_human_seconds": "seconds",
+        "setup_seconds": "seconds", "warmup_seconds": "seconds", "elapsed_seconds": "seconds", "model_seconds": "seconds",
+        "baseline_seconds": "seconds", "replicas": "count", "new_runs": "count", "new_versions": "count", "unit_tests": "count",
+        "pairs": "count", "groups": "count"}
+    root = Path(evidence_root).resolve();ids = set();checked = []
+    for claim in register["claims"]:
+        require(set(claim) == {"id", "kind", "experiment", "metric", "value", "units", "repetitions", "limitation", "evidence", "selector"}
+                and isinstance(claim["id"], str) and claim["id"] not in ids, "invalid_claim_identity")
+        ids.add(claim["id"])
+        require(claim["kind"] in ("engineering_qualification", "synthetic_experiment")
+                and type(claim["value"]) in (int, float) and math.isfinite(claim["value"])
+                and type(claim["repetitions"]) is int and claim["repetitions"] > 0
+                and isinstance(claim["units"], str) and claim["units"] and isinstance(claim["limitation"], str) and claim["limitation"], "unqualified_numeric_claim")
+        require(claim["metric"] in metric_units and claim["units"] == metric_units[claim["metric"]], "claim_metric_units_mismatch")
+        if claim["kind"] == "engineering_qualification":
+            require(claim["experiment"] is None, "acceptance_cannot_be_experimental_repeat")
+        else:
+            require(claim["experiment"] in states and states[claim["experiment"]] == "passed", "claim_without_executed_experiment")
+        reference = claim["evidence"]
+        relative = Path(reference["path"])
+        require(not relative.is_absolute() and relative.parts and ".." not in relative.parts, "invalid_claim_evidence_path")
+        current = root
+        for part in relative.parts:
+            current = current / part
+            require(not current.is_symlink(), "invalid_claim_evidence_path")
+        value = document({"path": str(root / relative), "sha256": reference["sha256"]})
+        require(isinstance(claim["selector"], list) and claim["selector"] and claim["metric"] in claim["selector"], "explicit_claim_selector_required")
+        for key in claim["selector"]:
+            require(isinstance(key, str) or type(key) is int and key >= 0, "invalid_claim_selector")
+            value = value[key]
+        require(type(value) in (int, float) and math.isfinite(value) and value == claim["value"], "claim_differs_from_raw_measurement")
+        require(claim["units"] != "count" or type(value) is int and value >= 0, "invalid_count_claim")
+        require(claim["units"] != "seconds" or value >= 0, "invalid_duration_claim")
+        checked.append({"id": claim["id"], "source_sha256": reference["sha256"], "value": value, "repetitions": claim["repetitions"]})
+    return {"schema_version": 1, "outcome": "passed", "checked_claims": checked, "experiments": states,
+            "independent_real_corpus": False, "evidence_scope": "demo_only",
+            "limitations": ["Synthetic engineering qualification is not real hiring evidence.", "E2 remains not_run until five actual human pairs exist."]}
 
 
 def schema_rejection(spec, root):
@@ -719,10 +829,13 @@ def _qualified(spec, config):
     from ats_mlops.release.controller import load_package
     from service.integrity import release_binding
     from ats_mlops.quality.artifacts import validation_snapshot
+    from ats_mlops.data.dataset import load_partition
+    from ats_mlops.data.reservation import manifest_policy, validate_partitions
     value = config["qualified"]
     require(set(value) == {"package", "check", "training_manifest", "admission_report", "dataset_binding"}, "invalid_qualified_inputs")
     for key in ("check", "training_manifest", "admission_report", "dataset_binding"):document(value[key])
     package = Path(value["package"])
+    require(not any(path.suffix.lower() == ".jsonl" for path in package.rglob("*")), "raw_partition_in_model_package")
     manifest, _, _ = load_package(package, Path(value["check"]["path"]))
     _, _, record = release_binding(package)
     require(record["git_sha"] == spec["qualified_model_source_git_sha"]
@@ -732,7 +845,15 @@ def _qualified(spec, config):
             and record["params_sha256"] == spec["bindings"]["params_sha256"]
             and record["data_manifest_sha256"] == spec["bindings"]["data_manifest_sha256"]
             and baseline_identity(record) == spec["bindings"]["baseline_artifact_sha256"], "qualified_model_binding_mismatch")
-    snapshot = validation_snapshot(Path(value["training_manifest"]["path"]), Path(value["admission_report"]["path"]), Path(value["dataset_binding"]["path"]))
+    training_metadata = document(value["training_manifest"])
+    require(type(training_metadata["schema_version"]) is int and training_metadata["schema_version"] == 2
+            and record["read_partitions"] == ["train", "validation"] and record["test_read"] is False
+            and record["dirty_worktree"] is False, "guarded_schema2_model_required")
+    manifest_path = Path(value["training_manifest"]["path"])
+    policy = manifest_policy(manifest_path, training_metadata)
+    partitions = {name: load_partition(manifest_path, name) for name in ("train", "validation")}
+    validate_partitions(partitions, training_metadata["duplicate_detection"]["threshold"], policy)
+    snapshot = validation_snapshot(manifest_path, Path(value["admission_report"]["path"]), Path(value["dataset_binding"]["path"]))
     require(snapshot["manifest_sha256"] == record["data_manifest_sha256"] and snapshot["rows"], "qualified_warmup_binding_mismatch")
     group = sorted({row["vacancy_id"] for row in snapshot["rows"]})[0]
     warmup = [row for row in snapshot["rows"] if row["vacancy_id"] == group]

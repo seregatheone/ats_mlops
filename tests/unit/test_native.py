@@ -15,6 +15,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class NativeTransportTests(unittest.TestCase):
+    def test_metadata_wrong_role_is_rejected_without_reading_reserved_bytes(self):
+        with patch.object(Path, "read_bytes", side_effect=AssertionError("must not read")) as read:
+            with self.assertRaisesRegex(experiment.ExperimentError, "metadata_file_required"):
+                native.document({"path": "/fake/test.jsonl", "sha256": "a"*64})
+            read.assert_not_called()
+
     def test_wiring_uses_real_functions_and_blocks_unfinished_e4(self):
         value = experiment.read(ROOT / "configs/experiment.template.json")
         wired = native.wire_adapters(value)
@@ -108,6 +114,28 @@ class FinalScorerTests(unittest.TestCase):
                     native.evaluate_e5(directory, root / "must-not-create.sqlite3", {})
                 qualified.assert_not_called();guard.assert_not_called()
             self.assertFalse((root / "must-not-create.sqlite3").exists())
+
+
+class ClaimAuditTests(unittest.TestCase):
+    def test_numeric_claims_bind_source_units_and_executed_series(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder);content = experiment.canonical({"replicas": 3, "ndcg_at_10": .8})
+            (root / "source.json").write_bytes(content)
+            claim = {"id": "qualification-count", "kind": "engineering_qualification", "experiment": None,
+                     "metric": "replicas", "value": 3, "units": "count", "repetitions": 3,
+                     "limitation": "engineering acceptance, not E1/generalization", "evidence": {"path": "source.json", "sha256": experiment.sha(content)},
+                     "selector": ["replicas"]}
+            register = {"schema_version": 1, "evidence_scope": "demo_only", "independent_real_corpus": False,
+                        "experiments": dict.fromkeys(experiment.SERIES, "not_run"), "claims": [claim]}
+            self.assertEqual("passed", native.claim_traceability(register, root)["outcome"])
+            for key, value in (("units", "seconds"), ("value", 4), ("value", True), ("experiment", "E1")):
+                changed = deepcopy(register);changed["claims"][0][key] = value
+                with self.subTest(key=key, value=value), self.assertRaises(experiment.ExperimentError):native.claim_traceability(changed, root)
+            changed = deepcopy(register);changed["claims"][0].update(kind="synthetic_experiment", experiment="E5")
+            with self.assertRaisesRegex(experiment.ExperimentError, "without_executed"):native.claim_traceability(changed, root)
+            link = root / "outside";link.symlink_to(root, target_is_directory=True)
+            changed = deepcopy(register);changed["claims"][0]["evidence"]["path"] = "outside/source.json"
+            with self.assertRaisesRegex(experiment.ExperimentError, "evidence_path"):native.claim_traceability(changed, root)
 
 
 if __name__ == "__main__":
