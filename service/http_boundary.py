@@ -8,9 +8,11 @@ class HTTPBoundary:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] != "http" or scope.get("path") not in ("/rank", "/metadata"):
+        if scope["type"] != "http":
             return await self.app(scope, receive, send)
         try:
+            if scope.get("path") not in ("/rank", "/metadata"):
+                raise BoundaryError(404, "not_found")
             if scope["method"] != "POST":
                 raise BoundaryError(405, "method_not_allowed")
             headers = dict(scope.get("headers", []))

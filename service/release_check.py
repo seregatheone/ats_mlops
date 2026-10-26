@@ -192,6 +192,33 @@ def stage(request, output):
                 require(http(port, "/rank", raw=b'{"request_id":"one","request_id":"two"}')[0] == 422)
                 require(http(port, "/metadata", raw=b"")[0] == 200)
                 require(http(port, "/metadata", [SENTINEL])[0] == 422)
+                require(http(port, "/unknown?" + SENTINEL, {})[0] == 404)
+                require(http(port, "/rank", raw=json.dumps({**payload, "vacancy": {"id": "v", "text": "\ud800"}}).encode())[0] == 422)
+                boundary = deepcopy(payload)
+                boundary["request_id"] = "exact-byte-limit"
+                body = canonical(boundary)
+                require(http(port, "/rank", raw=body + b" " * (1048576 - len(body)))[0] == 200)
+                require(http(port, "/rank", raw=iter([body, b" " * 1048576]))[0] == 413)
+                boundary["request_id"] = "hundred"
+                boundary["candidates"] = [{"id": f"c-{index:03}", "text": "Python"} for index in range(100)]
+                boundary["top_k"] = 100
+                require(len(http(port, "/rank", boundary)[1]["ranking"]) == 100)
+                boundary["candidates"].append({"id": "c-100", "text": "Python"})
+                require(http(port, "/rank", boundary)[0] == 413)
+                boundary.update(request_id="max-text", candidates=[])
+                boundary["vacancy"]["text"] = "\u044f" * 10000
+                require(http(port, "/rank", boundary)[0] == 200)
+                with sqlite3.connect(events / "predictions.sqlite3", isolation_level=None) as locked:
+                    locked.execute("BEGIN IMMEDIATE")
+                    busy = deepcopy(payload)
+                    busy["request_id"] = "db-locked-new"
+                    require(http(port, "/rank", busy)[0] == 503)
+                    locked.rollback()
+                    require(locked.execute("SELECT count(*) FROM prediction_events WHERE request_id='db-locked-new'").fetchone()[0] == 0)
+                    saved = locked.execute("SELECT response_json FROM prediction_events WHERE request_id='private-full'").fetchone()[0]
+                    locked.execute("UPDATE prediction_events SET response_json='{}' WHERE request_id='private-full'")
+                    require(http(port, "/rank", payload)[0] == 503)
+                    locked.execute("UPDATE prediction_events SET response_json=? WHERE request_id='private-full'", (saved,))
                 report["checks"]["strict_limits_empty_ties_and_privacy_errors"] = True
                 report["checks"]["full_event_before_top_k_and_idempotency"] = True
 
@@ -209,7 +236,11 @@ def stage(request, output):
                              "-e", "ATS_ALIAS_REQUEST=" + json.dumps(alias_request), "--entrypoint", "/opt/ml-venv/bin/python",
                              record["environment"]["image"]["id"], "-I", "-B", "-c", alias_code +
                              f"c.set_registered_model_alias(x['name'],x['alias'],x['{target}']); assert c.get_model_version_by_alias(x['name'],x['alias']).version==x['{target}']"])
-                    require(http(port, "/rank", payload) == (200, original))
+                    fresh_alias = deepcopy(payload)
+                    fresh_alias["request_id"] = "alias-" + target
+                    code, response = http(port, "/rank", fresh_alias)
+                    require(code == 200 and {key: value for key, value in response.items() if key != "request_id"}
+                            == {key: value for key, value in original.items() if key != "request_id"})
                 command(alias_cleanup)
                 alias_cleanup = None
                 report["checks"]["actual_registry_alias_move_independent"] = True
