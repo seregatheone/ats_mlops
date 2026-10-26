@@ -64,10 +64,13 @@ def stage(request, output):
               "release_manifest_sha256": manifest_sha, "checks": {}, "reasons": []}
     name = "ats-t12-" + uuid.uuid4().hex[:12]
     network = name + "-net"
+    events_volume = name + "-events"
     logs = []
     created_network = False
+    created_volume = False
     current = None
     alias_cleanup = None
+    step = "native_reference"
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     try:
         # Host-only T11 imports; they never enter the model worker or serving image.
@@ -91,10 +94,12 @@ def stage(request, output):
         # It is never attached to the core/Registry network. Runtime has no Registry URI/credentials.
         command(["docker", "network", "create", network])
         created_network = True
+        command(["docker", "volume", "create", events_volume])
+        created_volume = True
+        command(["docker", "run", "--rm", "--network", "none", "--user", "0:0", "--entrypoint", "/bin/sh",
+                 "--mount", f"type=volume,source={events_volume},target=/events", image,
+                 "-c", "chown 50000:50000 /events"])
         with tempfile.TemporaryDirectory(prefix="ats-t12-events-") as directory:
-            events = Path(directory) / "events"
-            events.mkdir(mode=0o777)
-            events.chmod(0o777)
             with socket.socket() as probe:
                 probe.bind(("127.0.0.1", 0))
                 port = probe.getsockname()[1]
@@ -117,7 +122,7 @@ def stage(request, output):
                         "--tmpfs", "/runtime:rw,nosuid,nodev,uid=50000,gid=50000,size=128m",
                         "-p", f"127.0.0.1:{port}:3000", "--mount", f"type=bind,source={package},target=/release,readonly",
                         "--mount", f"type=bind,source={package / 'bentoml/models'},target=/models,readonly",
-                        "--mount", f"type=bind,source={events},target=/events"]
+                        "--mount", f"type=volume,source={events_volume},target=/events"]
                 if bad_store:
                     args += ["-e", "ATS_EVENT_DB=/release/forbidden.sqlite3"]
                 command([*args, image])
@@ -133,6 +138,7 @@ def stage(request, output):
                 raise ValueError("staging_start_failed")
 
             try:
+                step = "metadata_startup"
                 metadata = start()
                 require(metadata["ready"] is True and metadata["release_manifest_sha256"] == manifest_sha
                         and metadata["model_version"] == manifest["candidate"]["model_version"]
@@ -150,6 +156,7 @@ def stage(request, output):
                                     "import importlib.util,os;from pathlib import Path;assert not Path('/opt/project/src').exists();assert importlib.util.find_spec('ats_mlops') is None;assert not any(os.environ.get(k) for k in ('MLFLOW_TRACKING_URI','AWS_ACCESS_KEY_ID','AWS_SECRET_ACCESS_KEY','AWS_SESSION_TOKEN'));print('isolated')"])
                 require(isolated.strip() == "isolated")
                 report["checks"]["source_and_credentials_isolation"] = True
+                step = "http_reference"
                 max_difference = 0.
                 samples = []
                 for index, (vacancy, rows) in enumerate(sorted(grouped.items())):
@@ -165,13 +172,13 @@ def stage(request, output):
                 require(max_difference <= 1e-12)
                 report["score_comparison"] = {"pairs": len(reference), "groups": len(grouped), "max_abs_difference": max_difference, "atol": 1e-12}
                 report["checks"]["http_matches_passed_model"] = True
+                step = "http_contract"
                 payload = {"request_id": "private-full", "vacancy": {"id": "v-private", "text": SENTINEL},
                            "candidates": [{"id": "b", "text": SENTINEL}, {"id": "a", "text": SENTINEL}], "top_k": 1}
                 code, original = http(port, "/rank", payload)
                 require(code == 200 and original["ranking"][0]["candidate_id"] == "a")
-                with sqlite3.connect(events / "predictions.sqlite3") as db:
-                    event = json.loads(db.execute("SELECT event_json FROM prediction_events WHERE request_id='private-full'").fetchone()[0])
-                    require(len(event["candidates"]) == 2 and all(len(item["features"]) == 5 for item in event["candidates"]))
+                full_code = "import json,sqlite3;d=sqlite3.connect('/events/predictions.sqlite3');e=json.loads(d.execute(\"SELECT event_json FROM prediction_events WHERE request_id='private-full'\").fetchone()[0]);assert len(e['candidates'])==2 and all(len(x['features'])==5 for x in e['candidates']);d.close()"
+                command(["docker", "exec", name, "/opt/ml-venv/bin/python", "-I", "-B", "-c", full_code])
                 require(http(port, "/rank", payload) == (200, original))
                 changed = deepcopy(payload)
                 changed["top_k"] = 2
@@ -214,6 +221,7 @@ def stage(request, output):
                 boundary.update(request_id="max-text", candidates=[])
                 boundary["vacancy"]["text"] = "\u044f" * 10000
                 require(http(port, "/rank", boundary)[0] == 200)
+                step = "sqlite_runtime_lock"
                 lock_code = "import sqlite3,sys;d=sqlite3.connect('/events/predictions.sqlite3',isolation_level=None);d.execute('BEGIN IMMEDIATE');print('locked',flush=True);sys.stdin.read();d.rollback();d.close()"
                 holder = subprocess.Popen(["docker", "exec", "-i", name, "/opt/ml-venv/bin/python", "-I", "-B", "-c", lock_code],
                                           stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -229,6 +237,7 @@ def stage(request, output):
                     holder.stderr.close()
                 corrupt_code = "import sqlite3;d=sqlite3.connect('/events/predictions.sqlite3');assert d.execute(\"SELECT count(*) FROM prediction_events WHERE request_id='db-locked-new'\").fetchone()[0]==0;d.execute(\"UPDATE prediction_events SET response_json='{}' WHERE request_id='private-full'\");d.commit();d.close()"
                 command(["docker", "exec", name, "/opt/ml-venv/bin/python", "-I", "-B", "-c", corrupt_code])
+                step = "sqlite_corrupt_retry"
                 require(http(port, "/rank", payload)[0] == 503)
                 restore_code = "import sqlite3,sys;d=sqlite3.connect('/events/predictions.sqlite3');d.execute(\"UPDATE prediction_events SET response_json=? WHERE request_id='private-full'\",(sys.stdin.read(),));d.commit();d.close()"
                 restored = subprocess.run(["docker", "exec", "-i", name, "/opt/ml-venv/bin/python", "-I", "-B", "-c", restore_code],
@@ -238,6 +247,7 @@ def stage(request, output):
                 report["checks"]["full_event_before_top_k_and_idempotency"] = True
 
                 # A fixture-only alias points to already existing versions; never champion/candidate.
+                step = "registry_fixture_alias_move"
                 alias = "t12_fixture_" + uuid.uuid4().hex[:12]
                 alias_request = {"name": manifest["candidate"]["model_name"], "alias": alias,
                                  "from_version": manifest["candidate"]["model_version"], "to_version": request["alias_other_version"]}
@@ -259,6 +269,7 @@ def stage(request, output):
                 command(alias_cleanup)
                 alias_cleanup = None
                 report["checks"]["actual_registry_alias_move_independent"] = True
+                step = "restart_retry"
                 stop()
                 require(start()["ready"] is True)
                 require(http(port, "/rank", payload) == (200, original) and http(port, "/rank", changed)[0] == 422)
@@ -266,6 +277,7 @@ def stage(request, output):
                 stop()
                 # A missing model still permits replay from the durable prior-release event.
                 bad_package = Path(directory) / "missing-model"
+                step = "missing_model_retry"
                 shutil.copytree(root, bad_package)
                 (bad_package / manifest["model_relative_path"] / "model.pkl").unlink()
                 require(start(bad_package)["ready"] is False)
@@ -275,27 +287,31 @@ def stage(request, output):
                 require(http(port, "/rank", fresh)[0] == 503)
                 report["checks"]["missing_model_503_and_original_release_replay"] = True
                 stop()
+                step = "event_store_failure"
                 require(start(bad_store=True)["ready"] is False)
                 require(http(port, "/rank", fresh)[0] == 503)
                 report["checks"]["event_write_fail_closed_503"] = True
                 stop()
-                with sqlite3.connect(events / "predictions.sqlite3") as db:
-                    records = db.execute("SELECT event_json,response_json FROM prediction_events ORDER BY request_id").fetchall()
-                    require(all(response is not None for _, response in records))
-                    report["staging_event_count"] = len(records)
-                    report["staging_events_sha256"] = sha(canonical(records))
-                require(all(SENTINEL.encode() not in path.read_bytes() for path in events.iterdir() if path.is_file()))
+                step = "privacy_event_export"
+                export_code = "import sys,json,sqlite3;from pathlib import Path;sys.path.insert(0,'/opt/serving');from service.contracts import sha,canonical;d=sqlite3.connect('file:/events/predictions.sqlite3?mode=ro',uri=True);r=d.execute('SELECT event_json,response_json FROM prediction_events ORDER BY request_id').fetchall();assert all(x[1] is not None for x in r);assert all(" + repr(SENTINEL.encode()) + " not in p.read_bytes() for p in Path('/events').iterdir() if p.is_file());print(json.dumps({'count':len(r),'sha256':sha(canonical(r))}));d.close()"
+                exported = json.loads(command(["docker", "run", "--rm", "--network", "none", "--read-only", "--entrypoint", "/opt/ml-venv/bin/python",
+                                                "--mount", f"type=volume,source={events_volume},target=/events,readonly", image, "-I", "-B", "-c", export_code]))
+                report["staging_event_count"] = exported["count"]
+                report["staging_events_sha256"] = exported["sha256"]
                 require(all(SENTINEL.encode() not in log and b"Traceback" not in log for log in logs))
                 report["checks"]["no_private_text_in_events_or_logs"] = True
             finally:
                 stop()
+        step = "frozen_package"
         _, after, _ = release_binding(root)
         report["release_manifest_sha256_after"] = after
         require(after == manifest_sha)
         report["checks"]["frozen_package_unchanged"] = True
         report["outcome"] = "passed"
-    except Exception:
+    except Exception as error:
         report["reasons"].append("release_check_failed")
+        report["failed_step"] = step
+        report["error_type"] = type(error).__name__
     finally:
         if alias_cleanup:
             subprocess.run(alias_cleanup, capture_output=True, timeout=60)
@@ -303,6 +319,8 @@ def stage(request, output):
             subprocess.run(["docker", "rm", "-f", current], capture_output=True, timeout=30)
         if created_network:
             subprocess.run(["docker", "network", "rm", network], capture_output=True, timeout=30)
+        if created_volume:
+            subprocess.run(["docker", "volume", "rm", events_volume], capture_output=True, timeout=30)
     exclusive(output, canonical(report))
     return report
 

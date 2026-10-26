@@ -13,10 +13,13 @@ class EventStore:
     def __init__(self, path, *, timeout=5):
         self.path, self.timeout = str(path), timeout
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        with self.connect() as db:
+        db = self.connect()
+        try:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("CREATE TABLE IF NOT EXISTS prediction_events (request_id TEXT PRIMARY KEY NOT NULL, "
                        "input_hash TEXT NOT NULL, event_json TEXT NOT NULL, response_json TEXT)")
+        finally:
+            db.close()
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=self.timeout, isolation_level=None)
