@@ -71,7 +71,8 @@ separately attributed to its exact source/config before this budget-only change.
 The near-limit sample was mostly anonymous memory rather than file cache.
 The final profile sets Go's soft `GOMEMLIMIT=128MiB` and disables only the 12
 unused bundled backend datasource IDs (verified from their plugin manifests),
-leaving Prometheus and panel plugins available. This is a soft Go runtime setting,
+leaving Prometheus and panel plugins available. This is a
+[soft Go runtime setting](https://go.dev/doc/gc-guide),
 not a hard bound for all container processes; cgroup and repeated query checks
 are recorded separately. No additional plugin or dependency is installed.
 Prometheus configures seven-day / 256 MB retention; WAL/head add storage overhead. Limits do not prove
@@ -122,3 +123,34 @@ default demo receives metadata probes only. Skip is not acceptance evidence.
 The fixture remains briefly for manual dashboard viewing; clear its discovery
 file and remove only its owned resources afterward. Provisioning/persistent
 monitoring and the approved default release remain active.
+
+## Verified local profile
+
+[Technical receipt](../reports/monitoring/technical.json) separates the full
+004 traffic/query gate at `6cd816b` from later Grafana resource-only configuration
+at `71f1a56`, and records each actual serving/Airflow/collector source identity.
+Root's locked Python 3.11 canonical gate passed 152 unit tests in 10.601s;
+the actual metrics gate passed nine checks in 36.845s. Grafana frontend plugin
+registration and real datasource queries, including after restart, were checked
+in addition to direct Prometheus queries. Root manually viewed requests/errors,
+p95, pipeline bars and healthy release/source/target panels.
+
+The first read-only idle-WAL failure, the numeric-fixture assumption failure,
+and the initially missing Grafana frontend plugin were retained as evidence.
+The final profile uses the image-pinned bundled Prometheus plugin with auto
+updates off, and only its required backend process. After 24 bounded datasource
+queries, measured cgroup anonymous memory was 126.6–132.6 MiB with max/oom events0;
+after an explicit restart it was 127.8 MiB. The observed Go soft limit was
+134217728 bytes. This is a local diagnostic, not a throughput/peak benchmark.
+
+The working default release is `t15-metrics-23145b9`, model4/champion4,
+generation2, admitted via T11/T12 and separately approved/activated through T13
+under A3 `demo_only`. It retains the prior release and native prediction-events
+volume. Its prediction event count remained zero; traffic verification used an
+isolated fixture with a separate volume. That fixture was backed up and removed,
+and its file-discovery target cleared. Prometheus, Grafana, collector, healthy
+Airflow/core and the approved default service remain active.
+
+Screenshots: [traffic](../reports/monitoring/images/t15-grafana-softlimit-ui.png),
+[release/source health](../reports/monitoring/images/t15-grafana-softlimit-health.png).
+The additional 004 screenshots show the acceptance target before its owner cleanup.

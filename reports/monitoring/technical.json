@@ -1,0 +1,420 @@
+{
+  "base_refresh_sha": "87852c9988f3d1d8af546acf9a773e74b30717a6",
+  "budget_only_executable_sha": "a6d16651f1e211d4a102e685918eabcfd2fa1145",
+  "cleanup": {
+    "acceptance_discovery_cleared": true,
+    "fixture_db_sha256": "0639778e637f95fc045c85e23d324cab088ca10347bb34e6dedffb414df4780d",
+    "foreign_services_stopped": false,
+    "owned_fixture_removed": true,
+    "persistent_monitoring_and_default_retained": true
+  },
+  "components": {
+    "airflow_overlay": {
+      "archived_src_exact": true,
+      "base_image_id": "sha256:abdbc3dddf511fc38d894e7bd6284ff0b61433ccdeda88ef74e2f00c395945df",
+      "dependencies_unchanged": true,
+      "image": {
+        "architecture": "arm64",
+        "id": "sha256:53ee2a88e991a0e00c0eed85505ce0d53731ccdc8b11b0d90605f0454f362e6f",
+        "os": "linux",
+        "reference": "ats-core-airflow:t15-snapshot-12d8a4d",
+        "repo_digests": []
+      },
+      "ml_lock_sha256": "5598e0853818e5531334bdeeff3dbc1b5c7dfd818e4dbfb2602622df7b165eee",
+      "source_sha": "12d8a4d6282c2a72af549a2a5cdd8a70e728cdee"
+    },
+    "collector": {
+      "image_reference": "python@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce",
+      "orchestration_sha256": "c589d660faf0498ee897160a71acb7a894f7380a26f6290306433700fad5ffa2",
+      "read_only_sources": true,
+      "source_component": "330d6c229e83281cbd8ebdc1e71899a32b7ceb93",
+      "technical_sha256": "8a6a5af6146908cfe9cf03f63f0fe337ebf6356544369065c4557d3fd8b5b2da",
+      "writer_numeric_snapshot_hooks": true
+    },
+    "grafana_bundled_prometheus_plugin_version": "13.2.3",
+    "grafana_disabled_unused_backend_ids": [
+      "elasticsearch",
+      "grafana-postgresql-datasource",
+      "grafana-pyroscope-datasource",
+      "influxdb",
+      "jaeger",
+      "loki",
+      "mssql",
+      "mysql",
+      "opentsdb",
+      "stackdriver",
+      "tempo",
+      "zipkin"
+    ],
+    "grafana_preinstall_auto_update": false,
+    "grafana_soft_memory_limit_mib": 128,
+    "monitoring_images": {
+      "collector": {
+        "dependencies": "stdlib only",
+        "reference": "python@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce"
+      },
+      "grafana": {
+        "reference": "grafana/grafana@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f",
+        "source": "https://grafana.com/grafana/download",
+        "version": "13.2.4"
+      },
+      "prometheus": {
+        "reference": "prom/prometheus@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2",
+        "source": "https://prometheus.io/download/",
+        "version": "3.15.1"
+      }
+    },
+    "serving": {
+      "business_api_schema_sha256": "dccdcb29567f0dd796aaf25c552e371d24edbef26a1c4ac4a3357e3c7499fd43",
+      "environment": {
+        "build_lockfile_sha256": "89078a045b1e7fe7eeed103778f12599d10f6eb0322aaa4af444fac9acb70a91",
+        "lockfile_sha256": "5598e0853818e5531334bdeeff3dbc1b5c7dfd818e4dbfb2602622df7b165eee",
+        "packages": {
+          "bentoml": "1.4.40",
+          "cloudpickle": "3.1.2",
+          "mlflow": "3.17.2",
+          "numpy": "2.4.6",
+          "pandas": "3.0.5",
+          "scikit-learn": "1.9.1"
+        },
+        "python": "3.11.17"
+      },
+      "gate_sha256": "e678420bf0d0ea8f41f4c24da446a6376b2120f25e5e636a4886256e97774269",
+      "image": {
+        "architecture": "arm64",
+        "id": "sha256:b0157ff6c663a8ffb095427d4ebd6a7e2e5b742c757328ad6ffc4c2d06793bf3",
+        "os": "linux"
+      },
+      "manifest_sha256": "ea8f53a02c38dea81456cdb97c95088fa5333e0cffe9c4a3bd88969b5184390d",
+      "release_check_passed": 12,
+      "release_check_sha256": "41625b7184fc9f0054be79a0cf8bfddf0fb43afef0b32e750d1e2364e145e989",
+      "source_sha": "23145b9f9a8753c5a053f0f2d1cbbd2db5eadf67",
+      "source_sha256": {
+        "__init__.py": "087315b0417df5a3bdbc6f5730c80237ef464225e0f190ca442e4f8df1e88509",
+        "contracts.py": "968adba7d44ee213edb6553a84339e3323f454b68aeec2e15b9f612135d28577",
+        "events.py": "03f66c920df33af0a689979ebb871a7b9a8f95357bcdc9c50311abda02fedd5f",
+        "http_boundary.py": "95002812be9643be7c284b06858fa424c425e31bbe6c251c799046002e8c6a8e",
+        "integrity.py": "d0851d34a3933d961bd5aa0b5c5d497bd6ffbc4b0968720c865179104313e6db",
+        "metrics.py": "8dcc23b236d5006c8eb5e96741de3e51a9f63405d838cedeb5203e7e0487a8b9",
+        "package.py": "655413d13dc5aefd4ded6074ac7974aa920af4d6588759f279f5cd1d8bfc57dd",
+        "release_check.py": "f6be1ed5f369a404bdab3b4bcc23c956037afee1122b0fa0da3f500c6cb41e3d",
+        "runtime.py": "8da6ed0053c1489b471780caea7ed943c3f7e3acb3d5733287750196c2ee0b3b",
+        "service.py": "01f73aeea0491805d2ce136b1d7bfef974779867447302a93be5f86d0c90d244"
+      }
+    }
+  },
+  "endpoints": {
+    "dashboard_uid": "ats-technical",
+    "datasource_uid": "ats-prometheus",
+    "grafana": "http://127.0.0.1:3001/d/ats-technical",
+    "prometheus": "http://127.0.0.1:9090"
+  },
+  "evidence_scope": "demo_only",
+  "full_gate_executable_sha": "6cd816be7e9723d47a5841b069fe1cded53763e9",
+  "grafana_resource_diagnostics": {
+    "after_explicit_restart": {
+      "anon": 134004736,
+      "current": 139276288,
+      "events": {
+        "high": 0,
+        "low": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_group_kill": 0,
+        "oom_kill": 0
+      },
+      "file": 1650688
+    },
+    "final_cgroup_samples": [
+      {
+        "active_file": 34353152,
+        "anon": 138993664,
+        "current": 271659008,
+        "events": {
+          "high": 0,
+          "low": 0,
+          "max": 0,
+          "oom": 0,
+          "oom_group_kill": 0,
+          "oom_kill": 0
+        },
+        "file": 126689280,
+        "inactive_file": 92340224,
+        "max": 536870912,
+        "utc": "2026-10-26T04:02:44.480396+00:00"
+      },
+      {
+        "active_file": 34353152,
+        "anon": 138612736,
+        "current": 271028224,
+        "events": {
+          "high": 0,
+          "low": 0,
+          "max": 0,
+          "oom": 0,
+          "oom_group_kill": 0,
+          "oom_kill": 0
+        },
+        "file": 126689280,
+        "inactive_file": 92340224,
+        "max": 536870912,
+        "utc": "2026-10-26T04:02:44.726034+00:00"
+      },
+      {
+        "active_file": 34353152,
+        "anon": 138035200,
+        "current": 270508032,
+        "events": {
+          "high": 0,
+          "low": 0,
+          "max": 0,
+          "oom": 0,
+          "oom_group_kill": 0,
+          "oom_kill": 0
+        },
+        "file": 126689280,
+        "inactive_file": 92340224,
+        "max": 536870912,
+        "utc": "2026-10-26T04:02:44.971740+00:00"
+      },
+      {
+        "active_file": 34353152,
+        "anon": 132751360,
+        "current": 263970816,
+        "events": {
+          "high": 0,
+          "low": 0,
+          "max": 0,
+          "oom": 0,
+          "oom_group_kill": 0,
+          "oom_kill": 0
+        },
+        "file": 126689280,
+        "inactive_file": 92340224,
+        "max": 536870912,
+        "utc": "2026-10-26T04:02:45.225371+00:00"
+      }
+    ],
+    "intermediate_anon_bytes": 514199552,
+    "intermediate_cgroup_sha256": "ff1afb15f262bccdf0105a21df5d778130aa2ff1d09b88563d213354c4d4849a",
+    "intermediate_file_bytes": 2850816,
+    "intermediate_memory_events": {
+      "high": 0,
+      "low": 0,
+      "max": 1614,
+      "oom": 0,
+      "oom_group_kill": 0,
+      "oom_kill": 0
+    },
+    "repeated_datasource_queries": 24
+  },
+  "measured_http": {
+    "controlled503_total": 4,
+    "error422_total": 1,
+    "fixture_prediction_events": 15,
+    "healthy200_total": 6,
+    "latency200_count": 6,
+    "new200_delta_after_warmup": 5,
+    "replays_and_scrapes_add_no_extra_events": true
+  },
+  "metrics_contract": {
+    "histogram_extra_fixed_label": "le",
+    "http_labels": [
+      "endpoint",
+      "method",
+      "status"
+    ],
+    "input_text_request_candidate_vacancy_ids_exported": false,
+    "pipeline_metrics": "read-only SQL where available; otherwise checksummed source-fingerprint-bound numeric snapshot",
+    "scrapes_write_prediction_events": false,
+    "snapshot_stale_or_read_error": "source_up0 and no stale payload series",
+    "unknown_labels_collapsed": "other"
+  },
+  "outcome": "passed",
+  "persistent_default": {
+    "approval_actor": "agent-operator",
+    "approval_policy": "A3",
+    "approval_sha256": "ebe33080f669bb2bc1bb643007a1520ce88d2135661af0f6d7688675850a8743",
+    "champion": "4",
+    "endpoint": "http://127.0.0.1:3000",
+    "generation": 2,
+    "metadata_only_http_probes": true,
+    "model_version": "4",
+    "previous_release_retained": true,
+    "release_id": "t15-metrics-23145b9",
+    "same_prediction_events_volume": true,
+    "working_prediction_events": 0
+  },
+  "preserved_failures": [
+    "metrics001: direct read-only idle WAL could not create coordination files; pipeline source_up0 correctly failed closed",
+    "metrics002: fixture assumption expected snapshot path although direct RO was valid; corrected by safely removing only empty private fixture coordination files",
+    "metrics003 backend PASS initially missed a real UI plugin-registration defect; corrected by bundled-plugin auto-update opt-out and actual Grafana query assertions",
+    "offline full Airflow Dockerfile cache miss and raw image-ID FROM resolution failed before runtime; verified cached local-tag source overlay succeeded",
+    "Intermediate Grafana512MiB profile had anonymous-memory pressure (max events, no OOM); final config uses verified Go128MiB soft limit and disables only12 unused backend datasource plugins."
+  ],
+  "resource_config_executable_sha": "71f1a56d9bbb978532356ba5d2310968fc971cf6",
+  "resource_limitations": [
+    "Point-in-time samples with core and idle healthy Airflow; not a peak/capacity benchmark.",
+    "Docker MemUsage is not a direct assertion of RSS or unreclaimable heap; intermediate numeric cgroup diagnostic confirmed anonymous-memory pressure, which the final soft-limit/plugin configuration addressed.",
+    "No new hard limit increase after512MiB. Final Go128MiB is a soft per-process runtime limit, not a guarantee for the whole container.",
+    "The full004 traffic proof is reused explicitly; Grafana configuration-only deltas have separate actual query/restart/persistence/cgroup receipts."
+  ],
+  "resource_limits_mib": {
+    "collector": 128,
+    "grafana": 512,
+    "prometheus": 256
+  },
+  "resource_samples": [
+    "ats-monitoring-prometheus-1 39.39MiB / 256MiB 0.14%",
+    "ats-monitoring-grafana-1 138.2MiB / 512MiB 5.87%",
+    "ats-monitoring-collector-1 14.99MiB / 128MiB 0.01%",
+    "ats-core-airflow-1 1018MiB / 3GiB 4.06%",
+    "ats-core-mlflow-1 1.69GiB / 2GiB 0.88%",
+    "ats-core-postgres-1 89.08MiB / 512MiB 1.11%",
+    "ats-core-minio-1 247.6MiB / 1GiB 0.00%",
+    "ats-serving-ranking-1 215MiB / 1.5GiB 0.18%"
+  ],
+  "resource_snapshot": {
+    "containers": {
+      "ats-core-airflow-1": {
+        "image": "sha256:53ee2a88e991a0e00c0eed85505ce0d53731ccdc8b11b0d90605f0454f362e6f",
+        "oom_killed": false,
+        "restarts": 0,
+        "running": true
+      },
+      "ats-core-minio-1": {
+        "image": "sha256:73b8756ca28678cdc0304415c7fc64f7e2321b19cab71bab2ef6c40a779ebfb9",
+        "oom_killed": false,
+        "restarts": 0,
+        "running": true
+      },
+      "ats-core-mlflow-1": {
+        "image": "sha256:574c48deb107cba3f0bdc982d3aa0ab1500de58ab1694052bb92efbcab13ec91",
+        "oom_killed": false,
+        "restarts": 0,
+        "running": true
+      },
+      "ats-core-postgres-1": {
+        "image": "sha256:363729580deb8d234282c77745ff41b713b9a173008f4877ad2ade12c5131c95",
+        "oom_killed": false,
+        "restarts": 0,
+        "running": true
+      },
+      "ats-monitoring-collector-1": {
+        "image": "sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce",
+        "oom_killed": false,
+        "restarts": 0,
+        "running": true
+      },
+      "ats-monitoring-grafana-1": {
+        "image": "sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f",
+        "oom_killed": false,
+        "restarts": 0,
+        "running": true
+      },
+      "ats-monitoring-prometheus-1": {
+        "image": "sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2",
+        "oom_killed": false,
+        "restarts": 0,
+        "running": true
+      },
+      "ats-serving-ranking-1": {
+        "image": "sha256:b0157ff6c663a8ffb095427d4ebd6a7e2e5b742c757328ad6ffc4c2d06793bf3",
+        "oom_killed": false,
+        "restarts": 0,
+        "running": true
+      }
+    },
+    "docker_mem_total": 8319213568,
+    "timestamp_utc": "2026-10-26T04:04:59.940082+00:00"
+  },
+  "reuse_and_limits": [
+    "Existing admitted model4/gate lineage; no local T15 fit, tune, registration or test-partition read.",
+    "T7/T9/T11/T12 model/quality/portable package receipts reused explicitly; new serving package/check and T13 A3 activation actually performed.",
+    "T14 CI baseline inherited after its verified merge; any new remote CI ephemeral smoke is separate from the local no-fit proof.",
+    "Local synthetic demo_only; no hiring quality or production release claim.",
+    "Historical rollback business API schema is unchanged; an old image without /metrics can still serve its original contract."
+  ],
+  "schema_version": 1,
+  "source_binding": {
+    "images_not_reattributed_to_final_documentary_head": true,
+    "inherited_T14_quality_UID_transport_accepted_separately": true,
+    "service_inventory_after_T14_main_merge_unchanged": true,
+    "technical_and_orchestration_after_merge_unchanged": true
+  },
+  "task": "T15 / issue16",
+  "tests": {
+    "actual_metrics": {
+      "checks": {
+        "actual_200_422_latency_counter_deltas": true,
+        "actual_controlled503_scraped": true,
+        "actual_readonly_idleWAL_snapshot_and_stale_rejection": true,
+        "dashboard_and_tsdb_survive_restart": true,
+        "grafana_frontend_plugin_and_actual_datasource_queries": true,
+        "metrics_tsdb_dashboard_have_no_private_ids_or_text": true,
+        "pinned_server_versions": true,
+        "real_pipeline_and_release_sources_scraped": true,
+        "scrapes_and_replay_create_no_extra_events": true
+      },
+      "passed": 1,
+      "raw_log_sha256": "4c1a96761b8fea7b21b0ea960256652665c8934642a37c24f330e60a852f2502",
+      "raw_report_sha256": "6679a0e9282bc16aeed2b9c12b4e954bb3624180e8f98c4c56a07965b0a8395f",
+      "seconds": 36.845
+    },
+    "budget512_targeted": {
+      "checks": {
+        "actual_grafana_query_frames": true,
+        "frontend_plugin_registered": true,
+        "historical_tsdb_value4_preserved": true,
+        "oom_false_restart0_limit512": true,
+        "provisioned_dashboard8_panels_preserved": true
+      },
+      "raw_report_sha256": "0314b5465272cee5ff61da3e9cb9e3dfb88969da98694049ef4f3ff2aca841dc",
+      "reuses_full_gate_sha256": "6679a0e9282bc16aeed2b9c12b4e954bb3624180e8f98c4c56a07965b0a8395f"
+    },
+    "canonical_unit": {
+      "log_sha256": "65e7e3b456367976b0506de718a3bee0eca592651ac86e613c72d13ed11d9169",
+      "owner": "root",
+      "passed": 152,
+      "seconds": 10.601,
+      "source_sha": "87852c9988f3d1d8af546acf9a773e74b30717a6"
+    },
+    "final_grafana_resource_config": {
+      "actual_go_softlimit_bytes": 134217728,
+      "checks": {
+        "actual_go_softlimit128_supported": true,
+        "actual_repeated_grafana_queries24_frames": true,
+        "dashboard8_panels_provisioned": true,
+        "explicit_restart_frontend_query_panel_persistence": true,
+        "frontend_prometheus_registered": true,
+        "historical_tsdb_503_value4_persisted": true,
+        "no_oom_in_samples": true,
+        "only_prometheus_backend_process": true
+      },
+      "raw_report_sha256": "698fc567a609165592eff9a7e932768277c738f2c070661631027bae1083f391",
+      "remaining_backend_processes": 1,
+      "reuses_full_gate_sha256": "6679a0e9282bc16aeed2b9c12b4e954bb3624180e8f98c4c56a07965b0a8395f"
+    },
+    "manual_ui": {
+      "after_004_restart": "PASS",
+      "after_final_soft_profile_restart": "PASS",
+      "observer": "root",
+      "panels": [
+        "requests/errors graphs",
+        "actual p95 curve",
+        "pipeline bars",
+        "release active1/pending0/generation2",
+        "pipeline/release source_up1",
+        "ranking/technical/acceptance up1 before fixture cleanup"
+      ],
+      "screenshots": {
+        "t15-grafana-health.png": "6fab11243bb362c560ee3019f62c603ea42392a3f2dbc7aa11e7bc368933ad4e",
+        "t15-grafana-latency.png": "8c3ef88978417b2bb3b94a0584a2bb1d1175c7cbd9256bbc5c6b273418758a9f",
+        "t15-grafana-softlimit-health.png": "fb1d1c531470662fc6edc5dc2d0b603ee0f2cb3f65f68c02fba994b0d5cd12eb",
+        "t15-grafana-softlimit-ui.png": "d0a2632be7f129a9c0e73b8c93939a91bf67b69afd17eb4c09d3c1b72a09f7c6",
+        "t15-grafana-targets.png": "f15cd4a104e7cd940c12e52d6c6c03571ba628b432de0cd4a1518e7854a4809a",
+        "t15-grafana-ui.png": "56b8e44a35193cc892094fce5c63d30ea13eb97397afc2dd5bb42a827ddc1dad"
+      }
+    }
+  }
+}
