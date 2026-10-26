@@ -107,7 +107,9 @@ def claim(db, request_id, payload_hash):
 
 def begin_attempt(db, request_id):
     with db:
-        db.execute("UPDATE requests SET attempts=attempts+1,status='in_progress' WHERE request_id=?", (request_id,))
+        changed = db.execute("UPDATE requests SET attempts=attempts+1,status='in_progress' WHERE request_id=? AND attempts<3 AND status IN ('ready','retryable','in_progress')", (request_id,))
+        if changed.rowcount != 1:
+            raise Failure("retry_budget_exhausted")
         attempt = db.execute("SELECT attempts FROM requests WHERE request_id=?", (request_id,)).fetchone()[0]
         db.execute("INSERT INTO attempts(request_id,attempt,phase,outcome) VALUES(?,?,'download','running')", (request_id, attempt))
     return attempt

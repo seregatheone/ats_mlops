@@ -77,6 +77,8 @@ class OrchestrationTests(unittest.TestCase):
                 if attempt < 3:
                     runner.finish(db, "r", attempt, "retryable")
             self.assertEqual(runner.claim(db, "r", "payload")["attempts"], 3)
+            with self.assertRaisesRegex(runner.Failure, "retry_budget_exhausted"):
+                runner.begin_attempt(db, "r")
             runner.recovered(db, "r", "receipt")
             self.assertEqual(runner.claim(db, "r", "payload")["status"], "completed")
             self.assertEqual(db.execute("SELECT count(*) FROM attempts").fetchone()[0], 3)
