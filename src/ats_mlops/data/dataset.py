@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 import hashlib
+import inspect
 import json
 import math
 from pathlib import Path
@@ -141,20 +142,27 @@ def pair_id(row: dict) -> str:
     return row["vacancy_id"] + "/" + row["candidate_id"]
 
 
-def split_rows(rows: list[dict], seed: int, ratios: dict, threshold: float) -> tuple[dict, dict, dict]:
+def _split_rows(rows: list[dict], seed: int, ratios: dict, threshold: float, *, legacy=False,
+                reservation_policy=None) -> tuple[dict, dict, dict]:
     _require(type(seed) is int, "invalid_seed")
     _require(set(ratios) == set(SPLITS) and all(type(x) in (float, int) and x > 0 for x in ratios.values())
              and math.isclose(sum(ratios.values()), 1.0, abs_tol=1e-12), "invalid_split_ratios")
     components, duplicates = connected_components(rows, threshold)
-    ordered = sorted(set(components.values()), key=lambda key: sha256(f"{seed}:{key}".encode()))
-    _require(len(ordered) >= 3, "insufficient_independent_components")
-    counts = {name: int(len(ordered) * ratios[name]) for name in SPLITS}
-    counts["train"] += len(ordered) - sum(counts.values())
-    _require(all(counts.values()), "empty_split")
-    assignment, offset = {}, 0
-    for name in SPLITS:
-        assignment.update({key: name for key in ordered[offset:offset + counts[name]]})
-        offset += counts[name]
+    _require(len(set(components.values())) >= 3, "insufficient_independent_components")
+    if legacy:
+        ordered = sorted(set(components.values()), key=lambda key: sha256(f"{seed}:{key}".encode()))
+        counts = {name: int(len(ordered) * ratios[name]) for name in SPLITS}
+        counts["train"] += len(ordered) - sum(counts.values())
+        _require(all(counts.values()), "empty_split")
+        assignment, offset = {}, 0
+        for name in SPLITS:
+            assignment.update({key: name for key in ordered[offset:offset + counts[name]]})
+            offset += counts[name]
+    else:
+        from .reservation import assignments, root_policy
+
+        assignment, _ = assignments(rows, components, seed, ratios, threshold,
+                                    root_policy() if reservation_policy is None else reservation_policy)
     splits = {name: [row for row in rows if assignment[components[pair_id(row)]] == name] for name in SPLITS}
     for name, part in splits.items():
         _require({row["relevance"] for row in part} == {0, 1}, f"{name}_missing_class")
@@ -162,6 +170,12 @@ def split_rows(rows: list[dict], seed: int, ratios: dict, threshold: float) -> t
         positive_groups = {row["vacancy_id"] for row in part if row["relevance"] == 1}
         _require(bool(positive_groups) and all(size >= 2 for size in groups.values()), f"{name}_ineligible_groups")
     return splits, components, duplicates
+
+
+def split_rows(rows: list[dict], seed: int, ratios: dict, threshold: float, *,
+               reservation_policy=None) -> tuple[dict, dict, dict]:
+    """Anchor known semantic components; IDs and labels never select their fold."""
+    return _split_rows(rows, seed, ratios, threshold, reservation_policy=reservation_policy)
 
 
 def _summary(rows: list[dict], components: dict[str, str]) -> dict:
@@ -193,12 +207,18 @@ def _read_artifact(root: Path, item: dict) -> bytes:
 
 
 def prepare_dataset(rows: list[dict], config: dict, output_dir: Path, manifest_path: Path,
-                    provenance: dict | None = None) -> dict:
+                    provenance: dict | None = None, *, reservation_policy=None) -> dict:
     """Admit synthetic pairs, split components and persist a test freeze before training."""
     source_rows = rows
     rows, cleaning = clean_rows(rows)
     threshold = config["near_duplicate_jaccard"]
-    splits, components, duplicates = split_rows(rows, config["seed"], config["split_ratios"], threshold)
+    from .reservation import assignments, extend_policy, root_policy
+
+    parent_policy = root_policy() if reservation_policy is None else reservation_policy
+    splits, components, duplicates = split_rows(rows, config["seed"], config["split_ratios"], threshold,
+                                               reservation_policy=parent_policy)
+    assigned, semantic = assignments(rows, components, config["seed"], config["split_ratios"], threshold, parent_policy)
+    policy = extend_policy(parent_policy, rows, components, assigned)
     root = manifest_path.resolve().parent
     output_dir = output_dir.resolve()
     _relative(output_dir, root)
@@ -209,6 +229,7 @@ def prepare_dataset(rows: list[dict], config: dict, output_dir: Path, manifest_p
               "policy": "final_evaluation_only; never fit, tune, gate, or retrain"}
     if manifest_path.exists():
         previous = json.loads(manifest_path.read_text())
+        _require(previous.get("schema_version") == 2, "legacy_manifest_requires_explicit_new_version")
         _require(previous.get("frozen_test") == freeze, "frozen_test_change_requires_new_dataset_version")
     split_lists = {name: [pair_id(row) for row in part] for name, part in splits.items()}
     split_content = canonical_json({"seed": config["seed"], "pair_ids": split_lists,
@@ -218,21 +239,27 @@ def prepare_dataset(rows: list[dict], config: dict, output_dir: Path, manifest_p
                  "split_lists": (output_dir / "split.json", split_content)}
     artifacts.update({name: (output_dir / f"{name}.jsonl", content) for name, content in contents.items()})
     manifest = {
-        "schema_version": 1, "evidence_scope": "demo_only", "provenance": provenance or PROVENANCE,
+        "schema_version": 2, "evidence_scope": "demo_only", "provenance": provenance or PROVENANCE,
         "schema": {"fields": list(SCHEMA), "relevance": [0, 1], "encoding": "utf-8-jsonl"},
         "generator": {"version": GENERATOR_VERSION, "config": config,
                       "config_sha256": sha256(canonical_json(config)),
-                      "source_sha256": sha256(Path(__file__).read_bytes())},
+                      "source_sha256": sha256(Path(__file__).read_bytes()),
+                      "row_algorithm_sha256": generator_signature()},
         "cleaning": cleaning,
         "duplicate_detection": {"algorithm": DUPLICATE_ALGORITHM,
                                 "normalization": DUPLICATE_NORMALIZATION,
                                 "threshold": threshold, **duplicates},
         "splits": {name: _summary(part, components) for name, part in splits.items()},
         "frozen_test": freeze,
+        "reservation": {"schema_version": 1, "algorithm": "anchored-semantic-v1",
+                        "policy": {"path": _relative(output_dir / "reservation_policy.json", root),
+                                   "sha256": sha256(canonical_json(policy))},
+                        "assignments_sha256": sha256(canonical_json({semantic[key]: fold for key, fold in assigned.items()}))},
         "artifacts": {name: {"path": _relative(path, root), "sha256": sha256(content)}
                       for name, (path, content) in artifacts.items()},
     }
     output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "reservation_policy.json").write_bytes(canonical_json(policy))
     for path, content in artifacts.values():
         path.write_bytes(content)
     manifest_path.write_bytes(canonical_json(manifest))
@@ -270,17 +297,34 @@ def generate_dataset(config_path: Path, manifest_path: Path, output_dir: Path) -
     return prepare_dataset(generate_rows(config), config, output_dir, manifest_path)
 
 
+def generator_signature() -> str:
+    """Stable row algorithm identity; unrelated dataset.py edits do not revoke data."""
+    return sha256(canonical_json({"version": GENERATOR_VERSION, "skills": SKILLS,
+                                 "function_source": inspect.getsource(generate_rows).strip()}))
+
+
 def load_manifest(manifest_path: Path) -> dict:
     """Validate metadata and split inventories without opening any corpus/split bytes."""
     manifest = json.loads(manifest_path.read_text())
-    _require(manifest.get("schema_version") == 1 and manifest.get("evidence_scope") == "demo_only", "invalid_manifest_scope")
+    _require(type(manifest.get("schema_version")) is int and manifest["schema_version"] in (1, 2)
+             and manifest.get("evidence_scope") == "demo_only", "invalid_manifest_scope")
     _require(manifest.get("provenance") == PROVENANCE, "unadmitted_provenance")
     _require(manifest.get("schema") == {"fields": list(SCHEMA), "relevance": [0, 1], "encoding": "utf-8-jsonl"}, "invalid_manifest_schema")
     generator = manifest["generator"]
     config = generator["config"]
+    from .reservation import LEGACY_GENERATOR_SHA256, ROW_GENERATOR_SHA256, manifest_policy
+
     _require(generator.get("version") == GENERATOR_VERSION
-             and generator.get("config_sha256") == sha256(canonical_json(config))
-             and generator.get("source_sha256") == sha256(Path(__file__).read_bytes()), "generator_lineage_mismatch")
+             and generator.get("config_sha256") == sha256(canonical_json(config)), "generator_lineage_mismatch")
+    if manifest["schema_version"] == 1:
+        _require(generator.get("source_sha256") == LEGACY_GENERATOR_SHA256
+                 and "reservation" not in manifest, "generator_lineage_mismatch")
+    else:
+        _require(isinstance(generator.get("source_sha256"), str)
+                 and re.fullmatch(r"[0-9a-f]{64}", generator["source_sha256"])
+                 and generator.get("row_algorithm_sha256") == generator_signature() == ROW_GENERATOR_SHA256,
+                 "generator_lineage_mismatch")
+        manifest_policy(manifest_path, manifest)
     _require(set(manifest["splits"]) == set(SPLITS), "invalid_split_inventory")
     _require(manifest["frozen_test"]["sha256"] == manifest["artifacts"]["test"]["sha256"], "frozen_test_mismatch")
     for position, name in enumerate(SPLITS):
@@ -327,7 +371,17 @@ def audit_manifest(manifest_path: Path) -> dict:
     _require(manifest["cleaning"] == cleaning, "cleaning_summary_mismatch")
     expected_rows, _ = clean_rows(generate_rows(config))
     _require(rows == expected_rows, "generator_corpus_mismatch")
-    splits, components, duplicates = split_rows(rows, config["seed"], config["split_ratios"], config["near_duplicate_jaccard"])
+    from .reservation import assignments, manifest_policy, validate_partitions
+
+    policy = manifest_policy(manifest_path, manifest, required=manifest["schema_version"] == 2)
+    splits, components, duplicates = _split_rows(rows, config["seed"], config["split_ratios"], config["near_duplicate_jaccard"],
+                                                legacy=manifest["schema_version"] == 1, reservation_policy=policy)
+    if policy is not None:
+        assigned, semantic = assignments(rows, components, config["seed"], config["split_ratios"],
+                                         config["near_duplicate_jaccard"], policy)
+        _require(manifest["reservation"]["assignments_sha256"]
+                 == sha256(canonical_json({semantic[key]: fold for key, fold in assigned.items()})), "reservation_assignment_mismatch")
+        validate_partitions(splits, config["near_duplicate_jaccard"], policy)
     expected_lists = {"seed": config["seed"], "pair_ids": {name: [pair_id(row) for row in part] for name, part in splits.items()},
                       "pair_components": components}
     _require(content["split_lists"] == canonical_json(expected_lists), "split_inventory_mismatch")

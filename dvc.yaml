@@ -8,6 +8,7 @@ stages:
       - pipeline-inputs.json
       - dataset-binding.json
       - data_manifest.json
+      - data/reservation_policy.json
       - admission/data-admission.json
       - data/train.jsonl
       - data/validation.jsonl
@@ -22,6 +23,7 @@ stages:
       - ../source/src/ats_mlops
       - pipeline-inputs.json
       - data_manifest.json
+      - data/reservation_policy.json
       - admission/data-admission.json
       - data/train.jsonl
       - data/validation.jsonl

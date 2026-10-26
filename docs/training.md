@@ -13,6 +13,14 @@ in-memory rows. Последующее чтение train/validation не тре
 corpus и split-list bytes в регулярном этапе не читаются. Пустой словарь и один
 класс отклоняются до регистрации модели; некорректные probabilities запрещены.
 
+После исправления #36 новый fit также требует manifest schema 2 с неизменяемой
+semantic reservation policy. Guard проверяет обе части вместе и защищает
+канонические folds при изменении namespace/ID/меток. Policy содержит hashes,
+передаётся в bundle/prepared snapshot и не требует чтения frozen test. Старый
+schema 1 доступен для audit/inference, но новый fit отклоняется даже с прежним
+GX receipt. Исторические модели 4/5 остаются engineering-only; чистый будущий
+candidate для E5 создаётся отдельно. См. [semantic-reservations.md](semantic-reservations.md).
+
 Исполняемый source сначала коммитится и отправляется в task branch. Обучение
 требует clean checkout этого SHA и lockfile, совпадающий с lock runtime image.
 Reports создаются вне checkout. Передайте JSON `--image-identity` с resolved image
