@@ -87,6 +87,12 @@ to a separate Linux auth volume readable only by Grafana's UID. The password is
 never a container environment value or committed artifact. No admin login is
 needed to view the dashboard. Datasource/panel JSON is provisioned, with stable
 UIDs `ats-prometheus` and `ats-technical`.
+Grafana 13.2 packages Prometheus as a standalone bundled plugin. Automatic
+preinstall updates are disabled so its image-pinned bundled copy is used on
+the read-only root filesystem; no background plugin upgrades are allowed.
+Acceptance checks frontend plugin registration and actual Grafana datasource
+queries before/after restart, in addition to direct Prometheus queries and
+dashboard JSON persistence. A provisioned datasource row alone is insufficient.
 
 Prometheus joins the stable `ats-serving-network` and scrapes `ranking:3000`;
 it also joins the separate monitoring bridge for `collector:9101`. No

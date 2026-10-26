@@ -112,6 +112,23 @@ class MetricsIntegrationTests(unittest.TestCase):
             return {"request_id": "t15-proof-" + str(index), "vacancy": {"id": "v", "text": SENTINEL},
                     "candidates": [{"id": "c", "text": SENTINEL}], "top_k": 1}
 
+        def grafana_query(expression):
+            status, frontend = http("http://127.0.0.1:3001/api/frontend/settings")
+            self.assertEqual(200, status)
+            sources = json.loads(frontend)["datasources"]
+            self.assertTrue(any(value.get("uid") == "ats-prometheus" and value.get("type") == "prometheus"
+                                for value in sources.values()), "Grafana frontend datasource plugin missing")
+            now = int(time.time() * 1000)
+            status, response = http("http://127.0.0.1:3001/api/ds/query", {
+                "from": str(now - 60000), "to": str(now),
+                "queries": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "ats-prometheus"},
+                             "expr": expression, "instant": True, "range": False, "format": "time_series",
+                             "intervalMs": 1000, "maxDataPoints": 100}]})
+            self.assertEqual(200, status, response[:500])
+            value = json.loads(response)["results"]["A"]
+            self.assertTrue(value.get("frames"), "Grafana query returned no frames")
+            return value
+
         created = False
         try:
             # Actual idle-WAL/read-only filesystem counterexample and sidecar
@@ -194,6 +211,7 @@ class MetricsIntegrationTests(unittest.TestCase):
             (output / "healthy.prom").write_text(after)
             wait_for(lambda: value(expression) == 6)
             report["queries"]["rank200"] = query(expression)
+            report["queries"]["grafana_rank200"] = grafana_query(expression)
             report["queries"]["latency"] = query('ats_http_request_duration_seconds_count{job="acceptance",endpoint="/rank",status="200"}')
             for source in ("pipeline", "release"):
                 wait_for(lambda: value('ats_technical_source_up{source="' + source + '"}') == 1)
@@ -216,6 +234,9 @@ class MetricsIntegrationTests(unittest.TestCase):
             (output / "fault.prom").write_text(fault)
             wait_for(lambda: value(fault_expression) == 4)
             report["queries"]["error503"] = query(fault_expression)
+            report["queries"]["grafana_error503"] = grafana_query(fault_expression)
+            report["queries"]["grafana_release"] = grafana_query("ats_release_active")
+            report["checks"]["grafana_frontend_plugin_and_actual_datasource_queries"] = True
             report["checks"]["actual_controlled503_scraped"] = True
             historical_time = str(time.time())
             historical = query(fault_expression, time=historical_time)
@@ -231,6 +252,7 @@ class MetricsIntegrationTests(unittest.TestCase):
             after_dashboard = json.loads(raw)
             self.assertEqual(dashboard["dashboard"]["uid"], after_dashboard["dashboard"]["uid"])
             self.assertEqual(dashboard["dashboard"]["panels"], after_dashboard["dashboard"]["panels"])
+            report["queries"]["grafana_after_restart"] = grafana_query("ats_release_active")
             self.assertTrue(after_dashboard["meta"]["provisioned"])
             self.assertNotIn(SENTINEL, raw.decode())
             report["checks"]["dashboard_and_tsdb_survive_restart"] = True
