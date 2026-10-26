@@ -290,7 +290,10 @@ def stage(request, output):
                 report["checks"]["event_write_fail_closed_503"] = True
                 stop()
                 step = "privacy_event_export"
-                export_code = "import sys,json,sqlite3;from pathlib import Path;sys.path.insert(0,'/opt/serving');from service.contracts import sha,canonical;d=sqlite3.connect('file:/events/predictions.sqlite3?mode=ro',uri=True);r=d.execute('SELECT event_json,response_json FROM prediction_events ORDER BY request_id').fetchall();assert all(x[1] is not None for x in r);assert all(" + repr(SENTINEL.encode()) + " not in p.read_bytes() for p in Path('/events').iterdir() if p.is_file());print(json.dumps({'count':len(r),'sha256':sha(canonical(r))}));d.close()"
+                checkpoint_code = "import sqlite3;d=sqlite3.connect('/events/predictions.sqlite3');assert d.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()[0]==0;d.close()"
+                command(["docker", "run", "--rm", "--network", "none", "--read-only", "--entrypoint", "/opt/ml-venv/bin/python",
+                         "--mount", f"type=volume,source={events_volume},target=/events", image, "-I", "-B", "-c", checkpoint_code])
+                export_code = "import sys,json,sqlite3;from pathlib import Path;sys.path.insert(0,'/opt/serving');from service.contracts import sha,canonical;d=sqlite3.connect('file:/events/predictions.sqlite3?mode=ro&immutable=1',uri=True);r=d.execute('SELECT event_json,response_json FROM prediction_events ORDER BY request_id').fetchall();assert all(x[1] is not None for x in r);assert all(" + repr(SENTINEL.encode()) + " not in p.read_bytes() for p in Path('/events').iterdir() if p.is_file());print(json.dumps({'count':len(r),'sha256':sha(canonical(r))}));d.close()"
                 exported = json.loads(command(["docker", "run", "--rm", "--network", "none", "--read-only", "--entrypoint", "/opt/ml-venv/bin/python",
                                                 "--mount", f"type=volume,source={events_volume},target=/events,readonly", image, "-I", "-B", "-c", export_code]))
                 report["staging_event_count"] = exported["count"]
