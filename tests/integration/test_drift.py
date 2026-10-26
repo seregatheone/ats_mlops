@@ -165,12 +165,28 @@ def main():
         # Export executes on Linux against live DB+WAL, never a Desktop file copy.
         volume = json.loads(run(["docker", "inspect", "--format", "{{json .Mounts}}", container], capture=True))
         volume = next(item["Name"] for item in volume if item["Destination"] == "/events")
-        code = "import sys;sys.path.insert(0,'/source/src');from ats_mlops.monitoring.feedback import export_events;export_events('/events/predictions.sqlite3',sys.argv[1],sys.argv[2])"
-        run(["docker", "run", "--rm", "--name", project + "-export", "--network", "none", "--read-only", "--user", f"{os.getuid()}:{os.getgid()}",
+        code = """import sys,json,hashlib
+from pathlib import Path
+sys.path.insert(0,'/source/src')
+from ats_mlops.monitoring.feedback import export_events
+def fingerprint():
+ return {p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('/events').iterdir() if p.is_file() and (p.name.endswith('.sqlite3') or p.name.endswith('-wal'))}
+before=fingerprint()
+manifest=export_events('/events/predictions.sqlite3','/tmp/export',sys.argv[1])
+assert before==fingerprint()
+print(json.dumps({'manifest':manifest,'events':Path('/tmp/export/events.jsonl').read_text(),'db_wal_unchanged':True}))
+"""
+        exported_bytes = json.loads(run(["docker", "run", "--rm", "--name", project + "-export", "--network", "none", "--read-only", "--user", "50000:50000",
              "--cpus", "1", "--memory", "512m", "--tmpfs", "/tmp:rw,size=32m,mode=1777",
-             "--mount", f"type=volume,source={volume},target=/events,readonly", "--mount", f"type=bind,source={ROOT},target=/source,readonly",
-             "--mount", f"type=bind,source={out},target={out}", "--entrypoint", "/opt/ml-venv/bin/python", args.old_serving_image,
-             "-I", "-B", "-c", code, str(out / "export"), end])
+             "--mount", f"type=volume,source={volume},target=/events", "--mount", f"type=bind,source={ROOT},target=/source,readonly",
+             "--entrypoint", "/opt/ml-venv/bin/python", args.old_serving_image,
+             "-I", "-B", "-c", code, end], capture=True))
+        # mode=ro/query_only guards DB data; native SHM locking needs same UID and
+        # writable volume. No directory chmod, immutable shortcut or WAL copying.
+        (out / "export").mkdir()
+        (out / "export/events.jsonl").write_text(exported_bytes["events"])
+        write(out / "export/export.json", exported_bytes["manifest"])
+        checks["native_wal_readonly_sql_transaction_db_wal_unchanged"] = exported_bytes["db_wal_unchanged"] is True
         events, exported = load_export(out / "export")
         full = next(event for event in events if event["request_id"] == "full100")
         checks["top3_100_full_scores_writer_witness"] = full["completeness"]["candidate_count"] == len(full["candidates"]) == 100 and exported["full_group"]
