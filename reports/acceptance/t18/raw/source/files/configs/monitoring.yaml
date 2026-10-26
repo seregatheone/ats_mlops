@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "method": "wasserstein",
+  "columns": ["tfidf_cosine", "token_jaccard", "log1p_vacancy_tokens", "log1p_candidate_tokens", "length_ratio", "score"],
+  "threshold_grid": [0.1, 0.2, 0.5, 1.0, 2.0],
+  "drift_share": 0.5,
+  "minimum_pairs": 200,
+  "minimum_vacancies": 10,
+  "calibration_seed": 1707,
+  "label_sources": ["independent-fixture-v1", "human-review-v1"],
+  "constant_policy": "exclude_unchanged; changed_or_all_constant_is_undefined",
+  "scope": "demo_only"
+}
