@@ -341,4 +341,7 @@ def validate_freeze(path, expected_sha256):
     require(selected["model_artifact_sha256"]==spec["bindings"]["model_artifact_sha256"]
         and selected["model_lineage_sha256"]==spec["bindings"]["model_lineage_sha256"]
         and selected["source_git_sha"]==spec["qualified_model_source_git_sha"],"frozen_model_differs_from_first_S1")
+    negative=result["scenarios"]["S3"]["validation"]
+    require(negative["parent_run_manifest_sha256"]==s1_inputs["run"]["sha256"]
+        and negative["parent_model_sha256"]==selected["model_artifact_sha256"],"negative_fixture_not_derived_from_selected_S1")
     return value

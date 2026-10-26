@@ -117,8 +117,9 @@ def recomputations(artifacts, receipt):
 
 
 def bad_data(artifacts,receipt):
-    refs=native(receipt,("schema","guard","bad_gate","fault_provenance"))
-    schema,guard,gate,fault=(artifacts.document(refs[key]) for key in refs)
+    refs=native(receipt,("schema","guard","bad_gate","fault_provenance","parent_run","candidate_run","candidate_pipeline","fault_intent","candidate_files"))
+    schema,guard,gate,fault,parent,run,pipeline,intent=(artifacts.document(refs[key]) for key in
+        ("schema","guard","bad_gate","fault_provenance","parent_run","candidate_run","candidate_pipeline","fault_intent"))
     require(schema["outcome"]=="passed" and schema["original_test_read"] is False and schema["training_invoked"] is False
         and schema["validation"]["outcome"]=="rejected" and any(batch["scope"]=="source" and batch["success"] is False
         for batch in schema["validation"]["gx"]),"bad_schema_not_actually_rejected")
@@ -126,10 +127,34 @@ def bad_data(artifacts,receipt):
         and guard["validation"]["outcome"]=="rejected","bad_data_reached_real_fit")
     validation_gate(gate,accepted=False)
     require(fault["scope"]=="controlled_negative_artifact_fault" and fault["source_git_sha"]==receipt["source_git_sha"]
+        and type(fault["fit_events"]) is int and fault["fit_events"]==0 and fault["selected_for_E5"] is False
         and fault["candidate_model_sha256"]==gate["candidate"]["model_sha256"]
         and fault["candidate_mlflow"]=={key:gate["candidate"][key] for key in ("model_name","model_version","run_id","experiment_id","exact_uri","source")}
-        and fault["selected_for_E5"] is False,"unattributed_negative_model_fixture")
-    return passed(4)
+        ,"unattributed_negative_model_fixture")
+    require(fault["parent_run_manifest_sha256"]==refs["parent_run"]["sha256"]
+        and fault["parent_model_sha256"]==parent["model"]["sha256"] and fault["parent_training_mlflow"]==parent["mlflow"]
+        and all(fault["candidate_mlflow"][key]!=parent["mlflow"][key] for key in ("run_id","model_version","source")),"negative_model_reused_parent_identity")
+    require(fault["candidate_run_manifest_sha256"]==refs["candidate_run"]["sha256"]==gate["candidate"]["run_manifest_sha256"]
+        and fault["candidate_pipeline_manifest_sha256"]==refs["candidate_pipeline"]["sha256"]==gate["candidate"]["pipeline_manifest_sha256"]
+        and fault["candidate_mlflow"]==run["mlflow"]==pipeline["training"]["mlflow"]
+        and fault["candidate_model_sha256"]==run["model"]["sha256"]==pipeline["training"]["model_sha256"]
+        and pipeline["training"]["run_manifest_sha256"]==refs["candidate_run"]["sha256"],"negative_artifact_lineage_mismatch")
+    expected_intent={key:fault[key] for key in ("scope","operation","source_git_sha","parent_model_sha256",
+        "parent_run_manifest_sha256","parent_training_mlflow","fit_events","selected_for_E5")}
+    require(canonical(intent)==canonical(expected_intent)==canonical(run["artifact_derivation"])==canonical(pipeline["artifact_derivation"])
+        and intent["operation"]=="negate_fitted_logistic_coefficients_and_intercept"
+        and pipeline["execution_kind"].startswith("controlled_fault_derivation;")
+        and run["git_sha"]==parent["git_sha"]==receipt["source_git_sha"] and run["dirty_worktree"] is False
+        and run["test_read"] is False and run["read_partitions"]==["train","validation"]
+        and all(canonical(run[key])==canonical(parent[key]) for key in ("params","params_sha256","features","features_sha256",
+            "data_manifest_sha256","data_sha256","split_sha256","environment","source_sha256","source_tree_sha256")),"negative_fixture_changed_more_than_declared")
+    files=refs["candidate_files"]
+    require(set(files)==set(run["model"]["files"]),"negative_artifact_evidence_incomplete")
+    for name,reference in files.items():
+        require(reference["sha256"]==run["model"]["files"][name],"negative_artifact_inventory_mismatch");artifacts.content(reference)
+    require(digest(canonical(run["model"]["files"]))==run["model"]["sha256"]
+        and run["model"]["files"]["model.pkl"]==run["model"]["payload_sha256"],"negative_model_payload_mismatch")
+    return passed(8+len(files),parent_run_manifest_sha256=refs["parent_run"]["sha256"],parent_model_sha256=parent["model"]["sha256"])
 
 
 def controlled_release(artifacts,receipt):
