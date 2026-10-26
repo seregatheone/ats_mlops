@@ -245,17 +245,83 @@ def inspect_scenarios(directory, references, *, source_sha, spec_sha, validators
 
 
 def validate_freeze(path, expected_sha256):
-    """Reserved T19 adapter entrypoint. Preparation cannot issue a real freeze.
+    """Replay the complete native closure; never turn a missing result into PASS.
 
-    The final adapter will consume T4's frozen validate_spec and replay all eight
-    native adapters after serial T17/T19-preparation integration. Fail closed
-    until that code and actual acceptance evidence are qualified, rather than
-    trusting an object containing outcome=passed/checks=true.
+    A private evidence bundle may be relocated as a whole: every artifact path
+    is relative to this receipt's parent. No test rows are part of that bundle.
+    The application source is the BEFORE-evidence Git object, not a docs HEAD.
     """
-    path = Path(path)
-    require(hash_value(expected_sha256) and not path.is_symlink() and path.is_file(), "missing_freeze_receipt")
-    content = path.read_bytes()
-    require(digest(content) == expected_sha256, "freeze_hash_mismatch")
-    value = decode(content)
-    require(isinstance(value, dict) and value.get("outcome") == "passed", "freeze_not_passed")
-    raise EvidenceError("final_freeze_adapter_not_qualified")
+    from ats_mlops.evaluation.experiment import validate_spec
+    from .native import VALIDATORS
+    import subprocess
+
+    path=Path(path)
+    require(hash_value(expected_sha256) and path.is_file() and not path.is_symlink(),"missing_freeze_receipt")
+    content=path.read_bytes();require(digest(content)==expected_sha256,"freeze_hash_mismatch")
+    value=decode(content)
+    keys={"schema_version","outcome","spec_sha256","source_git_sha","source_clean","inputs","spec","environment",
+          "source","holdout","scenarios","checks","scope","E2","independent_real_corpus","open_blocking_defects"}
+    require(isinstance(value,dict) and set(value)==keys and type(value["schema_version"]) is int and value["schema_version"]==1
+        and value["outcome"]=="passed" and value["source_clean"] is True
+        and value["scope"]=="T18_readiness_before_E1_E5" and value["E2"]=="not_run"
+        and value["independent_real_corpus"] is False and value["open_blocking_defects"]==[] ,"final_freeze_not_qualified")
+    artifacts=Artifacts(path.parent);spec=validate_spec(artifacts.document(value["spec"]))
+    require(value["spec_sha256"]==value["spec"]["sha256"]==digest(canonical(spec))
+        and value["source_git_sha"]==spec["source_git_sha"] and value["inputs"]==spec["bindings"],"freeze_spec_mismatch")
+    environment=artifacts.document(value["environment"])
+    require(value["environment"]["sha256"]==spec["bindings"]["environment_sha256"],"freeze_environment_mismatch")
+    require(isinstance(environment["project"],str) and re.fullmatch(r"ats-(?:acceptance|experiment)-[a-z0-9][a-z0-9-]{2,40}",environment["project"])
+        and environment["network"]==environment["project"]+"_default" and type(environment["threads"]) is int and environment["threads"]==1
+        and type(environment["worker_memory_mib"]) is int and environment["worker_memory_mib"]==1536,"freeze_runtime_resources_mismatch")
+    require(set(value["holdout"])=={"manifest","policy"},"missing_holdout_metadata")
+    manifest,policy=(artifacts.document(value["holdout"][key]) for key in ("manifest","policy"))
+    lineage=derive_holdout_lineage(policy)
+    require(all(lineage[key]==spec["bindings"][key] for key in ("root_policy_sha256","protected_test_documents_sha256"))
+        and manifest["artifacts"]["test"]["sha256"]==spec["bindings"]["test_partition_sha256"]
+        and environment["holdout"]["manifest"]["sha256"]==value["holdout"]["manifest"]["sha256"]
+        and environment["holdout"]["policy"]["sha256"]==value["holdout"]["policy"]["sha256"],"freeze_holdout_lineage_mismatch")
+    inventory=manifest["splits"]["test"]
+    require(type(inventory["rows"]) is int and inventory["rows"]==spec["test_inventory"]["pairs"]
+        and type(inventory["groups"]) is int and inventory["groups"]==spec["test_inventory"]["groups"]
+        and digest(canonical(sorted(inventory["vacancy_ids"])))==spec["test_inventory"]["group_ids_sha256"]
+        and digest(canonical(sorted(inventory["pair_ids"])))==spec["test_inventory"]["pair_ids_sha256"],"freeze_holdout_inventory_mismatch")
+    source=value["source"]
+    require(isinstance(source,dict) and set(source)=={"head","status","files"},"invalid_frozen_source_receipt")
+    require(artifacts.content(source["head"])==(spec["source_git_sha"]+"\n").encode()
+        and artifacts.content(source["status"])==b"","before_evidence_source_was_not_clean")
+    files=source["files"]
+    required={"src/ats_mlops/evaluation/native.py","src/ats_mlops/evaluation/native_monitoring.py",
+        "src/ats_mlops/evaluation/holdout_worker.py","src/ats_mlops/evaluation/experiment.py",
+        "tests/e2e/audit.py","tests/e2e/native.py","configs/experiment.template.json","configs/monitoring.yaml",
+        "configs/quality.yaml","requirements-ml.lock","requirements-monitoring.lock","requirements-build.lock","docs/experiment-protocol.md"}
+    require(isinstance(files,dict) and required<=set(files),"incomplete_frozen_executable_source")
+    for name,reference in files.items():
+        relative=Path(name)
+        require(not relative.is_absolute() and ".." not in relative.parts and relative.name not in
+            {"test.jsonl","source.jsonl","corpus.jsonl","split.json"},"unsafe_frozen_source_path")
+        # Exact Git object bytes cryptographically bind source/locks/protocol.
+        # git show is read-only; it neither imports code nor opens a data fold.
+        actual=subprocess.run(["git","show",spec["source_git_sha"]+":"+name],cwd=environment["repo"],
+            capture_output=True,timeout=15)
+        require(actual.returncode==0 and artifacts.content(reference)==actual.stdout,"frozen_Git_source_bytes_mismatch")
+    require(files["docs/experiment-protocol.md"]["sha256"]==spec["bindings"]["protocol_sha256"],"protocol_was_not_frozen")
+    for series,descriptor in spec["adapter_bindings"].items():
+        expected_module="ats_mlops.evaluation.experiment" if series=="E2" else "ats_mlops.evaluation.native"
+        expected_function="ingest_human_measurement" if series=="E2" else "evaluate_e5" if series=="E5" else series.lower()
+        name="src/"+expected_module.replace(".","/")+".py"
+        require(descriptor=={"entrypoint":expected_module+":"+expected_function,"source_sha256":files[name]["sha256"]},"unfrozen_native_adapter")
+    require(set(value["scenarios"])==set(SCENARIOS),"eight_actual_scenarios_required")
+    result=inspect_scenarios(path.parent,value["scenarios"],source_sha=spec["source_git_sha"],spec_sha=value["spec_sha256"],validators=VALIDATORS)
+    require(result["outcome"]=="passed" and set(value["checks"])==set(result["requirements"])
+        and all(item is True for item in value["checks"].values()),"actual_acceptance_incomplete")
+    s1=result["scenarios"]["S1"]["validation"]
+    require(s1["first_S1_selection_sha256"]==environment["qualified"]["selection"]["sha256"],"freeze_selected_a_different_candidate")
+    require(result["scenarios"]["S6"]["validation"]["effective_config_sha256"]==spec["bindings"]["effective_config_sha256"],"freeze_effective_rule_mismatch")
+    s1_inputs=artifacts.document(value["scenarios"]["S1"])["native"]
+    selected,plan=(artifacts.document(s1_inputs[key]) for key in ("selection","plan"))
+    require(canonical(plan["execution"])==canonical(spec["execution"])
+        and all(canonical(plan["runtime"][key])==canonical(environment[key]) for key in plan["runtime"]),"qualification_runtime_or_params_changed")
+    require(selected["model_artifact_sha256"]==spec["bindings"]["model_artifact_sha256"]
+        and selected["model_lineage_sha256"]==spec["bindings"]["model_lineage_sha256"]
+        and selected["source_git_sha"]==spec["qualified_model_source_git_sha"],"frozen_model_differs_from_first_S1")
+    return value

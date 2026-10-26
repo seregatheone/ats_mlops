@@ -374,6 +374,8 @@ def declare_qualification(spec, config, root):
     value = {"schema_version": 1, "outcome": "declared", "slot": "S1",
         "selection_rule": "first_required_fit_before_metrics", "source_git_sha": spec["source_git_sha"],
         "execution": spec["execution"], "bundle_sha256": config["bundle_sha256"],
+        "qualification_environment_sha256": spec["bindings"]["environment_sha256"],
+        "runtime": {key: config[key] for key in ("project", "image", "network", "threads", "worker_memory_mib", "core")},
         "data_manifest_sha256": spec["bindings"]["data_manifest_sha256"],
         "admission_sha256": spec["bindings"]["admission_sha256"], "split_sha256": spec["bindings"]["split_sha256"],
         "qualification_recomputations": 3, "formal_E1": "not_run", "declared_at": datetime.now(timezone.utc).isoformat()}
@@ -525,8 +527,10 @@ def managed_release(spec, root):
         before_inventory = inventory(Path(target["package"]))
         candidate_alias.set(target_manifest["candidate"]["model_version"])
         first = _rank_probe(controller, config, controller.config["project"] + "-before")
+        immutable(root / "first-rank.json", first)
         candidate_alias.set(baseline_manifest["candidate"]["model_version"])
         second = _rank_probe(controller, config, controller.config["project"] + "-after")
+        immutable(root / "second-rank.json", second)
         require(first == second and second["release_id"] == target_manifest["release_id"]
                 and second["model_version"] == target_manifest["candidate"]["model_version"]
                 and inventory(Path(target["package"])) == before_inventory, "packaged_release_followed_candidate_alias")
@@ -618,6 +622,7 @@ def collect_ci(spec, root, *, repository, positive_run, negative_run, negative_h
         value = decode(commands.run(["gh", "api", f"repos/{repository}/contents/tests/fixtures/ci-contract.json?ref={commit}"]).stdout)
         require(value["encoding"] == "base64", "unexpected_github_contents_encoding")
         fixtures[role] = decode(base64.b64decode(value["content"], validate=False))
+        immutable(root / (role + "-fixture.json"), fixtures[role])
     require(canonical(fixtures["negative"]) != canonical(fixtures["positive"]), "negative_fixture_not_broken")
     attempt = metadata["positive"]["run"]["run_attempt"]
     artifact_name = f"isolated-ci-{positive_run}-{attempt}"
@@ -953,7 +958,7 @@ class HoldoutSession:
             raise
 
     def score(self, snapshot):
-        from .holdout_worker import validate_numeric
+        from .holdout_worker import validate_numeric, numeric_seal
         require(not self.scored and self.process is not None, "one_snapshot_only")
         self.scored = True
         message = {"schema_version": 1, "snapshot_sha256": snapshot["sha256"], "pair_ids_sha256": snapshot["pair_ids_sha256"],
@@ -966,7 +971,12 @@ class HoldoutSession:
         validate_numeric(self.ready, truth, numeric)
         hashes = {key: sha((self.output / filename).read_bytes()) for key, filename in
                   (("ready_sha256", "ready.json"), ("truth_sha256", "truth.json"), ("numeric_sha256", "numeric.json"))}
+        seal_path = self.output / "score-seal.json"
+        seal = read(seal_path)
+        require(seal_path.read_bytes() == canonical(seal) == canonical(numeric_seal(self.ready, truth, numeric))
+                and all(seal[key] == value for key, value in hashes.items()), "final_numeric_score_seal_mismatch")
         expected = {"schema_version": 1, "status": "completed", "worker_sha256": self.worker_sha, **hashes,
+                    "score_seal_sha256": sha(seal_path.read_bytes()),
                     "rows": len(truth["rows"]), "groups": len(numeric["groups"]),
                     **{key: snapshot[key if key != "snapshot_sha256" else "sha256"] for key in
                        ("snapshot_sha256", "pair_ids_sha256", "ground_truth_sha256")}}

@@ -98,7 +98,7 @@ class ArtifactTests(unittest.TestCase):
             result = inspect_scenarios(root, {"S2": reference}, source_sha=SOURCE, spec_sha=SPEC, validators={})
             self.assertEqual("blocked", result["scenarios"]["S2"]["outcome"])
             frozen = save(root, "freeze.json", {"outcome": "passed", "checks": dict.fromkeys(SCENARIOS, True)})
-            with self.assertRaisesRegex(EvidenceError, "not_qualified"):validate_freeze(root / "freeze.json", frozen["sha256"])
+            with self.assertRaises(EvidenceError):validate_freeze(root / "freeze.json", frozen["sha256"])
 
 
 class RecomputeAuditTests(unittest.TestCase):

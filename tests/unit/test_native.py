@@ -80,7 +80,9 @@ class NativeTransportTests(unittest.TestCase):
 class FinalScorerTests(unittest.TestCase):
     def test_first_qualification_slot_is_declared_before_fit_and_not_replaceable(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder);value = spec();config = {"bundle_sha256": "f"*64}
+            root = Path(folder);value = spec();config = {"bundle_sha256": "f"*64,
+                "project":"ats-acceptance-toy","image":{"id":"sha256:"+"a"*64},"network":"ats-acceptance-toy_default",
+                "threads":1,"worker_memory_mib":1536,"core":{}}
             plan = native.declare_qualification(value, config, root)
             self.assertEqual("S1", plan["slot"])
             self.assertFalse((root / "qualified-selection.json").exists())
@@ -121,6 +123,7 @@ class FinalScorerTests(unittest.TestCase):
                     calls.append("snapshot");rows, truth = w.validate_snapshot(w.decode(payload))
                     w.publish(output / "truth.json", truth)
                     observed = w.evaluate(toy_session([], output), rows, truth)
+                    w.publish(output / "score-seal.json", w.numeric_seal(ready(), truth, observed))
                     w.publish(output / "numeric.json", observed);final = w.recover(output)
                     self.returncode = 0
                     return w.canonical(final), None
