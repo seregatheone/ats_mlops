@@ -105,6 +105,15 @@ class RetrainingPolicyTests(unittest.TestCase):
         self.store.record_candidate(request_id, candidate(), now=START + 2 * HOUR + 3 * MINUTE)
         return request_id
 
+    def test_reference_refresh_cannot_replace_frozen_monitoring_config(self):
+        request_id=self.waiting_approval(); target=active()
+        changed=replace(target,reference=replace(target.reference,cohort=replace(target.reference.cohort,config_sha256=h('other-config'))))
+        before=self.store.snapshot()
+        with self.assertRaisesRegex(PolicyError,'active_target_mismatch'):
+            self.store.begin_reference_update(request_id,changed,now=START+4*HOUR)
+        self.assertEqual(before,self.store.snapshot())
+        self.assertEqual('waiting_approval',self.store.request(request_id)['state'])
+
     def test_two_windows_accept_once_and_window_hash_conflicts_fail(self):
         request_id = self.accepted()
         original = self.store.observe(window(1), now=START + 2 * HOUR)

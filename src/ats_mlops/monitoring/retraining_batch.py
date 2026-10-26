@@ -321,6 +321,7 @@ class HostBatch:
     def update_reference(self, request_id, reference, reference_sha256, bundle, config_sha256):
         from .drift import load_reference
         request = self.native.call('request',{'request_id':request_id})
+        p.require(config_sha256 == request['incumbent']['cohort']['config_sha256'],'reference_monitoring_config_changed')
         with active_state(self.release_state) as observed:
             card,_ = load_reference(reference,reference_sha256)
             card = dict(card,_config_sha256=config_sha256)

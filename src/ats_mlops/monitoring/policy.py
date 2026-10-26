@@ -524,7 +524,8 @@ class PolicyStore:
             require(meta["reference"] == incumbent, "incumbent_changed")
             require(reference["cohort"]["model"] == candidate["model"]
                     and reference["cohort"]["release_id"] == candidate["release_id"]
-                    and reference["cohort"]["epoch"] == incumbent["cohort"]["epoch"] + 1, "active_target_mismatch")
+                    and reference["cohort"]["epoch"] == incumbent["cohort"]["epoch"] + 1
+                    and reference["cohort"]["config_sha256"] == incumbent["cohort"]["config_sha256"], "active_target_mismatch")
             require(all(reference[key] == dataset[key] for key in (
                 "dataset_version", "manifest_sha256", "reservation_policy_sha256", "labelset_sha256")), "active_dataset_mismatch")
             require(all(value[key] == candidate[key] for key in (
