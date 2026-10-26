@@ -15,6 +15,25 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 SECRET_KEYS = ("MINIO_ROOT_PASSWORD", "DVC_SECRET_ACCESS_KEY", "MLFLOW_SECRET_ACCESS_KEY",
                "POSTGRES_PASSWORD", "MLFLOW_DB_PASSWORD", "AIRFLOW_DB_PASSWORD")
+IMAGE_SUFFIXES = {"ATS_ML_IMAGE": "-ml:t4", "ATS_POSTGRES_IMAGE": "-postgres:t4",
+                  "ATS_MINIO_IMAGE": "-minio:source9e49d5e", "ATS_MC_IMAGE": "-mc:source7394ce0",
+                  "ATS_AIRFLOW_IMAGE": "-airflow:t10"}
+
+
+def image_tags(prefix: str) -> dict[str, str]:
+    if not isinstance(prefix, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", prefix):
+        raise ValueError("invalid_image_prefix")
+    return {"ATS_IMAGE_PREFIX": prefix, **{name: prefix + suffix for name, suffix in IMAGE_SUFFIXES.items()}}
+
+
+def image_settings(values: dict[str, str], requested_prefix: str | None = None) -> dict[str, str]:
+    prefix = values.get("ATS_IMAGE_PREFIX", "ats-core")
+    expected = image_tags(prefix)
+    if requested_prefix is not None and requested_prefix != prefix:
+        raise ValueError("existing_image_prefix_mismatch")
+    if any(name in values for name in expected) and any(values.get(name) != value for name, value in expected.items()):
+        raise ValueError("saved_image_namespace_mismatch")
+    return expected
 
 
 def private_write(path: Path, content: str) -> None:
@@ -35,11 +54,13 @@ def ensure_private(path: Path, content: str) -> None:
         private_write(path, content)
 
 
-def initialize(state_dir: Path, project: str, ports: tuple[int, int, int]) -> dict[str, str]:
+def initialize(state_dir: Path, project: str, ports: tuple[int, int, int], *, image_prefix: str | None = None) -> dict[str, str]:
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", project):
         raise ValueError("invalid Compose project name")
     if len(set(ports)) != 3 or any(not 1 <= port <= 65535 for port in ports):
         raise ValueError("three distinct valid local ports are required")
+    if image_prefix is not None:
+        image_tags(image_prefix)
     state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     if state_dir.is_symlink():
         raise ValueError("state directory cannot be a symlink")
@@ -56,6 +77,7 @@ def initialize(state_dir: Path, project: str, ports: tuple[int, int, int]) -> di
         if not set((*SECRET_KEYS, "DVC_ACCESS_KEY_ID", "MLFLOW_ACCESS_KEY_ID", "MINIO_ROOT_USER",
                     "MINIO_API_PORT", "MINIO_CONSOLE_PORT", "MLFLOW_PORT")) <= values.keys():
             raise ValueError("incomplete existing credentials")
+        values.update(image_settings(values, image_prefix))
     else:
         values = {"COMPOSE_PROJECT_NAME": project, "MINIO_API_PORT": str(ports[0]),
                   "MINIO_CONSOLE_PORT": str(ports[1]), "MLFLOW_PORT": str(ports[2]),
@@ -63,6 +85,7 @@ def initialize(state_dir: Path, project: str, ports: tuple[int, int, int]) -> di
                   "DVC_ACCESS_KEY_ID": "dvc" + secrets.token_hex(8),
                   "MLFLOW_ACCESS_KEY_ID": "mlf" + secrets.token_hex(8)}
         values.update({key: secrets.token_hex(24) for key in SECRET_KEYS})
+        values.update(image_tags(image_prefix or "ats-core"))
         private_write(path, "".join(f"{key}={value}\n" for key, value in values.items()))
     ensure_private(state_dir / "dvc.env", "".join((
         f"AWS_ACCESS_KEY_ID={values['DVC_ACCESS_KEY_ID']}\n",
@@ -86,6 +109,7 @@ def main() -> int:
     parser.add_argument("action", choices=("init", "config", "up", "restart", "down", "status"))
     parser.add_argument("--state-dir", type=Path, default=ROOT / ".local/core")
     parser.add_argument("--project", default="ats-core")
+    parser.add_argument("--image-prefix", help="persist separate build tags on first init; immutable afterwards")
     parser.add_argument("--compose-file", type=Path, default=ROOT / "compose.yaml")
     parser.add_argument("--minio-port", type=int, default=9000)
     parser.add_argument("--console-port", type=int, default=9001)
@@ -93,7 +117,7 @@ def main() -> int:
     args = parser.parse_args()
     state = args.state_dir.absolute()
     try:
-        values = initialize(state, args.project, (args.minio_port, args.console_port, args.mlflow_port))
+        values = initialize(state, args.project, (args.minio_port, args.console_port, args.mlflow_port), image_prefix=args.image_prefix)
         if args.action == "init":
             print(f"Private core configuration ready: {state}")
             return 0
