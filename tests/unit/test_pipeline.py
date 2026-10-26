@@ -51,6 +51,18 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "new_bundle_directory_required"):
             pipeline.create_bundle(ROOT, ROOT / "configs/data.json", self.bundle)
 
+    def test_explicit_parent_bundle_retains_real_admission_receipt_and_trainval_carrier(self):
+        config=json.loads((ROOT/'tests/fixtures/data/ci-config.json').read_bytes());config['namespace']='ci-explicit-parent'
+        path=Path(self.temporary.name)/'config.json';path.write_text(json.dumps(config))
+        output=Path(self.temporary.name)/'child';report=Path(self.temporary.name)/'admission.json'
+        parent=self.bundle/'data/reservation_policy.json'
+        descriptor=pipeline.create_bundle(ROOT,path,output,reservation_parent=parent,admission_report=report)
+        self.assertEqual(descriptor,pipeline.verify_bundle(output,descriptor['sha256']))
+        self.assertEqual(report.read_bytes(),(output/'admission/data-admission.json').read_bytes())
+        policy=json.loads((output/'data/reservation_policy.json').read_bytes())
+        self.assertEqual(file_hash(parent),policy['parent_sha256'])
+        self.assertTrue(set(descriptor['files']).isdisjoint({'data/test.jsonl','data/source.jsonl','data/corpus.jsonl','data/split.json'}))
+
     def test_real_dvc_accepts_recipe_and_declared_dependencies(self):
         pipeline.run_command(["dvc", "init", "--no-scm", "-q"], cwd=self.workspace)
         shutil.copyfile(ROOT / "dvc.yaml", self.workspace / "dvc.yaml")

@@ -185,14 +185,16 @@ class HostOperations:
             'pipeline_manifest':str(directory/'artifacts/evaluation/pipeline_manifest.json'),
             'serving_identity':str(directory/'serving-identity.json')})
         # Only a scoped model-packager worker. No Docker socket or secrets enter it.
-        command = ['docker','run','--rm','--pull=never','--cpus','1','--memory','1536m',
-            '--network',self.transport['network'],'--workdir',str(self.source),
-            '--mount',f'type=bind,source={self.source},target={self.source},readonly',
+        code="import sys,json;from pathlib import Path;sys.path.insert(0,'/source');from service.package import package;package(json.loads(Path(sys.argv[1]).read_bytes()),Path(sys.argv[2]))"
+        command = ['docker','run','--rm','--pull=never','--read-only','--cpus','1','--memory','1536m',
+            '--network',self.transport['network'],'--workdir','/tmp','--user',f'{os.getuid()}:{os.getgid()}',
+            '--tmpfs','/tmp:rw,size=256m,mode=1777',
+            '--mount',f'type=bind,source={self.source/"service"},target=/source/service,readonly',
             '--mount',f'type=bind,source={directory},target={directory}',
-            '-e','PYTHONPATH='+str(self.source/'src')+':'+str(self.source),'-e','PYTHONDONTWRITEBYTECODE=1',
+            '-e','HOME=/tmp','-e','USER=ats-package','-e','LOGNAME=ats-package','-e','PYTHONDONTWRITEBYTECODE=1',
             '-e','MLFLOW_TRACKING_URI='+self.transport['tracking_uri'],'-e','MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR=false',
             '-e','OMP_NUM_THREADS=1','-e','OPENBLAS_NUM_THREADS=1','--entrypoint','/opt/ml-venv/bin/python',
-            self.packager_image,'-B','-m','service.package','--request',str(request_path),'--output',str(target)]
+            self.packager_image,'-I','-B','-c',code,str(request_path),str(target)]
         completed = self.run(command,capture_output=True,text=True,timeout=180)
         p.require(completed.returncode == 0,'packaging_incomplete')
         return release_binding(target)[0]
@@ -348,6 +350,16 @@ class HostBatch:
             return self.native.call('reconcile-reference',{**installed,'event_id':event['event_id']})
 
 
+def configured_batch(config):
+    """The concrete production transports shared by CLI and actual exercise."""
+    native=NativePolicy(config['airflow_container'],config['training_image_id'])
+    api=AirflowAPI(config['airflow_url'],config['password_file'])
+    operations=HostOperations(config['source_repository'],config['serving_identity'],packager_image=config['packager_image'],
+                              registry_transport=config['registry_transport'])
+    return HostBatch(native=native,airflow=api,release_state=config['release_state'],artifacts=config['artifacts'],
+        source_git_sha=config['source_git_sha'],source_repository=config['source_repository'],operations=operations)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action',choices=('window','dataset','advance','reference','snapshot'))
@@ -356,12 +368,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         config = document(args.config); value = document(args.request)
-        native = NativePolicy(config['airflow_container'],config['training_image_id'])
-        api = AirflowAPI(config['airflow_url'],config['password_file'])
-        operations = HostOperations(config['source_repository'],config['serving_identity'],packager_image=config['packager_image'],
-                                    registry_transport=config['registry_transport'])
-        batch = HostBatch(native=native,airflow=api,release_state=config['release_state'],artifacts=config['artifacts'],
-                          source_git_sha=config['source_git_sha'],source_repository=config['source_repository'],operations=operations)
+        batch=configured_batch(config)
         if args.action == 'window':
             result = batch.install_window(value,execution_plan(config['source_git_sha'],config['training_image_id']))
         elif args.action == 'dataset':
@@ -374,7 +381,7 @@ def main(argv=None):
             result = batch.update_reference(value['request_id'],value['reference'],value['reference_sha256'],value['bundle'],
                 config=value['config'],calibration=value['calibration'],calibration_sha256=value['calibration_sha256'],monitoring_sources=value['monitoring_sources'])
         else:
-            p.require(value == {},'unexpected_fields'); result = native.call('snapshot',{})
+            p.require(value == {},'unexpected_fields'); result = batch.native.call('snapshot',{})
         print(json.dumps({'outcome':'passed','result':result},sort_keys=True))
         return 0
     except Exception as failure:

@@ -89,7 +89,7 @@ def check_binding(workspace: Path) -> dict:
     return binding
 
 
-def create_bundle(source_root: Path, config_path: Path, output: Path) -> dict:
+def create_bundle(source_root: Path, config_path: Path, output: Path, *, reservation_parent=None, admission_report=None) -> dict:
     """One-time admission, with split bytes; never invoked by init or DVC stages."""
     from ats_mlops.data.dataset import generate_dataset
     from ats_mlops.data.validate import validate_dataset
@@ -101,8 +101,19 @@ def create_bundle(source_root: Path, config_path: Path, output: Path) -> dict:
     with tempfile.TemporaryDirectory(prefix="ats-admission-", dir=output.parent) as temporary:
         staging = Path(temporary)
         run_command(["dvc", "init", "--no-scm", "-q"], cwd=staging)
-        generate_dataset(config_path, staging / "data_manifest.json", staging / "data")
+        if reservation_parent is None:
+            generate_dataset(config_path, staging / "data_manifest.json", staging / "data")
+        else:
+            from ats_mlops.data.dataset import generate_rows,prepare_dataset
+            from ats_mlops.data.reservation import Registry
+            parent=read_json(reservation_parent);Registry(parent)
+            config=read_json(config_path)
+            prepare_dataset(generate_rows(config),config,staging/"data",staging/"data_manifest.json",reservation_policy=parent)
         receipt = validate_dataset(staging / "data_manifest.json", staging / "admission")
+        if admission_report is not None:
+            target=Path(admission_report)
+            if target.exists():raise ValueError("new_admission_report_required")
+            target.write_bytes((staging/"admission/data-admission.json").read_bytes())
         if receipt["outcome"] != "passed":
             raise ValueError("admission_failed")
         run_command(["dvc", "add", "data/train.jsonl", "data/validation.jsonl", "data/split.json"], cwd=staging)
@@ -526,6 +537,8 @@ def add_parser(commands):
     bundle.add_argument("--source-root", type=Path, required=True)
     bundle.add_argument("--config", type=Path, required=True)
     bundle.add_argument("--output", type=Path, required=True)
+    bundle.add_argument("--reservation-parent",type=Path)
+    bundle.add_argument("--admission-report",type=Path)
     init = sub.add_parser("init", help="install an already admitted bundle into sibling source/workspace clones")
     for name in ("repo", "directory", "bundle", "image-identity"):
         init.add_argument("--" + name, type=Path, required=True)
@@ -544,7 +557,7 @@ def add_parser(commands):
 def dispatch(args):
     command = args.pipeline_command
     if command == "bundle":
-        return create_bundle(args.source_root, args.config, args.output)
+        return create_bundle(args.source_root, args.config, args.output,reservation_parent=args.reservation_parent,admission_report=args.admission_report)
     if command == "init":
         return initialize(args.repo, args.git_sha, args.directory, args.bundle, args.bundle_sha, read_json(args.image_identity))
     if command == "stage":
