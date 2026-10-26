@@ -179,6 +179,62 @@ class PipelineTests(unittest.TestCase):
                 self.assertRaisesRegex(ValueError, "invalid_invocation_id"):
             pipeline.execution_event(self.workspace, "train", {})
 
+    def test_frozen_mode_selects_effective_config_without_search_ranges(self):
+        params = pipeline.read_json(self.workspace / "params.yaml")
+        params.update(model={"classifier": {"C": .25}}, search={"mode": "frozen"}, smoke=False)
+        write_json(self.workspace / "params.yaml", params)
+        effective = pipeline.parameters(self.workspace, ROOT)
+        self.assertEqual(effective["search"], {"mode": "frozen"})
+        self.assertEqual(effective["model"]["classifier"]["C"], .25)
+        for search, smoke in (({"mode": "frozen", "n_trials": 20}, False),
+                              ({"mode": "frozen"}, True), ({"mode": "unknown"}, False), ({"mode": True}, False)):
+            params.update(search=search, smoke=smoke)
+            write_json(self.workspace / "params.yaml", params)
+            with self.assertRaises(ValueError):
+                pipeline.parameters(self.workspace, ROOT)
+
+    def test_bad_selection_mode_rejected_before_stage_outputs_or_training(self):
+        params = pipeline.read_json(self.workspace / "params.yaml")
+        params["search"] = {"mode": "frozen", "space": {}}
+        write_json(self.workspace / "params.yaml", params)
+        with patch("ats_mlops.pipeline.context", return_value=({}, {})), \
+                patch("ats_mlops.model.training.train") as train, patch("ats_mlops.model.tune.tune") as tune:
+            with self.assertRaisesRegex(ValueError, "invalid_frozen_selection"):
+                pipeline.stage("prepare", self.workspace, ROOT)
+        train.assert_not_called()
+        tune.assert_not_called()
+        self.assertFalse((self.workspace / "artifacts").exists())
+        self.assertFalse((self.workspace / ".local").exists())
+
+    def test_actual_frozen_stage_fits_once_without_tune_then_stops_before_registry(self):
+        import mlflow
+        from ats_mlops.model.training import fit_rows
+
+        params = pipeline.read_json(self.workspace / "params.yaml")
+        params.update(search={"mode": "frozen"}, smoke=False)
+        write_json(self.workspace / "params.yaml", params)
+        source = {"git_sha": "a" * 40, "source_tree_sha256": "b" * 64,
+                  "environment": {"image": {"id": "sha256:" + "c" * 64},
+                                  "lockfile_sha256": "d" * 64, "packages": {}}}
+        context = ({"git_sha": source["git_sha"], "image": source["environment"]["image"]}, source)
+        with patch("ats_mlops.pipeline.context", return_value=context):
+            pipeline.stage("prepare", self.workspace, ROOT)
+        with patch("ats_mlops.pipeline.context", return_value=context), \
+                patch("ats_mlops.model.training.source_environment", return_value=deepcopy(source)), \
+                patch("ats_mlops.model.training.fit_rows", wraps=fit_rows) as fitted, \
+                patch("ats_mlops.model.tune.tune", side_effect=AssertionError("frozen must not tune")) as tune, \
+                patch.object(mlflow, "set_experiment", side_effect=RuntimeError("stop_before_registry")):
+            with self.assertRaisesRegex(RuntimeError, "stop_before_registry"):
+                pipeline.stage("train", self.workspace, ROOT)
+        fitted.assert_called_once()
+        tune.assert_not_called()
+        failed = next((self.workspace / ".local/failed").glob("train-*"))
+        receipt = pipeline.read_json(failed / "selection.json")
+        self.assertEqual(receipt["new_trials"], 0)
+        self.assertEqual(receipt["selected_config_sha256"], pipeline.file_hash(self.workspace / "artifacts/prepared/model.json"))
+        self.assertTrue((failed / "final/validation.json").is_file())
+        self.assertFalse((failed / "study").exists())
+
     def test_separate_source_and_real_import_binding_are_required(self):
         with self.assertRaisesRegex(ValueError, "separate_sibling_source_required"):
             pipeline.context(self.workspace, self.workspace)

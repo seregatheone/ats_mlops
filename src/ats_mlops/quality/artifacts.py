@@ -99,6 +99,44 @@ def validation_snapshot(manifest_path: Path, admission_path: Path, binding_path:
             "evidence_scope": manifest["evidence_scope"]}
 
 
+def validate_selection(pipeline, record, prepared):
+    """Discriminate a real frozen config receipt from legacy Optuna lineage."""
+    effective = pipeline["parameters"]["effective_fit"]
+    search = effective["search"]
+    require(isinstance(search, dict) and search.get("mode", "optuna") in {"optuna", "frozen"}, "invalid_selection_mode")
+    selected_sha = record["params_sha256"]
+    require(pipeline["parameters"]["selected_config_sha256"] == selected_sha, "selected_configuration_mismatch")
+    if search.get("mode") != "frozen":
+        require("selection" not in pipeline and pipeline["study"]["outcome"] == "passed"
+                and valid_hash(pipeline["study"]["sha256"]), "incomplete_pipeline_lineage")
+        return "optuna"
+    require("study" not in pipeline and set(search) == {"mode"} and effective["smoke"] is False
+            and set(effective) == {"model", "search", "smoke"}, "ambiguous_frozen_selection")
+    selection = pipeline["selection"]
+    require(set(selection) == {"kind", "receipt", "receipt_sha256"} and selection["kind"] == "frozen", "invalid_frozen_selection")
+    receipt = selection["receipt"]
+    require(set(receipt) == {"schema_version", "kind", "outcome", "new_trials", "selected_config",
+            "selected_config_sha256", "effective_fit_sha256", "prepared_inventory_sha256",
+            "data_manifest_sha256", "admission_sha256", "source"}
+            and type(receipt["schema_version"]) is int and receipt["schema_version"] == 1
+            and receipt["kind"] == "frozen" and receipt["outcome"] == "selected"
+            and type(receipt["new_trials"]) is int and receipt["new_trials"] == 0
+            and sha256(canonical_json(receipt)) == selection["receipt_sha256"], "invalid_frozen_receipt")
+    require(receipt["selected_config_sha256"] == sha256(canonical_json(receipt["selected_config"]))
+            == sha256(canonical_json(effective["model"])) == selected_sha
+            and prepared["model.json"] == selected_sha
+            and prepared["fit-params.json"] == receipt["effective_fit_sha256"] == sha256(canonical_json(effective))
+            and prepared["search.json"] == sha256(canonical_json({"mode": "frozen"})), "frozen_configuration_mismatch")
+    require(receipt["prepared_inventory_sha256"] == sha256(canonical_json(prepared))
+            and receipt["data_manifest_sha256"] == record["data_manifest_sha256"] == prepared["data_manifest.json"]
+            and receipt["admission_sha256"] == record["reports_sha256"]["admission"] == prepared["admission.json"],
+            "frozen_prepared_binding_mismatch")
+    require(receipt["source"] == {"git_sha": record["git_sha"], "source_tree_sha256": record["source_tree_sha256"],
+            "image_id": record["environment"]["image"]["id"],
+            "lockfile_sha256": record["environment"]["lockfile_sha256"]}, "frozen_source_binding_mismatch")
+    return "frozen"
+
+
 def validate_model(spec: dict, snapshot: dict, *, candidate: bool):
     require(isinstance(spec, dict), "missing_model_descriptor")
     record_path, pipeline_path = Path(spec["run_manifest"]), Path(spec["pipeline_manifest"])
@@ -182,10 +220,8 @@ def validate_model(spec: dict, snapshot: dict, *, candidate: bool):
         require(pointer["sha256"] == expected_hash, "pointer_data_mismatch")
         if name != "split_lists":
             require(prepared[pointer["artifact_path"]] == expected_hash, "prepared_data_mismatch")
-    require(pipeline["parameters"]["selected_config_sha256"] == record["params_sha256"]
-            and pipeline["study"]["outcome"] == "passed"
-            and valid_hash(pipeline["study"]["sha256"])
-            and all(valid_hash(pipeline["evaluation"][name]) for name in ("metrics.json", "scores.json", "features.json")),
+    validate_selection(pipeline, record, prepared)
+    require(all(valid_hash(pipeline["evaluation"][name]) for name in ("metrics.json", "scores.json", "features.json")),
             "incomplete_pipeline_lineage")
     environment = record["environment"]
     require(valid_hash(environment["lockfile_sha256"]) and valid_hash(environment["build_lockfile_sha256"])

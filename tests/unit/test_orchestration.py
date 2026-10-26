@@ -56,6 +56,21 @@ class OrchestrationTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(runner.Failure):
                 runner.validate({**conf, **change})
 
+    def test_frozen_mode_uses_same_request_protocol_and_bad_mode_has_no_effects(self):
+        conf = request()
+        conf["parameters"].update(search={"mode": "frozen"}, smoke=False)
+        conf["params_hash"] = runner.digest(conf["parameters"])
+        self.assertEqual(runner.validate(conf), conf)
+        for search, smoke in (({"mode": "frozen", "n_trials": 1}, False), ({"mode": "frozen"}, True),
+                              ({"mode": "unknown"}, False), ({"mode": 1}, False)):
+            conf["parameters"].update(search=search, smoke=smoke)
+            conf["params_hash"] = runner.digest(conf["parameters"])
+            with patch.object(Path, "mkdir") as mkdir, patch.object(runner, "download") as download:
+                with self.assertRaisesRegex(runner.Failure, "invalid_selection_mode"):
+                    runner.run(conf)
+            mkdir.assert_not_called()
+            download.assert_not_called()
+
     def test_conflict_and_completed_replay_do_not_claim_another_attempt(self):
         with tempfile.TemporaryDirectory() as temporary, runner.database(Path(temporary) / "ledger") as db:
             self.assertIsNone(runner.claim(db, "r", "payload"))
