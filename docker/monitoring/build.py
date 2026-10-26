@@ -14,6 +14,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--dependencies-only", action="store_true")
+    parser.add_argument("--dependency-base", default=PYTHON, help="optional previous bounded dependency image for a narrow lock repair")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     name = "ats-monitoring-build-" + uuid.uuid4().hex[:12]
@@ -27,7 +28,7 @@ def main():
             return completed.stdout.strip() if capture else None
         try:
             run("docker", "create", "--name", name, "--cpus", "1", "--memory", "1536m", "-e", "DO_NOT_TRACK=1",
-                "--entrypoint", "/bin/sh", PYTHON, "-ec",
+                "--entrypoint", "/bin/sh", args.dependency_base, "-ec",
                 "python -m venv /opt/monitoring-venv; /opt/monitoring-venv/bin/pip install --no-cache-dir --require-hashes --only-binary=:all: -r /opt/requirements-monitoring.lock")
             run("docker", "cp", str(lock), name + ":/opt/requirements-monitoring.lock")
             run("docker", "start", "-a", name)
