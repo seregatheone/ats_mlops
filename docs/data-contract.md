@@ -27,6 +27,8 @@
 
 В T-3 выполнены отчёт counts/duplicates/intersections, проверка хеша test и отклонение непригодных фикстур. Конкретные параметры и ограничения синтетического корпуса описаны в [data-card.md](data-card.md), результаты — в [reports/data-audit.json](../reports/data-audit.json).
 
+Исправление [#36](https://github.com/seregatheone/ats_mlops/issues/36) сохраняет исходные folds через неизменяемую policy с хешированными множествами токенов. Namespace, ID, seed и ревизия меток не выбирают fold защищённых текстов; конфликтная связь между защищёнными folds отклоняется. Новый manifest schema 2 связывает policy по SHA256, а training preflight проверяет одновременно train/validation по их собственным байтам и policy metadata, без source/test. Старый schema 1 доступен для исторического аудита и inference, но не допускает новый fit. Подробнее: [semantic-reservations.md](semantic-reservations.md).
+
 ## Ранжирование и метрики
 
 Baseline — детерминированный token-overlap/Jaccard. Согласованная обучаемая модель: TF-IDF на train, cosine TF-IDF, Jaccard токенов, `log1p` длин, отношение длин и логистическая регрессия. Использование scikit-learn согласовано; совместимость конкретной версии проверяется в T-2. Точный порядок признаков и обработка пустого словаря версионируются с моделью.
