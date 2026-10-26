@@ -6,6 +6,11 @@ import sys
 
 assert sys.flags.isolated and sys.dont_write_bytecode
 os.environ.pop("PYTHONPATH", None)
+home = Path(os.environ["BENTOML_HOME"])
+home.mkdir(parents=True, exist_ok=True)
+# Docker creates nested mount parents as root. Keep the writable home owned by
+# the serving UID and mount only the immutable model store at its own root.
+(home / "models").symlink_to("/models", target_is_directory=True)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from service.service import RankingService
 import uvicorn

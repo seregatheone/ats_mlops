@@ -41,7 +41,9 @@ release-check, собственный hash, approval или mutable state.
 
 `docker/serving/compose.yaml` требует `ATS_SERVING_IMAGE` (resolved ID),
 `ATS_RELEASE_PACKAGE` и optional `ATS_SERVING_PORT`. Package `/release:ro`,
-`models/` readonly submount, `/runtime` и `/tmp` ephemeral; `/events` persistent.
+model store `/models:ro`, `/runtime` и `/tmp` ephemeral; `/events` persistent.
+Launcher создаёт owned writable Bento home и `models` symlink на readonly mount:
+Docker nested-bind parents иначе принадлежат root и мешают non-root bootstrap.
 Root FS readonly, non-root UID50000, host port loopback. Контейнеру не нужны
 Registry/S3 credentials, training checkout или data mounts.
 

@@ -54,6 +54,10 @@ def rank_request(value):
         text = item["text"]
         if not isinstance(text, str) or not " ".join(unicodedata.normalize("NFKC", text).split()):
             raise BoundaryError()
+        try:
+            text.encode("utf-8")
+        except UnicodeError:
+            raise BoundaryError() from None
         if len(text) > 10000:
             raise BoundaryError(413, "request_too_large")
     if len({item["id"] for item in candidates}) != len(candidates):

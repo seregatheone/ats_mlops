@@ -10,7 +10,7 @@ services:
       - /runtime:uid=50000,gid=50000
     volumes:
       - ${ATS_RELEASE_PACKAGE:?package path required}:/release:ro
-      - ${ATS_RELEASE_PACKAGE}/bentoml/models:/runtime/bento/models:ro
+      - ${ATS_RELEASE_PACKAGE}/bentoml/models:/models:ro
       - prediction-events:/events
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]

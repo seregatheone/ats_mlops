@@ -64,6 +64,7 @@ def stage(request, output):
     logs = []
     created_network = False
     current = None
+    alias_cleanup = None
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     try:
         # Host-only T11 imports; they never enter the model worker or serving image.
@@ -83,7 +84,9 @@ def stage(request, output):
         grouped = defaultdict(list)
         for row in snapshot["rows"]:
             grouped[row["vacancy_id"]].append(row)
-        command(["docker", "network", "create", "--internal", network])
+        # A private bridge permits loopback-published HTTP; --internal suppresses Docker port bindings.
+        # It is never attached to the core/Registry network. Runtime has no Registry URI/credentials.
+        command(["docker", "network", "create", network])
         created_network = True
         with tempfile.TemporaryDirectory(prefix="ats-t12-events-") as directory:
             events = Path(directory) / "events"
@@ -110,7 +113,7 @@ def stage(request, output):
                         "--tmpfs", "/tmp:rw,nosuid,nodev,uid=50000,gid=50000,size=128m",
                         "--tmpfs", "/runtime:rw,nosuid,nodev,uid=50000,gid=50000,size=128m",
                         "-p", f"127.0.0.1:{port}:3000", "--mount", f"type=bind,source={package},target=/release,readonly",
-                        "--mount", f"type=bind,source={package / 'bentoml/models'},target=/runtime/bento/models,readonly",
+                        "--mount", f"type=bind,source={package / 'bentoml/models'},target=/models,readonly",
                         "--mount", f"type=bind,source={events},target=/events"]
                 if bad_store:
                     args += ["-e", "ATS_EVENT_DB=/release/forbidden.sqlite3"]
@@ -135,7 +138,7 @@ def stage(request, output):
                 require(metadata["runtime"]["environment"] == manifest["serving"]["environment"])
                 require(json.loads(command(["docker", "inspect", "--format", '{{json .Image}}', name])) == image)
                 mounts = json.loads(command(["docker", "inspect", "--format", '{{json .Mounts}}', name]))
-                require(all(not item["RW"] for item in mounts if item["Destination"] in ("/release", "/runtime/bento/models")))
+                require(all(not item["RW"] for item in mounts if item["Destination"] in ("/release", "/models")))
                 report["checks"]["metadata_image_and_readonly_mounts"] = True
                 isolated = command(["docker", "exec", name, "/opt/ml-venv/bin/python", "-I", "-B", "-c",
                                     "import importlib.util,os;from pathlib import Path;assert not Path('/opt/project/src').exists();assert importlib.util.find_spec('ats_mlops') is None;assert not any(os.environ.get(k) for k in ('MLFLOW_TRACKING_URI','AWS_ACCESS_KEY_ID','AWS_SECRET_ACCESS_KEY','AWS_SESSION_TOKEN'));print('isolated')"])
@@ -198,15 +201,17 @@ def stage(request, output):
                                  "from_version": manifest["candidate"]["model_version"], "to_version": request["alias_other_version"]}
                 require(alias_request["to_version"] != alias_request["from_version"])
                 alias_code = "import json,mlflow,os; x=json.loads(os.environ['ATS_ALIAS_REQUEST']); c=mlflow.MlflowClient(); "
+                alias_cleanup = ["docker", "run", "--rm", "--pull=never", "--network", "ats-core_default", "-e", "MLFLOW_TRACKING_URI=http://mlflow:5000",
+                                 "-e", "ATS_ALIAS_REQUEST=" + json.dumps(alias_request), "--entrypoint", "/opt/ml-venv/bin/python",
+                                 record["environment"]["image"]["id"], "-I", "-B", "-c", alias_code + "c.delete_registered_model_alias(x['name'],x['alias'])"]
                 for target in ("from_version", "to_version"):
                     command(["docker", "run", "--rm", "--pull=never", "--network", "ats-core_default", "-e", "MLFLOW_TRACKING_URI=http://mlflow:5000",
                              "-e", "ATS_ALIAS_REQUEST=" + json.dumps(alias_request), "--entrypoint", "/opt/ml-venv/bin/python",
                              record["environment"]["image"]["id"], "-I", "-B", "-c", alias_code +
                              f"c.set_registered_model_alias(x['name'],x['alias'],x['{target}']); assert c.get_model_version_by_alias(x['name'],x['alias']).version==x['{target}']"])
                     require(http(port, "/rank", payload) == (200, original))
-                command(["docker", "run", "--rm", "--pull=never", "--network", "ats-core_default", "-e", "MLFLOW_TRACKING_URI=http://mlflow:5000",
-                         "-e", "ATS_ALIAS_REQUEST=" + json.dumps(alias_request), "--entrypoint", "/opt/ml-venv/bin/python",
-                         record["environment"]["image"]["id"], "-I", "-B", "-c", alias_code + "c.delete_registered_model_alias(x['name'],x['alias'])"])
+                command(alias_cleanup)
+                alias_cleanup = None
                 report["checks"]["actual_registry_alias_move_independent"] = True
                 stop()
                 require(start()["ready"] is True)
@@ -246,6 +251,8 @@ def stage(request, output):
     except Exception:
         report["reasons"].append("release_check_failed")
     finally:
+        if alias_cleanup:
+            subprocess.run(alias_cleanup, capture_output=True, timeout=60)
         if current:
             subprocess.run(["docker", "rm", "-f", current], capture_output=True, timeout=30)
         if created_network:

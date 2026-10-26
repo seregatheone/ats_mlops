@@ -26,7 +26,7 @@ class ServingTests(unittest.TestCase):
             request["top_k"] = value
             with self.assertRaises(BoundaryError):
                 rank_request(request)
-        for value in ("", " \u00a0 ", None, 1):
+        for value in ("", " \u00a0 ", "\ud800", None, 1):
             request = deepcopy(REQUEST)
             request["vacancy"]["text"] = value
             with self.assertRaises(BoundaryError):
@@ -84,15 +84,30 @@ class ServingTests(unittest.TestCase):
             path = Path(directory) / "events.sqlite3"
             EventStore(path)
             calls = []
+            request = deepcopy(REQUEST)
+            request["candidates"] = []
             def produce(_):
                 calls.append(1)
                 return []
             def invoke(_):
-                return EventStore(path).predict(REQUEST, produce, IDENTITY)
+                return EventStore(path).predict(request, produce, IDENTITY)
             with ThreadPoolExecutor(max_workers=4) as executor:
                 results = list(executor.map(invoke, range(8)))
             self.assertEqual(len(calls), 1)
             self.assertTrue(all(item == results[0] for item in results))
+
+    def test_corrupt_completed_response_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "events.sqlite3"
+            store = EventStore(path)
+            complete = [{"candidate_id": "c1", "score": .8, "features": {}},
+                        {"candidate_id": "c2", "score": .2, "features": {}}]
+            store.predict(REQUEST, lambda _: complete, IDENTITY)
+            for corrupted in ("{}", "[]", "null", '{"request_id":"r1"}'):
+                with sqlite3.connect(path) as db:
+                    db.execute("UPDATE prediction_events SET response_json=?", (corrupted,))
+                with self.assertRaises((ValueError, TypeError)):
+                    store.predict(REQUEST, lambda _: self.fail("corrupt replay ran inference"), IDENTITY)
 
     def test_boundary_sanitizes_before_sdk_and_counts_actual_chunks(self):
         async def check(body, status):
