@@ -18,14 +18,16 @@
 - [x] T-13 — Выпуск и откат
 - [x] T-14 — GitHub Actions
 - [x] T-15 — Prometheus/Grafana
-- [ ] T-16 — Evidently и обратная связь
-- [ ] T-17 — Переобучение
+- [x] T-16 — Evidently и обратная связь
+- [ ] T-17 — Переобучение (actual PASS; final review/CI/merge pending)
 - [ ] T-18 — Приёмка
 - [ ] T-19 — Эксперименты
 - [ ] T-20 — Диплом и демонстрация
 
 ## Learnings
 <!-- Добавлять наблюдения по мере выполнения задач. -->
+
+- T-17: executable48b6d3a прошёл actual native loop13/epoch3→две signal windows→одна waiting request→approved genuine v2(seed20261027)→обычный frozen Airflow candidate14→T11/T12→отдельный A3/epoch4→reference reconcile→fresh cooldown без новой заявки. Реальный accepted POST/exit86 восстановлен fresh process по исходному run/outbox, exact receipts повторены через реальные DAG. Native repro содержит один final train event, Registry1version/1run,0trials; семантически равные repro JSON имеют разные formatter bytes. Failed887 Mac snapshot publish и narrowfix атрибутированы отдельно. Public metadata/numeric proofs и hashes: reports/retraining/t17.json; E1–E5/исходныйtest/actualE5ledger не выполнялись. Checkbox остаётся до final review/CI/merge.
 
 - T-14: изолированный GitHub-hosted ARM CI выполняет static/unit и synthetic lifecycle с временными MinIO/MLflow, DVC/Optuna/gate/Bento/API/release. Genuine negative40260037093 отклонил fixture99; восстановленный code2292065 прошёл145unit/11lifecycle/12API, maxdiff0. Docs head15216ff отдельно прошёл Actions40263217470. Подтверждённые Linux UID/private-dir/package-mode дефекты исправлены без ослабления hash/isolation guards; пустая/неполная/неверно типизированная fixture отвергается. Локальная серия1b6 и последующие targeted fixes атрибутированы отдельно; reports/ci хранит исходные failed/pass receipts. Airflow recovery и production deploy в smoke не выполняются.
 - T-15: requests/errors/latency с bounded labels и read-only pipeline/release monitoring доступны в pinned Prometheus/Grafana. Canonical152unit PASS; actual004 девять проверок PASS36.845s, включая200/422/503, privacy, real ledger/journal, Grafana query и restart persistence; root подтвердил UI. Idle-WAL snapshot fallback и Grafana bundled-plugin/memory defects исправлены с отдельными receipts. Default model4/champion4 обновлён через T13/A3 без локального fit и working prediction events; fixture очищен, monitoring/core/Airflow оставлены healthy. Компонентные SHA и ресурсные измерения: reports/monitoring/technical.json.

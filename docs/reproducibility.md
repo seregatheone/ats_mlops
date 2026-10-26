@@ -196,3 +196,32 @@ stdout сохранён в external evidence.
 `ATS_RECOMPUTE_EVIDENCE_DIR`. Результаты моделей также доступны
 через exact persistent Registry versions. Model downloads/caches/raw data в Git
 не добавлены. Сохранённый root `dvc.lock` взят из successful workspace B.
+
+## Frozen parameters для retraining / E2
+
+В обычном `params.yaml` можно выбрать `"search": {"mode": "frozen"}` при
+`"smoke": false`. Остальные top-level keys остаются `model/search/smoke/evaluation`.
+Effective model config получается из закреплённого `configs/model.json` и явных
+`params.model` overrides, проверяется и сохраняется в prepared `model.json`.
+Frozen mode запрещает search ranges/budget overrides и smoke; неизвестный mode
+отклоняется до stage outputs или orchestration side effects.
+
+Train в этом режиме не вызывает Optuna и обучает один обычный Pipeline с точным
+prepared config. До train создаётся отдельный `training/selection.json`:
+`kind=frozen`, `outcome=selected`, `new_trials=0`, config/hash, effective-fit и
+prepared inventories, manifest/admission hashes, source Git/tree и image/lock.
+`study/` и фиктивного successful study нет. Evaluation embedding
+`pipeline_manifest.selection` связывает receipt bytes с actual run/model;
+T11 проверяет exact params, prepared/data/source/runtime bindings и zero trials.
+`selection` и `study` одновременно запрещены.
+
+Без mode сохраняется прежний Optuna path:20 configured trials либо2 в smoke,
+прежняя study lineage и historical manifests не переписываются. DVC source,
+prepared bytes и params dependencies сохраняют обычные cache semantics; cache hit
+не выдаётся за новое вычисление и не используется как замена HPO-off. Изменение
+одного `evaluation.score_decimals` по-прежнему требует evaluation, не нового fit:
+selection receipt связывает effective fit snapshot, а не полный mutable params file.
+
+Это инженерный execution option. Он не подтверждает результаты E2/E5; actual
+clean frozen candidate и T11 evidence выполняются отдельно после code freeze и
+согласования resource window. Policy/outbox и T16 adapters подключаются отдельно.

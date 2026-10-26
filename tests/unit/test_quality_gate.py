@@ -141,6 +141,60 @@ class GateTests(unittest.TestCase):
         with self.assertRaisesRegex(GateError, "new_gate_report_required"):
             self.gate()
 
+    def frozen_fixture(self):
+        spec = self.request["candidate"]
+        record = json.loads(Path(spec["run_manifest"]).read_text())
+        pipeline = json.loads(Path(spec["pipeline_manifest"]).read_text())
+        pipeline.pop("study")
+        effective = {"model": deepcopy(record["params"]), "search": {"mode": "frozen"}, "smoke": False}
+        pipeline["parameters"]["effective_fit"] = effective
+        prepared = pipeline["inputs"]["prepared_files"]
+        prepared.update({"model.json": record["params_sha256"], "search.json": sha256(canonical_json(effective["search"])),
+                         "fit-params.json": sha256(canonical_json(effective))})
+        receipt = {"schema_version": 1, "kind": "frozen", "outcome": "selected", "new_trials": 0,
+                   "selected_config": deepcopy(record["params"]), "selected_config_sha256": record["params_sha256"],
+                   "effective_fit_sha256": prepared["fit-params.json"], "prepared_inventory_sha256": sha256(canonical_json(prepared)),
+                   "data_manifest_sha256": record["data_manifest_sha256"], "admission_sha256": record["reports_sha256"]["admission"],
+                   "source": {"git_sha": record["git_sha"], "source_tree_sha256": record["source_tree_sha256"],
+                              "image_id": record["environment"]["image"]["id"],
+                              "lockfile_sha256": record["environment"]["lockfile_sha256"]}}
+        pipeline["selection"] = {"kind": "frozen", "receipt": receipt, "receipt_sha256": sha256(canonical_json(receipt))}
+        self.refresh(spec, record=record, pipeline=pipeline)
+        return spec, record, pipeline
+
+    def test_frozen_candidate_gate_accepts_honest_selection_without_fake_study(self):
+        spec, record, pipeline = self.frozen_fixture()
+        result = self.gate()
+        self.assertEqual(result["outcome"], "passed", result["reasons"])
+        self.assertNotIn("study", pipeline)
+        self.assertEqual(pipeline["selection"]["receipt"]["new_trials"], 0)
+        # Existing first-release/incumbent fixtures still exercise legacy study lineage.
+
+    def test_frozen_selection_tamper_cannot_bypass_gate_by_rehashing_outer_receipt(self):
+        spec, record, original = self.frozen_fixture()
+        for index, mutation in enumerate(("trials", "config", "data", "source", "prepared", "hybrid", "digest")):
+            pipeline = deepcopy(original)
+            receipt = pipeline["selection"]["receipt"]
+            if mutation == "trials":
+                receipt["new_trials"] = False
+            elif mutation == "config":
+                receipt["selected_config"]["classifier"]["C"] *= 2
+                receipt["selected_config_sha256"] = sha256(canonical_json(receipt["selected_config"]))
+            elif mutation == "data":
+                receipt["data_manifest_sha256"] = "0" * 64
+            elif mutation == "source":
+                receipt["source"]["git_sha"] = "0" * 40
+            elif mutation == "prepared":
+                pipeline["inputs"]["prepared_files"]["model.json"] = "0" * 64
+                receipt["prepared_inventory_sha256"] = sha256(canonical_json(pipeline["inputs"]["prepared_files"]))
+            elif mutation == "hybrid":
+                pipeline["study"] = {"outcome": "passed", "sha256": "a" * 64}
+            pipeline["selection"]["receipt_sha256"] = "0" * 64 if mutation == "digest" else sha256(canonical_json(receipt))
+            self.refresh(spec, record=deepcopy(record), pipeline=pipeline)
+            with self.subTest(mutation=mutation):
+                result = run_gate(self.request, self.root / f"frozen-bad-{index}.json", scorer=self.scorer)
+                self.assertEqual(result["outcome"], "rejected")
+
     def test_competing_output_created_after_initial_check_is_never_overwritten(self):
         output = self.root / "racing-gate.json"
         original_mkdir = Path.mkdir

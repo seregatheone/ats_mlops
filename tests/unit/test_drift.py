@@ -1,5 +1,6 @@
 """Strict monitoring cards and undefined numeric/report boundaries, without Evidently."""
 from copy import deepcopy
+from dataclasses import replace
 import json
 from pathlib import Path
 import tempfile
@@ -38,6 +39,75 @@ def reference(root):
 
 
 class DriftBoundaryTests(unittest.TestCase):
+    def test_approved_v2_reference_uses_matched_noncanonical_data_and_hashes_approval(self):
+        from ats_mlops.monitoring import policy as protocol
+        from ats_mlops.data.reservation import ROOT_POLICY_SHA256
+        from tests.unit.test_retraining_policy import approval
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); card = reference(root)
+            approved = approval(label_source='approved_synthetic_fixture')
+            proof = {'kind':'approved_synthetic_teacher_v2','actor':approved.actor,'approved_at':protocol.stamp(approved.approved_at),
+                'previous_labelset_sha256':approved.parent_labelset_sha256,'labelset_sha256':approved.labelset_sha256,
+                'new_label_count':approved.new_label_count,'manifest_sha256':approved.manifest_sha256,
+                'bundle_sha256':approved.bundle_inventory_sha256}
+            approved = replace(approved,approval_sha256=protocol.digest(proof))
+            receipt = {'approval':protocol.payload(approved),'proof':proof}
+            approval_bytes = canonical(receipt); (root/'dataset-approval.json').write_bytes(approval_bytes)
+            card['schema_version'] = 3
+            card['data'].update(manifest_sha256=approved.manifest_sha256,admission_sha256=approved.admission_sha256,
+                bundle_sha256=approved.bundle_inventory_sha256,reservation_policy_sha256=approved.reservation_policy_sha256,
+                partition_sha256={'train':'d'*64,'validation':'e'*64})
+            guard = dict(model_sha256=card['model']['model_sha256'],manifest_sha256=approved.manifest_sha256,
+                admission_sha256=approved.admission_sha256,partition_sha256=card['data']['partition_sha256'],
+                policy_sha256=approved.reservation_policy_sha256,root_policy_sha256=ROOT_POLICY_SHA256,
+                guard_report_sha256='f'*64,read_partitions=['train','validation'],test_read=False,
+                image_id=card['feature_worker']['image_id'],bootstrap_sha256=sha(drift.ADMISSION_BOOTSTRAP.encode()))
+            card['admission'] = dict(approval_file_sha256=sha(approval_bytes),guard=guard)
+            from ats_mlops.data.validate import GX_ROOT,SCHEMA
+            suite=decode_json((GX_ROOT/'pairs.json').read_bytes())
+            checks=[dict(expectation=item['type'],column=item['kwargs'].get('column'),success=True,reason=item['meta']['reason']) for item in suite['expectations']]
+            checks += [dict(expectation='expect_column_values_to_not_be_null',column=name,success=True,reason='missing_field_or_null') for name in SCHEMA]
+            report=dict(schema_version=1,mode='training',outcome='passed',evidence_scope='demo_only',manifest_sha256=approved.manifest_sha256,
+                engine='great_expectations',engine_version='1.24.1',reasons=[],artifact_hashes=card['data']['partition_sha256'],
+                counts={'train':3,'validation':3},config_hashes={name:sha((GX_ROOT/name).read_bytes()) for name in ('pairs.json','checkpoint.json')},
+                reservation=dict(policy_sha256=approved.reservation_policy_sha256,root_policy_sha256=ROOT_POLICY_SHA256,
+                    checked_partitions=['train','validation'],semantic_components=6),
+                gx=[dict(scope=role,rows=3,success=True,checks=checks) for role in ('train','validation')])
+            def save_report(value,outer):
+                value=dict(value);value.pop('report_sha256',None);value['report_sha256']=sha(canonical(value))
+                content=canonical(value);(root/'data-training-guard.json').write_bytes(content)
+                outer['admission']['guard']['guard_report_sha256']=sha(content)
+            save_report(report,card)
+            def load(value):
+                content=canonical(value); (root/'reference.json').write_bytes(content)
+                return drift.load_reference(root,sha(content))
+            self.assertEqual('guarded_schema2',load(card)[0]['model']['lineage_status'])
+            for field,value in (('mode','admission'),('outcome','rejected'),('artifact_hashes',drift.CANONICAL_PARTITIONS),
+                                ('counts',{'train':True,'validation':3}),('reasons',['private@example.invalid'])):
+                changed=deepcopy(card);bad=deepcopy(report);bad[field]=value;save_report(bad,changed)
+                with self.subTest(report_field=field),self.assertRaises(ValueError):load(changed)
+            save_report(report,card)
+            content=(root/'data-training-guard.json').read_bytes();(root/'data-training-guard.json').write_bytes(content+b'\n')
+            with self.assertRaisesRegex(ValueError,'reference_guard_report_changed'):load(card)
+            (root/'data-training-guard.json').unlink()
+            with self.assertRaises((ValueError,OSError)):load(card)
+            save_report(report,card)
+            for field,value in (('manifest_sha256','1'*64),('root_policy_sha256','2'*64),
+                                ('test_read',True),('partition_sha256',drift.CANONICAL_PARTITIONS)):
+                changed=deepcopy(card);changed['admission']['guard'][field]=value
+                with self.subTest(field=field),self.assertRaises(ValueError):load(changed)
+            changed=deepcopy(card);changed['model']['lineage_status']='legacy_engineering_only'
+            with self.assertRaises(ValueError):load(changed)
+            # Rehashing all outer bytes cannot turn a changed actor/time/bundle
+            # into the original approval, nor accept a Python-equal bool count.
+            for field,value in (('actor','other-actor'),('approved_at','2026-10-26T01:00:00Z'),
+                                ('bundle_sha256','3'*64),('new_label_count',True)):
+                changed=deepcopy(receipt);changed['proof'][field]=value
+                changed['approval']['approval_sha256']=protocol.digest(changed['proof'])
+                with self.subTest(field=field),self.assertRaises(ValueError):drift.approved_receipt(changed)
+            (root/'dataset-approval.json').write_bytes(approval_bytes+b'\n')
+            with self.assertRaisesRegex(ValueError,'reference_approval_changed'):load(card)
+
     def test_numeric_empty_nonfinite_missing_bool_and_ties(self):
         for rows in ([], [{}], [dict(numeric_rows()[0], score=True)], [dict(numeric_rows()[0], score=float("inf"))]):
             with self.subTest(rows=rows), self.assertRaises(ValueError):

@@ -60,6 +60,11 @@ def validate(conf):
     if (not isinstance(params, dict) or set(params) != {"model", "search", "smoke", "evaluation"}
             or not isinstance(params["smoke"], bool) or digest(params) != conf["params_hash"]):
         raise Failure("params_hash_mismatch")
+    from ats_mlops.pipeline import selection_mode
+    try:
+        selection_mode(params["search"], params["smoke"])
+    except ValueError:
+        raise Failure("invalid_selection_mode") from None
     uri = urlsplit(conf["bundle_uri"])
     if (uri.scheme != "s3" or uri.netloc != "ats-dvc" or uri.query or uri.fragment
             or not re.fullmatch(r"orchestration/bundles/[A-Za-z0-9_.-]+/bundle.json", uri.path.lstrip("/"))):

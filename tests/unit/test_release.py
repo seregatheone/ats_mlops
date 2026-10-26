@@ -148,6 +148,31 @@ class ReleaseTests(unittest.TestCase):
             self.controller.activate("B")
         self.assertEqual(count, len(self.runtime.effects))
 
+    def test_stage_expected_generation_blocks_host_race_and_same_release_aba_before_copy(self):
+        self.bootstrap()
+        expected = self.controller.status()['generation']
+        package,check = self.fixture('C-late-stage','A')
+        self.stage('B','A'); self.controller.activate('B'); self.controller.rollback('A')
+        self.assertEqual('A',self.controller.status()['active']['release_id'])
+        before = {p.relative_to(self.controller.root).as_posix():sha(p.read_bytes())
+                  for p in self.controller.root.rglob('*') if p.is_file()}
+        effects = list(self.runtime.effects)
+        with self.assertRaisesRegex(ReleaseError,'stale_generation'):
+            self.controller.stage(package,check,expected_generation=expected)
+        after = {p.relative_to(self.controller.root).as_posix():sha(p.read_bytes())
+                 for p in self.controller.root.rglob('*') if p.is_file()}
+        self.assertEqual(before,after)
+        self.assertEqual(effects,self.runtime.effects)
+        self.assertFalse((self.controller.root/'releases/C-late-stage').exists())
+
+    def test_stage_expected_generation_rejects_bool_float_and_negative_before_lock(self):
+        package,check = self.fixture('invalid-epoch')
+        for value in (True,False,0.0,-1):
+            with self.subTest(value=value), patch.object(self.controller.store,'lock') as lock:
+                with self.assertRaisesRegex(ReleaseError,'invalid_expected_generation'):
+                    self.controller.stage(package,check,expected_generation=value)
+                lock.assert_not_called()
+
     def test_rejected_stage_has_no_effects(self):
         package, check = self.fixture("bad")
         atomic_json(check, {"outcome": "rejected"})
