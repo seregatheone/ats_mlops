@@ -22,10 +22,10 @@ class NativeTransportTests(unittest.TestCase):
                 native.document({"path": "/fake/test.jsonl", "sha256": "a"*64})
             read.assert_not_called()
 
-    def test_wiring_uses_real_functions_and_blocks_unfinished_e4(self):
+    def test_wiring_uses_real_functions_and_blocks_unqualified_inputs(self):
         value = experiment.read(ROOT / "configs/experiment.template.json")
         wired = native.wire_adapters(value)
-        self.assertIsNone(wired["adapter_bindings"]["E4"])
+        self.assertEqual("ats_mlops.evaluation.native:e4", wired["adapter_bindings"]["E4"]["entrypoint"])
         self.assertEqual("ats_mlops.evaluation.native:evaluate_e5", wired["adapter_bindings"]["E5"]["entrypoint"])
         self.assertEqual("ats_mlops.evaluation.experiment:ingest_human_measurement", wired["adapter_bindings"]["E2"]["entrypoint"])
         self.assertTrue(callable(native.e1) and callable(native.e3) and callable(native.evaluate_e5))

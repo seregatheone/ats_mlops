@@ -817,6 +817,39 @@ def e3(spec, root):
     return {"outcome": "expected_rejection", "observations": observation, "evidence_sha256": evidence_sha}
 
 
+def prepare_monitoring(spec, root):
+    """Explicit private qualification setup; never initialize a default policy.
+
+    The caller must have provisioned a fresh owned Airflow/policy volume, pinned
+    overlay and matched numeric reference. No model fit occurs in this setup.
+    Formal E4 later uses another fresh campaign so qualification is not measured
+    twice or silently cleared. No reset operation is exposed.
+    """
+    from ats_mlops.monitoring.retraining import NativePolicy
+    config = environment(spec, series="E4");root = Path(root)
+    require(root.resolve() == Path(config["E4"]["root"]).resolve() and not root.exists(), "fresh_monitoring_campaign_required")
+    root.mkdir(parents=True, mode=0o700);commands = Commands(root)
+    native = NativePolicy(config["E4"]["batch"]["airflow_container"],config["E4"]["batch"]["training_image_id"],project=config["project"])
+    require(native.call("snapshot", {}) == {"state": "uninitialized"}, "fresh_policy_volume_required")
+    owned_core(commands, config)
+    controller = _controller(config,root)
+    _launch_baseline(config,root)
+    state,observed = _consistent(controller)
+    value = {"schema_version":1,"outcome":"prepared","source_git_sha":spec["source_git_sha"],"E4":"not_run",
+             "state":state,"observation":observed,"command_evidence_sha256":commands.finish()}
+    immutable(root/"prepared.json",value)
+    return value
+
+
+def e4(spec, root):
+    """One real frozen T17 scenario; no synthetic WindowEvidence or callbacks."""
+    from .native_monitoring import Campaign
+    config = environment(spec, series="E4");root = Path(root);commands = Commands(root)
+    owned_core(commands,config)
+    observed = Campaign(spec,config,commands).run(root.name,root)
+    return {"outcome":"passed","observations":observed,"evidence_sha256":commands.finish()}
+
+
 def _qualified(spec, config):
     """Metadata and validation only; this runs before initializing the E5 ledger."""
     from ats_mlops.release.controller import load_package
