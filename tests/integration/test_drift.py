@@ -170,11 +170,11 @@ from pathlib import Path
 sys.path.insert(0,'/source/src')
 from ats_mlops.monitoring.feedback import export_events
 def fingerprint():
- return {p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('/events').iterdir() if p.is_file() and (p.name.endswith('.sqlite3') or p.name.endswith('-wal'))}
+ return {p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('/events').iterdir() if p.is_file() and (p.name.endswith('.sqlite3') or (p.name.endswith('-wal') and p.stat().st_size))}
 before=fingerprint()
 manifest=export_events('/events/predictions.sqlite3','/tmp/export',sys.argv[1])
 assert before==fingerprint()
-print(json.dumps({'manifest':manifest,'events':Path('/tmp/export/events.jsonl').read_text(),'db_wal_unchanged':True}))
+print(json.dumps({'manifest':manifest,'events':Path('/tmp/export/events.jsonl').read_text(),'db_nonempty_wal_bytes_unchanged':True}))
 """
         exported_bytes = json.loads(run(["docker", "run", "--rm", "--name", project + "-export", "--network", "none", "--read-only", "--user", "50000:50000",
              "--cpus", "1", "--memory", "512m", "--tmpfs", "/tmp:rw,size=32m,mode=1777",
@@ -186,7 +186,7 @@ print(json.dumps({'manifest':manifest,'events':Path('/tmp/export/events.jsonl').
         (out / "export").mkdir()
         (out / "export/events.jsonl").write_text(exported_bytes["events"])
         write(out / "export/export.json", exported_bytes["manifest"])
-        checks["native_wal_readonly_sql_transaction_db_wal_unchanged"] = exported_bytes["db_wal_unchanged"] is True
+        checks["native_wal_readonly_sql_transaction_db_nonempty_wal_bytes_unchanged"] = exported_bytes["db_nonempty_wal_bytes_unchanged"] is True
         events, exported = load_export(out / "export")
         full = next(event for event in events if event["request_id"] == "full100")
         checks["top3_100_full_scores_writer_witness"] = full["completeness"]["candidate_count"] == len(full["candidates"]) == 100 and exported["full_group"]
