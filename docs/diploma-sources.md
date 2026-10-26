@@ -32,6 +32,26 @@ Timnit Gebru, Jamie Morgenstern, Briana Vecchione, Jennifer Wortman Vaughan, Han
 
 Использование: происхождение, состав и допустимое применение данных. Карточка синтетического корпуса не превращает метки генератора в независимые сведения о найме.
 
+## Принятые технические свидетельства
+
+Срез технических свидетельств — принятый main `034f5371b297076fe2f6f7f82defba626fb8ea44`. Ссылки ниже закреплены на этом commit; текстовый черновик в своей ветке не переатрибутирует исполнение новым source SHA. Файлы проверены по сохранённым Git objects, без запуска модели, контейнеров или чтения исходного test. Сокращённые SHA в таблице служат навигацией; полные значения приведены ниже.
+
+| Свидетельство | Отчёт и связь с raw | Что оно позволяет утверждать |
+|---|---|---|
+| Исправление #36 | [data-reservations.json](https://github.com/seregatheone/ats_mlops/blob/034f5371b297076fe2f6f7f82defba626fb8ea44/reports/data-reservations.json), SHA `1ad41870…` | Зафиксированы root policy, исходные partition SHA, no-fit guards и отдельные последующие integration gates; не оценка качества старых моделей |
+| T-16 batch monitoring | [drift.json](https://github.com/seregatheone/ats_mlops/blob/034f5371b297076fe2f6f7f82defba626fb8ea44/reports/monitoring/drift.json), SHA `943aae09…`; actual receipt SHA `8805f486…` | Реальные JSON/HTML и отдельные calibration/window/feedback/completeness проверки. Batch source d13c70c, serving source7235b01, runner87f43fc различены |
+| T-17 замкнутый цикл | [t17.json](https://github.com/seregatheone/ats_mlops/blob/034f5371b297076fe2f6f7f82defba626fb8ea44/reports/retraining/t17.json), SHA `97b8b0e7…`; publication связывает 80 exact raw/public backing files | Один цикл от двух окон через независимый synthetic v2 и обычный fit до A3/reference/cooldown; исполняемый source48b6d3a |
+| T-17 происхождение обучения | [native repro](https://github.com/seregatheone/ats_mlops/blob/034f5371b297076fe2f6f7f82defba626fb8ea44/reports/retraining/t17/native-training/repro.json), [run manifest](https://github.com/seregatheone/ats_mlops/blob/034f5371b297076fe2f6f7f82defba626fb8ea44/reports/retraining/t17/lineage/run-manifest.json) | Один обычный `dvc repro`, один train event, модель14/run `a37686ddac5f44b0847f402ff8ab911f`; не forced replica E-1 |
+| T-17 состояние после выпуска | [final-state.json](https://github.com/seregatheone/ats_mlops/blob/034f5371b297076fe2f6f7f82defba626fb8ea44/reports/retraining/t17/operator/final-state.json), SHA `21d3f288…` | Сохранённое ACTIVE14/generation4, одна заявка и отсутствие inflight; это снимок конкретного момента, не обещание бессрочной доступности |
+
+Полные SHA256 проверенных summary:
+
+- #36: `1ad41870bca40ea0a240a3586687615abd8af1d0a5491777ff2d3a928a0995e5`;
+- T-16: `943aae09a8dfb90712088e515f7da8a1abeea584ec22f4af99a09401f955c772`;
+- T-17: `97b8b0e7fd3d826f14cfb4fce5360f9b1821947b9acb87cba52875e4e7a55e58`.
+
+Материалы читаются вместе с [границами #36](https://github.com/seregatheone/ats_mlops/blob/034f5371b297076fe2f6f7f82defba626fb8ea44/docs/semantic-reservations.md), [описанием T-16](https://github.com/seregatheone/ats_mlops/blob/034f5371b297076fe2f6f7f82defba626fb8ea44/docs/drift.md) и [описанием actual T-17](https://github.com/seregatheone/ats_mlops/blob/034f5371b297076fe2f6f7f82defba626fb8ea44/docs/retraining-evidence.md). Source887 с неудачным macOS publish и ранние частично успешные попытки T-16 сохраняют свои исходы; успешный поздний запуск не переименовывает их в PASS. Исторические4/5 пригодны для инженерной демонстрации, но не для независимого E-5 качества; новые13/14 также не превращаются в заранее выбранный финальный E-5 кандидат без T-18 freeze.
+
 ## Внутренние основания и следующий этап
 
-[Требования](requirements.md), [решения](decisions.md), [контракт данных](data-contract.md), [протокол](experiment-protocol.md) и [исходный план](plans/reproducible-ml-ats/plan.md) задают постановку и критерии работы. Они не заменяют первичные результаты. Происхождение ядра курсовой и расширенных заметок различено в плане; их библиографические реквизиты здесь не придуманы. Перед окончательным оформлением требуется подтвердить цитируемую редакцию курсовой. После E-1–E-5 список внутренних свидетельств дополняется точными отчётами и версиями, без изменения смысла уже выполненных опытов.
+[Требования](requirements.md), [решения](decisions.md), [контракт данных](data-contract.md), [протокол](experiment-protocol.md) и [исходный план](plans/reproducible-ml-ats/plan.md) задают постановку и критерии работы. Они не заменяют первичные результаты. Происхождение ядра курсовой и расширенных заметок различено в плане; их библиографические реквизиты здесь не придуманы. Таблица преемственности черновика опирается на эти материалы, а не на новое чтение или переоценку ELECTRE II. Перед окончательным оформлением требуется подтвердить цитируемую редакцию курсовой. T-18 ещё готовит общую приёмку и frozen inputs; E-1–E-5 остаются `not_run`, человеческие E-2 наблюдения отсутствуют. После допустимого исполнения список внутренних свидетельств дополняется exact raw/results/rebuild связями, без изменения смысла уже выполненных опытов. Этот checkpoint не завершает T-19/T-20 и не является окончательным дипломом.
