@@ -1,9 +1,40 @@
 # Локальная демонстрация жизненного цикла
 
-Это инструкция подготовки, а не новый отчёт о выполненном clean-clone прогоне.
-Она использует существующие CLI. [T18](acceptance.md) уже принят; показ ниже
-не заменяет формальные [исследования T19](results.md) и не читает original test.
+Это инструкция существующих public CLI и описание проверенного clean-copy
+demo-003 на source `b3a250a6c8a0015e6b62af3fd42171c5178ad3ef`.
+[T18](acceptance.md) уже принят; показ ниже не заменяет формальные
+[исследования T19](results.md) и не читает original test.
 Данные для `/rank` синтетические, score не является вероятностью трудоустройства.
+
+## Подтверждённый проход
+
+[Публичная сводка](../reports/demo/t20/summary.json) имеет SHA256
+`09eb779f6d6f19a2536e75c20455534f97050b657b84dae6bc9dfb0dd38b55ae`,
+[manifest](../reports/demo/t20/manifest.json) —
+`68b2369de4d3adb93f83e2bf1bc8f30088edbe328f95ce21e77f97927bec6a1a`.
+Actual source отделён от позднего evidence/docs commit.
+
+| Проверка demo-003 | Фактический итог |
+|---|---|
+| Этапы | 16/16 PASS, от preflight до cleanup |
+| Обучение | Два заранее назначенных A/B, два новых run/version, 0 HPO |
+| Проверки выпуска | Четыре T11 gates и четыре T12 release checks |
+| Основной выпуск | A → B → rollback A, metadata/rank/replay/conflict422 |
+| Реальное recovery | 18/18 checks, два process-exit checkpoints, 0 новых fit |
+| Финальный Registry | Отдельный снимок после recovery: две версии, совпадает с fit-B map |
+| История неудач | Demo-001/002: failed data, 0 fits и отдельный cleanup PASS |
+
+Верифицированы 150 записей subprocess команд оператора суммарно по трём
+demo runs. Сюда не входят root diagnostics, CI, формальные E1–E5 или все
+внутренние subprocess DVC. Счётчик не заменяет человеческие actions E2.
+E2 остаётся not_run, общий исследовательский план incomplete.
+
+До successful demo были сохранены два отказа: stale image ID до data container
+в первом outside recipe и DVC runtime preconditions до генерации во втором.
+Исправлены порядок post-bootstrap image pin и явные tmpfs/USER/LOGNAME/XDG
+условия ниже; старые результаты не переписаны в PASS. Cleanup завершён,
+retention marker сохраняет намерение не удалять volumes; публичная сводка
+не является независимой послепроходной инвентаризацией всех томов.
 
 ## Среда и отдельное состояние
 
