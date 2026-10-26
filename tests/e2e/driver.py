@@ -9,7 +9,6 @@ from pathlib import Path
 import argparse
 import json
 import os
-import re
 import subprocess
 
 from ats_mlops.evaluation import native
@@ -140,7 +139,7 @@ class Collector:
     def envelope(self,scenario,spec,started,finished,native_refs,commands,*,execution_source=None,phase_attestations=None):
         require(scenario in SCENARIOS,'unknown_scenario')
         actual_source=spec['source_git_sha'] if execution_source is None else execution_source
-        require(isinstance(actual_source,str) and re.fullmatch('[0-9a-f]{40}',actual_source),'invalid_actual_execution_source')
+        require(isinstance(actual_source,str) and len(actual_source)==40 and all(value in '0123456789abcdef' for value in actual_source),'invalid_actual_execution_source')
         attestations=[] if phase_attestations is None else phase_attestations
         require(isinstance(attestations,list),'invalid_phase_attestations')
         value={'schema_version':1,'outcome':'passed','execution_kind':'actual_acceptance','evidence_scope':'demo_only',
