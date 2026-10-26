@@ -16,6 +16,18 @@ It exports aggregate request statuses, attempt phase/outcome counts and retries.
 These are gauges of durable rows, not an additional pipeline state machine.
 Unknown status/outcome strings become `other`.
 
+An idle WAL-mode database can have neither `-wal` nor `-shm`; SQLite then needs
+coordination files that a read-only volume cannot create. The writer publishes
+an atomic checksummed numeric sidecar after durable transitions and after final
+connection close/checkpoint. It compares DB/WAL content fingerprints before and
+after its read-only SQL transaction/close and does not publish a moving snapshot.
+Bootstrap exports existing idle ledgers once, with no DML/DDL. The collector
+falls back to this sidecar only after verifying its checksum, bounded schema and
+current DB/WAL fingerprints twice. A source change or invalid sidecar yields
+source_up=0 without payload series. `ats_pipeline_from_snapshot` identifies this
+path. The Airflow runner must be rebuilt with the transition hooks; failed
+monitoring publication never changes a training/request outcome.
+
 Release metrics derive from the read-only checksummed journal, including its
 final entry, rather than trusting the cached JSON alone. They expose active,
 pending/blocked, generation, cache-head freshness and bounded transition counts.

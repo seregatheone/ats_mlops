@@ -4,8 +4,10 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from ats_mlops.monitoring.technical import collect, pipeline
+from ats_mlops.monitoring.technical import collect, pipeline, snapshot_pipeline, write_pipeline_snapshot
+from ats_mlops import orchestration
 from ats_mlops.release.state import Store, atomic_json, sha
 from service.http_boundary import HTTPBoundary
 from service.metrics import HTTPMetrics
@@ -66,6 +68,49 @@ class HTTPMetricTests(unittest.TestCase):
 
 
 class CollectorTests(unittest.TestCase):
+    def test_numeric_snapshot_tracks_durable_transitions_and_final_checkpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "requests.sqlite3"
+            with orchestration.database(path) as db:
+                orchestration.claim(db, "private-request", "private-payload-hash")
+                self.assertEqual(1, snapshot_pipeline(path)[0]["ready"])
+                attempt = orchestration.begin_attempt(db, "private-request")
+                self.assertEqual(1, snapshot_pipeline(path)[0]["in_progress"])
+                orchestration.finish(db, "private-request", attempt, "completed", phase="repro")
+                self.assertEqual(1, snapshot_pipeline(path)[0]["completed"])
+            self.assertEqual(1, snapshot_pipeline(path)[0]["completed"])
+            with patch("ats_mlops.monitoring.technical.pipeline", side_effect=sqlite3.OperationalError("readonly WAL")):
+                text = collect(path, Path(directory) / "missing-release").decode()
+            self.assertIn('ats_technical_source_up{source="pipeline"} 1', text)
+            self.assertIn("ats_pipeline_from_snapshot 1", text)
+            self.assertNotIn("private-request", text)
+            # Advancing the actual DB without publishing must be fail-closed.
+            with sqlite3.connect(path) as db:
+                db.execute("UPDATE requests SET status='failed'")
+            with self.assertRaisesRegex(ValueError, "snapshot_stale"):
+                snapshot_pipeline(path)
+            self.assertTrue(write_pipeline_snapshot(path))
+            self.assertEqual(1, snapshot_pipeline(path)[0]["failed"])
+            sidecar = path.with_name(path.name + ".metrics.json")
+            value = json.loads(sidecar.read_text());value["requests"]["completed"] = 100
+            sidecar.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ValueError, "snapshot_stale_or_invalid"):
+                snapshot_pipeline(path)
+
+    def test_snapshot_not_published_when_source_moves_or_export_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ledger"
+            with orchestration.database(path) as db:
+                with patch("ats_mlops.monitoring.technical.write_pipeline_snapshot", side_effect=OSError("private detail")):
+                    orchestration.claim(db, "r", "p")
+                    self.assertEqual(1, orchestration.begin_attempt(db, "r"))
+                self.assertEqual("in_progress", db.execute("SELECT status FROM requests").fetchone()[0])
+            target = path.with_name(path.name + ".metrics.json")
+            previous = target.read_bytes()
+            with patch("ats_mlops.monitoring.technical.source_fingerprint", side_effect=[{"database": "before"}, {"database": "after"}]):
+                self.assertFalse(write_pipeline_snapshot(path))
+            self.assertEqual(previous, target.read_bytes())
+
     def test_live_wal_counts_are_readonly_and_unknown_labels_are_collapsed(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

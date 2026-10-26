@@ -36,6 +36,14 @@ def main(argv=None):
                ATS_PROMETHEUS_IMAGE=images["prometheus"]["reference"], ATS_GRAFANA_IMAGE=images["grafana"]["reference"])
     compose = ["docker", "compose", "--env-file", "/dev/null", "-p", "ats-monitoring", "-f", str(ROOT / "monitoring/compose.yaml")]
     if args.command == "up":
+        # Bootstrap existing idle ledgers without -wal/-shm. This one-shot writer
+        # sidecar opens SQL mode=ro and writes only coordination/numeric metadata.
+        # The long-lived collector below retains a read-only source volume.
+        run(["docker", "run", "--rm", "--network", "none", "--read-only", "--user", "50000:0",
+             "--memory", "64m", "--cpus", ".25", "--entrypoint", "python",
+             "--mount", "type=bind,src=" + str(ROOT / "src/ats_mlops/monitoring/technical.py") + ",dst=/collector/technical.py,readonly",
+             "--mount", "type=volume,src=ats-core_orchestration-state,dst=/orchestration",
+             PYTHON, "-I", "-B", "/collector/technical.py", "--ledger", "/orchestration/requests.sqlite3", "--snapshot-once"])
         password = state / "grafana-password"
         if not password.exists():
             with password.open("x") as stream:

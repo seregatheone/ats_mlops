@@ -114,6 +114,43 @@ class MetricsIntegrationTests(unittest.TestCase):
 
         created = False
         try:
+            # Actual idle-WAL/read-only filesystem counterexample and sidecar
+            # recovery, using a separate Linux volume and the new writer image.
+            proof_volume = "ats-t15-numeric-proof"
+            self.assertFalse(docker("volume", "ls", "-q", "--filter", "name=^" + proof_volume + "$"))
+            docker("volume", "create", "--label", "ats.metrics.proof=" + str(output), proof_volume)
+            try:
+                docker("run", "--rm", "--network", "none", "--user", "0:0", "--entrypoint", "/bin/sh",
+                       "--mount", f"type=volume,src={proof_volume},dst=/proof", image, "-c", "chown 50000:0 /proof")
+                writer = ["run", "--rm", "--network", "none", "--user", "50000:0", "--memory", "256m",
+                          "--mount", f"type=volume,src={proof_volume},dst=/proof", "--entrypoint", "/opt/ml-venv/bin/python",
+                          request["orchestration_image_id"], "-B", "-c"]
+                code = ("from pathlib import Path;from ats_mlops.orchestration import database,claim,begin_attempt,finish;"
+                        "p=Path('/proof/requests.sqlite3');"
+                        "exec(\"with database(p) as db:\\n claim(db,'private-proof','hash');a=begin_attempt(db,'private-proof');finish(db,'private-proof',a,'completed')\")")
+                docker(*writer, code)
+                collector = ["run", "--rm", "--network", "none", "--read-only", "--user", "50000:0", "--memory", "64m",
+                             "--mount", f"type=volume,src={proof_volume},dst=/proof,readonly",
+                             "--mount", "type=bind,src=" + str(Path("src/ats_mlops/monitoring/technical.py").resolve()) + ",dst=/collector/technical.py,readonly",
+                             "--entrypoint", "python", "python@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce", "-I", "-B", "-c",
+                             "import sys;sys.path.insert(0,'/collector');from technical import collect;print(collect('/proof/requests.sqlite3','/missing').decode())"]
+                valid = docker(*collector)
+                self.assertIn('ats_technical_source_up{source="pipeline"} 1', valid)
+                self.assertIn("ats_pipeline_from_snapshot 1", valid)
+                self.assertIn('ats_pipeline_requests{status="completed"} 1', valid)
+                docker(*writer, "import sqlite3;c=sqlite3.connect('/proof/requests.sqlite3');c.execute(\"UPDATE requests SET status='failed'\");c.commit();c.close()")
+                stale = docker(*collector)
+                self.assertIn('ats_technical_source_up{source="pipeline"} 0', stale)
+                self.assertNotIn("ats_pipeline_requests", stale)
+                docker(*writer, "from ats_mlops.monitoring.technical import write_pipeline_snapshot;assert write_pipeline_snapshot('/proof/requests.sqlite3')")
+                fresh = docker(*collector)
+                self.assertIn('ats_pipeline_requests{status="failed"} 1', fresh)
+                (output / "numeric-valid.prom").write_text(valid)
+                (output / "numeric-stale.prom").write_text(stale)
+                (output / "numeric-refreshed.prom").write_text(fresh)
+                report["checks"]["actual_readonly_idleWAL_snapshot_and_stale_rejection"] = True
+            finally:
+                docker("volume", "rm", proof_volume)
             status, build = http("http://127.0.0.1:9090/api/v1/status/buildinfo")
             self.assertEqual(200, status)
             self.assertEqual("3.15.1", json.loads(build)["data"]["version"])
@@ -152,6 +189,7 @@ class MetricsIntegrationTests(unittest.TestCase):
             report["queries"]["latency"] = query('ats_http_request_duration_seconds_count{job="acceptance",endpoint="/rank",status="200"}')
             for source in ("pipeline", "release"):
                 wait_for(lambda: value('ats_technical_source_up{source="' + source + '"}') == 1)
+            self.assertEqual(1, value("ats_pipeline_from_snapshot"))
             report["queries"]["pipeline"] = query("ats_pipeline_requests")
             report["queries"]["release"] = query("ats_release_active")
             self.assertTrue(any(float(item["value"][1]) > 0 for item in report["queries"]["pipeline"]))
