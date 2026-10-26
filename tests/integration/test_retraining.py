@@ -71,7 +71,7 @@ class RetrainingProtocolIntegration(unittest.TestCase):
             with patch('ats_mlops.monitoring.retraining_batch.active_state',return_value=nullcontext(observed)):
                 first=batch.advance(request_id);second=batch.advance(request_id)
             self.assertEqual('waiting_approval',first['state']);self.assertEqual('waiting_approval',second['state'])
-            self.assertEqual(1,api.posts);self.assertEqual(REFERENCE,store.reference())
+            self.assertEqual(1,api.posts);self.assertEqual(p.payload(REFERENCE),store.snapshot()['reference'])
             self.assertEqual(1,store.snapshot()['requests'])
             # An explicit separately verified ACTIVE is required; intent alone
             # and a fresh process do not move the cursor before reconcile.
@@ -80,10 +80,10 @@ class RetrainingProtocolIntegration(unittest.TestCase):
             saved=worker.execute('install',{'receipt':receipt},native_root)
             worker.execute('reference-intent',saved,native_root,now=START+4*HOUR)
             store=p.PolicyStore(native_root/'policy.sqlite3')
-            self.assertEqual(REFERENCE,store.reference())
+            self.assertEqual(p.payload(REFERENCE),store.snapshot()['reference'])
             event=next(event for event in store.pending_outbox() if event['kind']=='reference')
             worker.execute('reconcile-reference',{**saved,'event_id':event['event_id']},native_root,now=START+4*HOUR+MINUTE)
-            self.assertEqual(target.reference,store.reference())
+            self.assertEqual(p.payload(target.reference),store.snapshot()['reference'])
             self.assertIsNone(store.snapshot()['inflight'])
             self.assertEqual('active',store.request(request_id)['state'])
 
