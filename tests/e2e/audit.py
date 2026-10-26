@@ -335,11 +335,13 @@ def _attested_phase(artifacts, attestation, receipt, source_sha, commands):
         require(name != "S2", "indexed_S2_phase_required")
     require(isinstance(selected, dict) and selected.get("outcome") ==
             ("expected_rejection" if name.startswith("fault-") else "passed"), "contradictory_phase_result")
+    require("source_git_sha" not in selected or selected["source_git_sha"] == source_sha, "phase_result_source_changed")
     ids, stdout = _attested_commands(artifacts, attestation, commands, selected)
     leaves = attestation["leaves"]
     require(isinstance(leaves, dict) and set(leaves) <= {"result", "observations", "fault", "receipt", "stdout_json", "input_request", "bad_gate"}, "invalid_phase_leaf")
     values = {key: artifacts.document(reference) for key, reference in leaves.items()}
     for key, value in values.items():
+        require("source_git_sha" not in value or value["source_git_sha"] == source_sha, "phase_leaf_source_changed")
         if key == "result": require(value == selected, "phase_result_leaf_changed")
         elif key == "observations": require(value == selected["observations"], "phase_observations_leaf_changed")
         elif key == "fault": require(leaves[key]["sha256"] == selected["observations"]["fault_receipt_sha256"], "phase_fault_leaf_changed")
