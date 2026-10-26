@@ -10,7 +10,8 @@ check являются разными проверками; approve/activate п�
 После clean commit/push serving source построить image из cached pinned base:
 
 ```sh
-docker build -f docker/serving/Dockerfile --build-arg SOURCE_SHA="$(git rev-parse HEAD)" -t ats-serving:t12 .
+test "$(docker image inspect --format '{{.Id}}' ats-core-ml:t4)" = sha256:574c48deb107cba3f0bdc982d3aa0ab1500de58ab1694052bb92efbcab13ec91
+docker build --pull=false --network=none -f docker/serving/Dockerfile --build-arg SOURCE_SHA="$(git rev-parse HEAD)" -t ats-serving:t12 .
 ```
 
 Не добавляются зависимости, registry или службы. Получить resolved image ID,

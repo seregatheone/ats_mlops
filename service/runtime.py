@@ -9,7 +9,7 @@ import platform
 import sys
 
 from service.contracts import require, sha
-from service.integrity import release_binding
+from service.integrity import inventory, release_binding
 
 
 def environment():
@@ -34,8 +34,10 @@ class Runtime:
 
         entry = bentoml.models.get(self.manifest["bento_tag"])
         require(str(entry.tag) == self.manifest["bento_tag"])
-        artifact = Path(root) / self.manifest["model_relative_path"]
-        require(Path(entry.path_of("mlflow_model")).resolve() == artifact.resolve())
+        artifact = Path(entry.path_of("mlflow_model"))
+        expected_store = Path(os.environ["BENTOML_HOME"]) / "models" / self.manifest["bento_tag"].replace(":", "/") / "mlflow_model"
+        require(artifact.resolve() == expected_store.resolve()
+                and inventory(artifact) == self.record["model"]["files"])
         metadata = yaml.safe_load((artifact / "MLmodel").read_text())
         pyfunc = metadata["flavors"]["python_function"]
         require(pyfunc["code"] == "code" and pyfunc["model_path"] == "model.pkl"

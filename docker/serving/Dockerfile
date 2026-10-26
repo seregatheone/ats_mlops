@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=sha256:574c48deb107cba3f0bdc982d3aa0ab1500de58ab1694052bb92efbcab13ec91
+ARG BASE_IMAGE=ats-core-ml:t4
 FROM ${BASE_IMAGE}
 USER root
 RUN rm -rf /opt/project/src /opt/compat
