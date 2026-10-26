@@ -102,7 +102,9 @@ class ReleaseIntegrationTests(unittest.TestCase):
             refused("rejected_check", lambda: controller.stage(fixtures["A"]["package"], rejected), "release_check_rejected")
             tampered = output / "tampered-package"
             shutil.copytree(fixtures["A"]["package"], tampered)
-            (tampered / "run_manifest.json").write_bytes(b"{}")
+            tampered_manifest = tampered / "run_manifest.json"
+            tampered_manifest.chmod(0o600)
+            tampered_manifest.write_bytes(b"{}")
             refused("tampered_package", lambda: controller.stage(tampered, fixtures["A"]["check"]), "package_binding_invalid")
             a = stage("A")["release_id"]
             refused("missing_approval", lambda: controller.activate(a), "approval_required")
