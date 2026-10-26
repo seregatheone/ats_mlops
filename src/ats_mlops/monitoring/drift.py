@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+from collections import Counter
 from datetime import datetime, timezone
 import importlib.metadata
 import json
@@ -147,6 +149,47 @@ def approved_receipt(value):
     return approval
 
 
+def checked_training_guard(root, card):
+    """Required, text-free backing evidence, retaining exact artifact GX bytes."""
+    from ats_mlops.data.validate import GX_ROOT,REPORT_SCHEMA,SCHEMA
+    guard=card['admission']['guard'];data=card['data']
+    content=checked_bytes(root,'data-training-guard.json')
+    require(sha(content)==guard['guard_report_sha256'],'reference_guard_report_changed')
+    report=decode_json(content)
+    require(set(report)=={'schema_version','mode','outcome','evidence_scope','manifest_sha256','engine','engine_version',
+            'gx','reasons','artifact_hashes','counts','config_hashes','reservation','report_sha256'}
+            and type(report['schema_version']) is int and report['schema_version']==REPORT_SCHEMA
+            and report['mode']=='training' and report['outcome']=='passed' and report['evidence_scope']=='demo_only'
+            and report['engine']=='great_expectations' and report['engine_version']=='1.24.1' and report['reasons']==[]
+            and report['manifest_sha256']==data['manifest_sha256'] and report['artifact_hashes']==data['partition_sha256']
+            and report['report_sha256']==sha(canonical({key:value for key,value in report.items() if key!='report_sha256'})),
+            'invalid_reference_training_guard')
+    expected_config={name:sha((GX_ROOT/name).read_bytes()) for name in ('pairs.json','checkpoint.json')}
+    require(report['config_hashes']==expected_config and set(report['counts'])=={'train','validation'}
+            and all(type(report['counts'][role]) is int and report['counts'][role]==card['matrices'][role]['pairs']
+                    for role in ('train','validation')), 'reference_guard_counts_mismatch')
+    reservation=report['reservation']
+    require(set(reservation)=={'policy_sha256','root_policy_sha256','checked_partitions','semantic_components'}
+            and reservation['policy_sha256']==data['reservation_policy_sha256']
+            and reservation['root_policy_sha256']==guard['root_policy_sha256']
+            and reservation['checked_partitions']==['train','validation']
+            and type(reservation['semantic_components']) is int and reservation['semantic_components']>0,
+            'reference_guard_reservation_mismatch')
+    suite=decode_json((GX_ROOT/'pairs.json').read_bytes())
+    expected=Counter((item['type'],item['kwargs'].get('column'),item['meta']['reason']) for item in suite['expectations'])
+    expected.update(('expect_column_values_to_not_be_null',name,'missing_field_or_null') for name in SCHEMA)
+    require(isinstance(report['gx'],list) and [batch['scope'] for batch in report['gx']]==['train','validation'],
+            'reference_guard_gx_mismatch')
+    for batch in report['gx']:
+        require(set(batch)=={'scope','rows','success','checks'} and batch['success'] is True
+                and type(batch['rows']) is int and batch['rows']==report['counts'][batch['scope']]
+                and isinstance(batch['checks'],list) and all(set(check)=={'expectation','column','success','reason'}
+                    and check['success'] is True for check in batch['checks'])
+                and Counter((check['expectation'],check['column'],check['reason']) for check in batch['checks'])==expected,
+                'reference_guard_gx_mismatch')
+    return report
+
+
 def load_reference(directory, expected_sha):
     root = Path(directory)
     content = checked_bytes(root, "reference.json")
@@ -211,6 +254,8 @@ def load_reference(directory, expected_sha):
         require(isinstance(groups, list) and all(isinstance(group, str) and re.fullmatch(r"[0-9a-f]{64}", group) for group in groups)
                 and sha(content) == descriptor["groups_sha256"] and len(groups) == len(matrices[role]) == descriptor["pairs"]
                 and len(set(groups)) == descriptor["groups"], "reference_numeric_counts_mismatch")
+    if value['schema_version']==3:
+        checked_training_guard(root,value)
     return value, matrices
 
 
@@ -318,7 +363,7 @@ except Exception as error:
 
 
 ADMISSION_BOOTSTRAP = r'''
-import hashlib,importlib.util,importlib.metadata,json,os,pathlib,sys
+import base64,hashlib,importlib.util,importlib.metadata,json,os,pathlib,sys
 def canonical(x):return (json.dumps(x,sort_keys=True,ensure_ascii=False,separators=(',',':'),allow_nan=False)+'\n').encode()
 def sha(x):return hashlib.sha256(x).hexdigest()
 try:
@@ -353,7 +398,7 @@ try:
   'policy_sha256':guard['reservation']['policy_sha256'],'root_policy_sha256':guard['reservation']['root_policy_sha256'],
   'guard_report_sha256':sha(pathlib.Path('/tmp/reference-guard/data-training.json').read_bytes()),
   'read_partitions':['train','validation'],'test_read':False}
- print(json.dumps({'outcome':'passed','receipt':result}))
+ print(json.dumps({'outcome':'passed','receipt':result,'report_base64':base64.b64encode(pathlib.Path('/tmp/reference-guard/data-training.json').read_bytes()).decode('ascii')}))
 except Exception as failure:
  print(json.dumps({'outcome':'failed','reason':'reference_admission_guard_failed','type':type(failure).__name__}));raise SystemExit(1)
 '''
@@ -380,8 +425,10 @@ def admitted_training_guard(artifact, record, bundle):
             subprocess.run(["docker", "rm", "-f", name], capture_output=True)
         result = decode_json(completed.stdout.strip().splitlines()[-1])
         require(completed.returncode == 0 and result["outcome"] == "passed", "reference_admission_guard_failed")
+        report=base64.b64decode(result['report_base64'],validate=True)
+        require(len(report)<=1024*1024 and sha(report)==result['receipt']['guard_report_sha256'],'reference_guard_report_changed')
         result["receipt"].update(image_id=image,bootstrap_sha256=sha(ADMISSION_BOOTSTRAP.encode()))
-        return result["receipt"]
+        return {'receipt':result['receipt'],'report_bytes':report}
 
 
 def artifact_features(artifact, record, rows):
@@ -461,7 +508,7 @@ def build_reference(request, output):
                 and approval.reservation_policy_sha256 == manifest["reservation"]["policy"]["sha256"]
                 and approval.admission_sha256 == sha(receipt_path.read_bytes()), "approved_reference_binding_mismatch")
         guard = admitted_training_guard(package / released["model_relative_path"],record,bundle)
-        admission = {"approval_file_sha256":sha(approval_bytes),"guard":guard}
+        admission = {"approval_file_sha256":sha(approval_bytes),"guard":guard['receipt']}
     partitions = {name: load_partition(manifest_path, name) for name in ("train", "validation")}
     validate_partitions(partitions, manifest["duplicate_detection"]["threshold"], policy)
     rows = partitions["train"] + partitions["validation"]
@@ -471,6 +518,7 @@ def build_reference(request, output):
     with publication(output) as root:
         if approved:
             (root / "dataset-approval.json").write_bytes(approval_bytes)
+            (root / "data-training-guard.json").write_bytes(guard['report_bytes'])
         for role, values in (("train", derived["rows"][:size]), ("validation", derived["rows"][size:])):
             content = b"".join(canonical(row) for row in values)
             (root / (role + ".jsonl")).write_bytes(content)
@@ -494,6 +542,8 @@ def build_reference(request, output):
         if admission is not None:
             result["admission"] = admission
         write_document(root / "reference.json", result)
+        if approved:
+            checked_training_guard(root,result)
     return result
 
 

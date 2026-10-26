@@ -24,7 +24,7 @@ START = datetime(2026, 10, 26, 12, tzinfo=timezone.utc)
 HOUR = timedelta(hours=1)
 MINUTE = timedelta(minutes=1)
 MODEL = ModelIdentity('ranking', '4', 'run-4', h('model-4'))
-COHORT = Cohort(h('reference-1'), MODEL, 'release-A', 1, h('monitoring-config'))
+COHORT = Cohort(h('reference-1'), MODEL, 'release-A', 1, h('monitoring-config'),h('effective-rule'))
 REFERENCE = ReferenceBinding(COHORT, 'dataset-v1', h('manifest-1'), h('policy-1'), h('labels-1'))
 NEXT_MODEL = ModelIdentity('ranking', '5', 'run-5', h('model-5'))
 
@@ -56,7 +56,7 @@ def candidate(passed=True):
 
 
 def active(**changes):
-    reference = ReferenceBinding(Cohort(h('reference-2'), NEXT_MODEL, 'release-B', 2, h('monitoring-config')),
+    reference = ReferenceBinding(Cohort(h('reference-2'), NEXT_MODEL, 'release-B', 2, h('monitoring-config'),h('effective-rule')),
                                  'dataset-v2', h('manifest-2'), h('policy-2'), h('labels-2'))
     return replace(VerifiedActive(reference, h('release-manifest'), h('release-check'),
                                   h('release-approval'), h('journal'), 'sha256:' + h('image'), ACTIVE_CHECKS), **changes)
@@ -107,10 +107,11 @@ class RetrainingPolicyTests(unittest.TestCase):
 
     def test_reference_refresh_cannot_replace_frozen_monitoring_config(self):
         request_id=self.waiting_approval(); target=active()
-        changed=replace(target,reference=replace(target.reference,cohort=replace(target.reference.cohort,config_sha256=h('other-config'))))
         before=self.store.snapshot()
-        with self.assertRaisesRegex(PolicyError,'active_target_mismatch'):
-            self.store.begin_reference_update(request_id,changed,now=START+4*HOUR)
+        for change in ({'config_sha256':h('other-config')},{'effective_config_sha256':h('other-rule')}):
+            changed=replace(target,reference=replace(target.reference,cohort=replace(target.reference.cohort,**change)))
+            with self.assertRaisesRegex(PolicyError,'active_target_mismatch'):
+                self.store.begin_reference_update(request_id,changed,now=START+4*HOUR)
         self.assertEqual(before,self.store.snapshot())
         self.assertEqual('waiting_approval',self.store.request(request_id)['state'])
 
@@ -168,6 +169,7 @@ class RetrainingPolicyTests(unittest.TestCase):
     def test_each_exact_cohort_coordinate_is_enforced(self):
         self.store.observe(window(0), now=START + HOUR)
         variants = (replace(COHORT, reference_sha256=h('other-ref')), replace(COHORT, config_sha256=h('other-config')),
+                    replace(COHORT,effective_config_sha256=h('different-threshold')),
                     replace(COHORT, model=replace(MODEL, version='6')), replace(COHORT, model=replace(MODEL, run_id='other-run')),
                     replace(COHORT, release_id='other-release'), replace(COHORT, epoch=2))
         for cohort in variants:

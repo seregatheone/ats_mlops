@@ -63,10 +63,35 @@ class DriftBoundaryTests(unittest.TestCase):
                 guard_report_sha256='f'*64,read_partitions=['train','validation'],test_read=False,
                 image_id=card['feature_worker']['image_id'],bootstrap_sha256=sha(drift.ADMISSION_BOOTSTRAP.encode()))
             card['admission'] = dict(approval_file_sha256=sha(approval_bytes),guard=guard)
+            from ats_mlops.data.validate import GX_ROOT,SCHEMA
+            suite=decode_json((GX_ROOT/'pairs.json').read_bytes())
+            checks=[dict(expectation=item['type'],column=item['kwargs'].get('column'),success=True,reason=item['meta']['reason']) for item in suite['expectations']]
+            checks += [dict(expectation='expect_column_values_to_not_be_null',column=name,success=True,reason='missing_field_or_null') for name in SCHEMA]
+            report=dict(schema_version=1,mode='training',outcome='passed',evidence_scope='demo_only',manifest_sha256=approved.manifest_sha256,
+                engine='great_expectations',engine_version='1.24.1',reasons=[],artifact_hashes=card['data']['partition_sha256'],
+                counts={'train':3,'validation':3},config_hashes={name:sha((GX_ROOT/name).read_bytes()) for name in ('pairs.json','checkpoint.json')},
+                reservation=dict(policy_sha256=approved.reservation_policy_sha256,root_policy_sha256=ROOT_POLICY_SHA256,
+                    checked_partitions=['train','validation'],semantic_components=6),
+                gx=[dict(scope=role,rows=3,success=True,checks=checks) for role in ('train','validation')])
+            def save_report(value,outer):
+                value=dict(value);value.pop('report_sha256',None);value['report_sha256']=sha(canonical(value))
+                content=canonical(value);(root/'data-training-guard.json').write_bytes(content)
+                outer['admission']['guard']['guard_report_sha256']=sha(content)
+            save_report(report,card)
             def load(value):
                 content=canonical(value); (root/'reference.json').write_bytes(content)
                 return drift.load_reference(root,sha(content))
             self.assertEqual('guarded_schema2',load(card)[0]['model']['lineage_status'])
+            for field,value in (('mode','admission'),('outcome','rejected'),('artifact_hashes',drift.CANONICAL_PARTITIONS),
+                                ('counts',{'train':True,'validation':3}),('reasons',['private@example.invalid'])):
+                changed=deepcopy(card);bad=deepcopy(report);bad[field]=value;save_report(bad,changed)
+                with self.subTest(report_field=field),self.assertRaises(ValueError):load(changed)
+            save_report(report,card)
+            content=(root/'data-training-guard.json').read_bytes();(root/'data-training-guard.json').write_bytes(content+b'\n')
+            with self.assertRaisesRegex(ValueError,'reference_guard_report_changed'):load(card)
+            (root/'data-training-guard.json').unlink()
+            with self.assertRaises((ValueError,OSError)):load(card)
+            save_report(report,card)
             for field,value in (('manifest_sha256','1'*64),('root_policy_sha256','2'*64),
                                 ('test_read',True),('partition_sha256',drift.CANONICAL_PARTITIONS)):
                 changed=deepcopy(card);changed['admission']['guard'][field]=value

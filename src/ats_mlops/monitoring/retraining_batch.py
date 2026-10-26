@@ -17,7 +17,7 @@ import tempfile
 from . import policy as p
 from . import policy_worker as worker
 from .retraining import (AirflowAPI, NativePolicy, active_state, approved_synthetic_v2, candidate_conf,
-    checked_files, document, file_sha, reference_binding, safe_name, same_incumbent, save_candidate_export, verify_window)
+    checked_files, document, file_sha, reference_binding, safe_name, same_incumbent, save_candidate_export, verified_calibration, verify_window)
 
 
 def write_once(path, value):
@@ -60,7 +60,7 @@ def snapshot_window_inputs(spec, store):
     for role,names in (('reference',('reference.json','train.jsonl','validation.jsonl','train-groups.json','validation-groups.json')),
                        ('export',('export.json','events.jsonl')),('feedback',('feedback.json','feedback.jsonl'))):
         if role == 'reference' and document(Path(spec[role])/'reference.json')['schema_version'] == 3:
-            names = (*names,'dataset-approval.json')
+            names = (*names,'dataset-approval.json','data-training-guard.json')
         for name in names:
             files[role+'/'+name] = (Path(spec[role])/name,Path(spec[role]))
     bundle = Path(spec['bundle']); descriptor = document(bundle/'bundle.json'); manifest = document(bundle/'data_manifest.json')
@@ -318,19 +318,26 @@ class HostBatch:
             staged['release_id'],staged['manifest_sha256'],staged['check_sha256'],staged['image_id'])
         return self.native.call('candidate',{'request_id':request_id,'evidence':p.payload(evidence)})
 
-    def update_reference(self, request_id, reference, reference_sha256, bundle, config_sha256):
-        from .drift import load_reference
+    def update_reference(self, request_id, reference, reference_sha256, bundle, *, config, calibration, calibration_sha256, monitoring_sources):
+        from .drift import configuration,load_reference
         request = self.native.call('request',{'request_id':request_id})
+        settings,config_sha256=configuration(config,with_sha=True)
         p.require(config_sha256 == request['incumbent']['cohort']['config_sha256'],'reference_monitoring_config_changed')
         with active_state(self.release_state) as observed:
-            card,_ = load_reference(reference,reference_sha256)
-            card = dict(card,_config_sha256=config_sha256)
+            card,matrices = load_reference(reference,reference_sha256)
+            spec={'reference_sha256':reference_sha256,'calibration':calibration,'calibration_sha256':calibration_sha256,
+                  'monitoring_sources':monitoring_sources}
+            loaded={'config':settings,'config_sha':config_sha256,'reference_matrices':matrices}
+            _,effective_sha=verified_calibration(spec,loaded,self.repository)
+            p.require(effective_sha == request['incumbent']['cohort']['effective_config_sha256'],'reference_effective_rule_changed')
+            card = dict(card,_config_sha256=config_sha256,_effective_config_sha256=effective_sha)
             binding = reference_binding(card,reference_sha256,bundle,observed)
             active = observed['active']
             verified = p.VerifiedActive(binding,active['manifest_sha256'],active['check_sha256'],active['approval_sha256'],
                 observed['journal_sha256'],active['image_id'],p.ACTIVE_CHECKS)
             receipt = {'schema_version':1,'kind':'reference','value':{'request_id':request_id,'active':p.payload(verified)},
-                       'proof':proof(observed,self.source_git_sha,{'reference_sha256':reference_sha256,'config_sha256':config_sha256})}
+                       'proof':proof(observed,self.source_git_sha,{'reference_sha256':reference_sha256,'config_sha256':config_sha256,
+                           'calibration_sha256':calibration_sha256,'effective_config_sha256':effective_sha})}
             installed = self.native.call('install',{'receipt':receipt})
             if request['state'] == 'active':
                 p.require(request['reference_intent']['reference'] == p.payload(binding),'active_reference_changed')
@@ -363,7 +370,9 @@ def main(argv=None):
         elif args.action == 'advance':
             result = batch.advance(value['request_id'])
         elif args.action == 'reference':
-            result = batch.update_reference(value['request_id'],value['reference'],value['reference_sha256'],value['bundle'],value['config_sha256'])
+            p.require(set(value) == {'request_id','reference','reference_sha256','bundle','config','calibration','calibration_sha256','monitoring_sources'},'invalid_reference_inputs')
+            result = batch.update_reference(value['request_id'],value['reference'],value['reference_sha256'],value['bundle'],
+                config=value['config'],calibration=value['calibration'],calibration_sha256=value['calibration_sha256'],monitoring_sources=value['monitoring_sources'])
         else:
             p.require(value == {},'unexpected_fields'); result = native.call('snapshot',{})
         print(json.dumps({'outcome':'passed','result':result},sort_keys=True))

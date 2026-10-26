@@ -6,7 +6,7 @@ evidence must pass before this task is marked complete. No E5/test metric claim.
 
 `monitoring.policy` owns one native SQLite ledger and immutable outbox. Two closed
 adjacent eligible signal windows (200pairs/10distinct vacancies, same exact
-reference/model/release/epoch/config) create one request. A duplicate window ID
+reference/model/release/epoch/raw config/effective rule) create one request. A duplicate window ID
 with changed bytes is rejected. Insufficient/control/gap breaks the streak;
 cooldown/inflight windows do not accumulate a future streak. Cooldown24h starts
 at accepted request intent. Waiting labels holds the same singleton request.
@@ -34,7 +34,11 @@ actual image and Registry under its lock. A `checked_fixture` model13 reference
 does not establish ACTIVE: the actual release/model/manifest/check/epoch must
 match. Numeric reference data must match the guarded model's training manifest;
 approved schema2-v2 references use schema3 with an immutable dataset-approval
-file and a separate real GX/combined semantic guard receipt. The artifact's
+file and the full sanitized real GX/combined semantic guard JSON as a required
+`data-training-guard.json` artifact. Exact bytes and internal report hash, training
+mode/passed status, root policy, GX checks/counts and manifest/train/validation
+bindings are verified; selected fields or a digest without backing bytes fail.
+The artifact's
 exact training manifest/partition hashes must match the approved bundle. That
 guard runs in its recorded ML image, loads exact artifact code first, then uses
 its validators; a second artifact-only worker computes reference numeric rows.
@@ -90,6 +94,22 @@ consistency evidence, persists a reference-update intent, then reconciles the
 same verified target/next epoch into the native DB cursor. A crash leaves an
 inflight pending intent; reference remains old until verified reconcile. Batch
 code never calls approve/activate and never treats cached rank replay as ready.
+
+Raw config SHA remains separate from `Cohort.effective_config_sha256`. The latter
+is derived only after checking actual calibration inventories/raw results and
+published code/lock bindings. It seals selected threshold, method, drift share,
+configured columns, constant policy, minima, pinned numeric provider/runtime and
+exact relevant function source spans. Source spans avoid cross-Python AST-dump
+differences. Whole Git SHA, model/reference IDs and calibration statistics are
+provenance rather than model-independent rule inputs. Distinct effective rules
+cannot confirm two windows. Reference refresh and fresh reconciliation preserve
+both config identities under the policy transaction. New model/reference/stats
+and calibration hashes are allowed with the same effective rule; another rule
+requires a separate explicit config/protocol revision outside this request.
+The host reference input supplies actual config/calibration paths+calibration
+SHA+approved monitoring source list; caller-provided effective hashes are not
+accepted. Host verifies these artifacts again before installing an intent or
+reconciling the cursor.
 
 Runtime acceptance remains separate: source publication/overlay review, genuine
 T16 ACTIVE-bound windows, waiting→approvedv2→ordinary candidate→gate→waiting

@@ -6,9 +6,11 @@ and activation are deliberately outside this module's automatic operations.
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import ast
 import base64
 import hashlib
 import json
+import math
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
@@ -96,7 +98,8 @@ def reference_binding(card, reference_sha256, bundle, observed):
               'guarded_matched_reference_required')
     labels, _ = semantic_labels(bundle)
     cohort = p.Cohort(reference_sha256,p.ModelIdentity(expected['model_name'],expected['model_version'],
-        record['mlflow']['run_id'],expected['model_sha256']),active['release_id'],observed['state']['generation'],card['_config_sha256'])
+        record['mlflow']['run_id'],expected['model_sha256']),active['release_id'],observed['state']['generation'],
+        card['_config_sha256'],card['_effective_config_sha256'])
     return p.ReferenceBinding(cohort,manifest['generator']['config']['namespace'],record['data_manifest_sha256'],
                               manifest['reservation']['policy']['sha256'],labels)
 
@@ -177,9 +180,58 @@ class MonitoringReader:
                 'export':export,'records':records,'feedback':feedback,'assess':assess,'verified':verified}
 
 
-def monitoring_decisions(spec, loaded, calibration, card, selected):
-    """Derive decisions from persisted real-provider results, not declared flags."""
-    from .drift import constants, normalize_evidently, numeric_rows
+def verified_monitoring_runtime(runtime, sources, repository):
+    """Bind published provider code/lock; hash only relevant numeric algorithms."""
+    source = runtime['source_git_sha']
+    p.require(source in sources and re.fullmatch(r'[0-9a-f]{40}',source), 'unapproved_monitoring_source')
+    algorithms = {}
+    relevant = {'drift.py':{'numeric_rows','constants','normalize_evidently','render'},
+                'feedback.py':{'numeric','FEATURES','NUMERIC'}}
+    for name in ('drift.py','feedback.py','quality.py'):
+        blob = subprocess.run(['git','show',source+':src/ats_mlops/monitoring/'+name],cwd=repository,
+                              capture_output=True,check=True).stdout
+        p.require(worker.sha(blob) == runtime['code_sha256'][name], 'monitoring_source_mismatch')
+        selected = {}
+        for node in ast.parse(blob).body:
+            names = {node.name} if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) else {
+                target.id for target in getattr(node,'targets',[]) if isinstance(target,ast.Name)}
+            for symbol in names & relevant.get(name,set()):
+                # AST is used only to locate exact source spans. Python3.11
+                # and3.14 add different AST fields; their dumps are not IDs.
+                selected[symbol] = worker.sha(b''.join(blob.splitlines(keepends=True)[node.lineno-1:node.end_lineno]))
+        if name in relevant:
+            p.require(set(selected) == relevant[name], 'monitoring_algorithm_missing')
+            algorithms[name] = selected
+    lock = subprocess.run(['git','show',source+':requirements-monitoring.lock'],cwd=repository,
+                          capture_output=True,check=True).stdout
+    pinned = dict(re.findall(rb'^([A-Za-z0-9_.-]+)==([^ ;\\\r\n]+)',lock,re.MULTILINE))
+    p.require(worker.sha(lock) == runtime['monitoring_lock_sha256']
+              and isinstance(runtime['python'],str) and re.fullmatch(r'3\.11\.[0-9]+',runtime['python'])
+              and set(runtime['packages']) == {'evidently','pandas','numpy','scipy','scikit-learn','plotly'}
+              and all(pinned.get(name.encode(),b'').decode() == value for name,value in runtime['packages'].items()), 'monitoring_runtime_mismatch')
+    return p.digest(algorithms)
+
+
+def effective_rule_sha256(config, calibration, runtime, algorithm_sha256):
+    """Model-independent rule identity; caller hashes/stats never supply it."""
+    p.fingerprint(algorithm_sha256);p.fingerprint(runtime['monitoring_lock_sha256'])
+    threshold,share=calibration['threshold'],calibration['drift_share']
+    p.require(type(threshold) in (int,float) and math.isfinite(threshold) and threshold>0
+              and type(share) in (int,float) and math.isfinite(share) and 0<share<=1
+              and calibration['method'] == config['method']
+              and p.canonical(share) == p.canonical(config['drift_share'])
+              and any(p.canonical(threshold) == p.canonical(value) for value in config['threshold_grid'])
+              and type(config['minimum_pairs']) is int and type(config['minimum_vacancies']) is int,
+              'invalid_effective_monitoring_rule')
+    return p.digest({'schema_version':1,'method':config['method'],'selected_threshold':threshold,'drift_share':share,
+        'columns':config['columns'],'constant_policy':config['constant_policy'],
+        'minimum':{'pairs':config['minimum_pairs'],'vacancies':config['minimum_vacancies']},
+        'numeric_runtime':{'python':runtime['python'],'packages':runtime['packages'],
+            'monitoring_lock_sha256':runtime['monitoring_lock_sha256'],'algorithm_sha256':algorithm_sha256}})
+
+
+def calibration_decisions(spec, loaded, calibration):
+    from .drift import constants, normalize_evidently
     from .feedback import NUMERIC
     config = loaded['config']; fixed = constants(loaded['reference_matrices']['train'])
     columns = [name for name in NUMERIC if name not in fixed]
@@ -203,6 +255,13 @@ def monitoring_decisions(spec, loaded, calibration, card, selected):
         p.require(passed == (index == len(observations)-1), 'calibration_selection_mismatch')
     p.require(set(calibration['files']) == expected_files
               and p.canonical(calibration['threshold']) == p.canonical(observations[-1]['threshold']), 'calibration_selection_mismatch')
+    return fixed,columns
+
+
+def monitoring_decisions(spec, loaded, calibration, card, selected):
+    """Derive decisions from persisted real-provider results, not declared flags."""
+    from .drift import normalize_evidently,numeric_rows
+    config=loaded['config'];fixed,columns=calibration_decisions(spec,loaded,calibration)
     if card['outcome'] == 'passed':
         p.require(set(card['files']) == {'quality.json','evidently.json','evidently.html'},'window_artifact_mismatch')
         current = numeric_rows([dict(item['features'],score=item['score']) for event in selected for item in event['candidates']])
@@ -211,6 +270,19 @@ def monitoring_decisions(spec, loaded, calibration, card, selected):
         p.require(p.canonical(result) == p.canonical(card['drift']),'window_drift_decision_mismatch')
     else:
         p.require(set(card['files']) == {'quality.json'} and card['drift'] == {'status':'undefined','detected':None},'undefined_window_artifact_mismatch')
+
+
+def verified_calibration(spec, loaded, repository):
+    calibration = document(Path(spec['calibration'])/'calibration.json',spec['calibration_sha256'])
+    checked_files(spec['calibration'],calibration['files'])
+    config=loaded['config'];runtime=calibration['runtime']
+    p.require(calibration['outcome'] == 'passed' and calibration['reference_sha256'] == spec['reference_sha256']
+              and calibration['config_sha256'] == loaded['config_sha']
+              and calibration['columns'] == config['columns'] and calibration['method'] == config['method']
+              and p.canonical(calibration['drift_share']) == p.canonical(config['drift_share']), 'calibration_binding_mismatch')
+    algorithm=verified_monitoring_runtime(runtime,spec['monitoring_sources'],repository)
+    calibration_decisions(spec,loaded,calibration)
+    return calibration,effective_rule_sha256(config,calibration,runtime,algorithm)
 
 
 def verify_window(spec, observed, *, reader=None, source_repository):
@@ -224,18 +296,8 @@ def verify_window(spec, observed, *, reader=None, source_repository):
               and card['evidence_scope'] == 'demo_only' and card['test_read'] is False, 'invalid_window_card')
     checked_files(spec['window'],card['files'])
     p.require({path.name for path in Path(spec['window']).iterdir()} == set(card['files']) | {'window.json'}, 'unexpected_window_files')
-    runtime = card['runtime']; source = runtime['source_git_sha']
-    p.require(source in spec['monitoring_sources'] and re.fullmatch(r'[0-9a-f]{40}',source), 'unapproved_monitoring_source')
-    for name in ('drift.py','feedback.py','quality.py'):
-        blob = subprocess.run(['git','show',source+':src/ats_mlops/monitoring/'+name],cwd=source_repository,
-                              capture_output=True,check=True).stdout
-        p.require(worker.sha(blob) == runtime['code_sha256'][name], 'monitoring_source_mismatch')
-    lock = subprocess.run(['git','show',source+':requirements-monitoring.lock'],cwd=source_repository,
-                          capture_output=True,check=True).stdout
-    p.require(worker.sha(lock) == runtime['monitoring_lock_sha256'] and runtime['python'].startswith('3.11.'), 'monitoring_runtime_mismatch')
-    calibration = document(Path(spec['calibration'])/'calibration.json',spec['calibration_sha256'])
-    checked_files(spec['calibration'],calibration['files'])
-    p.require(calibration['outcome'] == 'passed' and calibration['runtime'] == runtime
+    calibration,effective_sha = verified_calibration(spec,loaded,source_repository)
+    p.require(calibration['runtime'] == card['runtime']
               and calibration['reference_sha256'] == card['reference_sha256'] == spec['reference_sha256']
               and calibration['config_sha256'] == card['config_sha256'] == loaded['config_sha']
               and calibration['columns'] == config['columns'] and calibration['method'] == config['method']
@@ -272,6 +334,7 @@ def verify_window(spec, observed, *, reader=None, source_repository):
                   and card['drift']['drift_share'] == calibration['drift_share'], 'window_drift_config_mismatch')
     monitoring_decisions(spec,loaded,calibration,card,selected)
     reference['_config_sha256'] = loaded['config_sha']
+    reference['_effective_config_sha256'] = effective_sha
     binding = reference_binding(reference,spec['reference_sha256'],spec['bundle'],observed)
     evidence = p.WindowEvidence(card['window_id'],start,end,binding.cohort,spec['window_sha256'],
                                 counts['pairs'],counts['vacancies'],card['drift']['detected'],True)

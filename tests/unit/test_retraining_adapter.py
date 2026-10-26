@@ -16,7 +16,7 @@ import unittest
 from unittest.mock import patch
 
 from ats_mlops.monitoring import policy as p, policy_worker as worker
-from ats_mlops.monitoring.retraining import AirflowAPI, NativePolicy, candidate_conf, file_sha, monitoring_decisions, reference_binding, save_candidate_export, semantic_labelset
+from ats_mlops.monitoring.retraining import AirflowAPI, NativePolicy, candidate_conf, effective_rule_sha256, file_sha, monitoring_decisions, reference_binding, save_candidate_export, semantic_labelset
 from ats_mlops.monitoring.retraining_batch import HostBatch, execution_plan
 from tests.unit.test_retraining_policy import START,HOUR,MINUTE,REFERENCE,MODEL,h,window,approval
 
@@ -172,6 +172,90 @@ class AdapterTests(unittest.TestCase):
         changed=deepcopy(calibration);changed['threshold']=.2
         with self.assertRaisesRegex(p.PolicyError,'calibration_selection_mismatch'):
             monitoring_decisions(spec,loaded,changed,card,selected)
+
+    def test_effective_threshold_seals_windows_and_reference_but_excludes_new_model_stats(self):
+        from ats_mlops.monitoring.drift import normalize_evidently
+        from ats_mlops.monitoring.feedback import NUMERIC
+        from tests.unit.test_retraining_policy import execution,candidate,active
+        config={'method':'wasserstein','drift_share':.5,'threshold_grid':[.1,.2],'calibration_seed':7,
+                'columns':list(NUMERIC),'constant_policy':'exclude_unchanged; changed_or_all_constant_is_undefined',
+                'minimum_pairs':200,'minimum_vacancies':10}
+        runtime={'python':'3.11.17','monitoring_lock_sha256':h('lock'),'packages':{'evidently':'0.7.23'}}
+        algorithm=h('numeric-algorithm');rules=[]
+        for label,chosen,control_distance in (('A',.1,.05),('B',.2,.15)):
+            base=self.root/label;observations=[];files={}
+            def raw(threshold,distance):
+                metrics=[{'metric_name':'ValueDrift','config':{'column':name,'method':'wasserstein','threshold':threshold},'value':distance} for name in NUMERIC]
+                metrics.append({'metric_name':'DriftedColumnsCount','value':{'share':float(distance>=threshold),'count':len(NUMERIC) if distance>=threshold else 0}})
+                return {'metrics':metrics,'tests':[{'status':'FAIL' if distance>=threshold else 'SUCCESS'}]}
+            for index,threshold in enumerate(config['threshold_grid']):
+                results={}
+                for name,distance in (('control',control_distance),('permuted_control',control_distance),('shifted',.9)):
+                    stem=f'threshold-{index}-{name}/evidently';path=base/'calibration'/(stem+'.json');path.parent.mkdir(parents=True,exist_ok=True)
+                    path.write_text(json.dumps(raw(threshold,distance)));files.update({stem+'.json':h('json'),stem+'.html':h('html')})
+                    results[name]=normalize_evidently(raw(threshold,distance),list(NUMERIC),config,threshold,{})
+                observations.append({'threshold':threshold,'results':results})
+                if threshold==chosen:break
+            calibration={'constant_columns':{},'seed':7,'threshold':chosen,'method':'wasserstein','drift_share':.5,
+                'observations':observations,'files':files,'reference_sha256':h(label+'-ref'),'runtime':runtime}
+            path=base/'window/evidently.json';path.parent.mkdir();path.write_text(json.dumps(raw(chosen,.9)))
+            card={'outcome':'passed','files':dict.fromkeys(('quality.json','evidently.json','evidently.html'),h('file')),
+                  'drift':normalize_evidently(raw(chosen,.9),list(NUMERIC),config,chosen,{})}
+            monitoring_decisions({'calibration':str(base/'calibration'),'window':str(base/'window')},
+                {'config':config,'reference_matrices':{'train':[dict.fromkeys(NUMERIC,x) for x in (.2,.4)]}},calibration,card,
+                [{'candidates':[{'features':{name:.3 for name in NUMERIC if name!='score'},'score':.3}]}])
+            rules.append(effective_rule_sha256(config,calibration,runtime,algorithm))
+        self.assertNotEqual(*rules)
+        cohort=replace(REFERENCE.cohort,effective_config_sha256=rules[0]);reference=replace(REFERENCE,cohort=cohort)
+        store=p.PolicyStore(self.root/'rules.sqlite3',reference)
+        store.observe(window(0,cohort=cohort),now=START+HOUR)
+        with self.assertRaisesRegex(p.PolicyError,'reference_mismatch'):
+            store.observe(window(1,cohort=replace(cohort,effective_config_sha256=rules[1])),now=START+2*HOUR)
+        self.assertEqual(0,store.snapshot()['requests']);self.assertEqual(1,store.snapshot()['windows'])
+        result=store.observe(window(1,cohort=cohort),now=START+2*HOUR);request_id=result['request_id']
+        store.bind_execution(request_id,execution(),now=START+2*HOUR)
+        store.accept_labels(request_id,approval(),now=START+2*HOUR+MINUTE)
+        event=store.pending_outbox()[0];store.ack_dispatch(event['event_id'],h('ack'),now=START+3*HOUR)
+        store.record_candidate(request_id,candidate(),now=START+3*HOUR)
+        target=active();target=replace(target,reference=replace(target.reference,cohort=replace(target.reference.cohort,effective_config_sha256=rules[1])))
+        with self.assertRaisesRegex(p.PolicyError,'active_target_mismatch'):
+            store.begin_reference_update(request_id,target,now=START+4*HOUR)
+        same_rule=deepcopy(calibration);same_rule.update(threshold=.1,reference_sha256=h('new-model-reference'),observations=[],files={})
+        self.assertEqual(rules[0],effective_rule_sha256(config,same_rule,runtime,algorithm))
+        target=replace(target,reference=replace(target.reference,cohort=replace(target.reference.cohort,effective_config_sha256=rules[0])))
+        store.begin_reference_update(request_id,target,now=START+4*HOUR)
+        event=next(event for event in store.pending_outbox() if event['kind']=='reference')
+        bad=replace(target,reference=replace(target.reference,cohort=replace(target.reference.cohort,effective_config_sha256=rules[1])))
+        with self.assertRaisesRegex(p.PolicyError,'active_target_changed'):
+            store.reconcile_reference(event['event_id'],bad,now=START+4*HOUR+MINUTE)
+        store.reconcile_reference(event['event_id'],target,now=START+4*HOUR+MINUTE)
+        self.assertEqual('active',store.request(request_id)['state'])
+        for key,value in (('threshold',True),('drift_share',True)):
+            changed=deepcopy(same_rule);changed[key]=value
+            with self.assertRaisesRegex(p.PolicyError,'invalid_effective_monitoring_rule'):
+                effective_rule_sha256(config,changed,runtime,algorithm)
+        integer=deepcopy(config);integer['threshold_grid']=[1]
+        floating=deepcopy(config);floating['threshold_grid']=[1.0]
+        self.assertNotEqual(effective_rule_sha256(integer,dict(same_rule,threshold=1),runtime,algorithm),
+                            effective_rule_sha256(floating,dict(same_rule,threshold=1.0),runtime,algorithm))
+
+    def test_host_reference_changed_effective_rule_rejects_before_receipt_or_intent(self):
+        request_id=self.queued(); calls=[];store=p.PolicyStore(self.root/'policy.sqlite3')
+        class Native:
+            def call(inner,action,value):
+                calls.append(action)
+                if action=='request':return store.request(request_id)
+                raise AssertionError('mutation reached')
+        batch=HostBatch(native=Native(),airflow=None,release_state=self.root/'release',artifacts=self.root/'artifacts',
+            source_git_sha='a'*40,source_repository=self.root)
+        with patch('ats_mlops.monitoring.drift.configuration',return_value=({},REFERENCE.cohort.config_sha256)), \
+             patch('ats_mlops.monitoring.drift.load_reference',return_value=({},{})), \
+             patch('ats_mlops.monitoring.retraining_batch.active_state',return_value=nullcontext({})), \
+             patch('ats_mlops.monitoring.retraining_batch.verified_calibration',return_value=({},h('other-threshold'))):
+            with self.assertRaisesRegex(p.PolicyError,'reference_effective_rule_changed'):
+                batch.update_reference(request_id,self.root,h('reference'),self.root,config=self.root/'config',
+                    calibration=self.root/'calibration',calibration_sha256=h('calibration'),monitoring_sources=['a'*40])
+        self.assertEqual(['request'],calls)
 
     def test_native_helper_cannot_accept_raw_window_or_active_claim(self):
         with self.assertRaises(p.PolicyError):
