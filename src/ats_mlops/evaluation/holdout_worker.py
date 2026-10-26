@@ -74,11 +74,17 @@ def decode(content):
                       parse_constant=lambda _: (_ for _ in ()).throw(WorkerError("nonfinite_json")))
 
 
-def read_json(path):
+def read_content(path):
     path = Path(path)
     require(path.is_file() and not path.is_symlink(), "invalid_json_path")
     with path.open("rb") as stream:
-        return decode(stream.read(MAX_BYTES + 1))
+        content = stream.read(MAX_BYTES + 1)
+    require(len(content) <= MAX_BYTES, "input_size_limit")
+    return content
+
+
+def read_json(path):
+    return decode(read_content(path))
 
 
 @contextmanager
@@ -362,15 +368,34 @@ def validate_numeric(ready, truth, numeric):
                             for key in ("baseline_seconds", "model_seconds")) for row in latencies), "invalid_saved_latency")
 
 
+def numeric_seal(ready, truth, numeric):
+    """Freeze the computed bytes while still in memory, BEFORE publishing them."""
+    return {"schema_version": 1, "phase": "scores_frozen", "worker_sha256": worker_identity(),
+        "ready_sha256": sha(canonical(ready)), "truth_sha256": sha(canonical(truth)),
+        "numeric_sha256": sha(canonical(numeric)), "model_artifact_sha256": numeric["model_artifact_sha256"],
+        "baseline_artifact_sha256": numeric["baseline_artifact_sha256"],
+        "source_tree_sha256": ready["receipt"]["source_tree_sha256"],
+        "rows": len(truth["rows"]), "groups": len(numeric["groups"]),
+        **{key: truth[key] for key in ("snapshot_sha256", "pair_ids_sha256", "ground_truth_sha256")}}
+
+
 def recover(output):
     """Finish only complete persisted numeric results; never load or score again."""
     output = Path(output)
     require(output.is_dir() and not output.is_symlink(), "unsafe_output_directory")
-    ready, truth, numeric = (read_json(output / name) for name in ("ready.json", "truth.json", "numeric.json"))
+    # No seal is ever synthesized here: a crash before sealing is unknown.
+    seal_bytes = read_content(output / "score-seal.json")
+    seal = decode(seal_bytes)
+    require(seal_bytes == canonical(seal), "noncanonical_score_seal")
+    contents = {name: read_content(output / (name + ".json")) for name in ("ready", "truth", "numeric")}
+    ready, truth, numeric = (decode(contents[name]) for name in ("ready", "truth", "numeric"))
     validate_numeric(ready, truth, numeric)
+    require(canonical(seal) == canonical(numeric_seal(ready, truth, numeric))
+            and all(sha(content) == seal[name + "_sha256"] for name, content in contents.items()), "numeric_score_seal_changed")
     commit = {"schema_version": 1, "status": "completed", "worker_sha256": worker_identity(),
-        "ready_sha256": sha((output / "ready.json").read_bytes()), "truth_sha256": sha((output / "truth.json").read_bytes()),
-        "numeric_sha256": sha((output / "numeric.json").read_bytes()), "rows": len(truth["rows"]), "groups": len(numeric["groups"]),
+        "ready_sha256": seal["ready_sha256"], "truth_sha256": seal["truth_sha256"],
+        "numeric_sha256": seal["numeric_sha256"], "score_seal_sha256": sha(seal_bytes),
+        "rows": len(truth["rows"]), "groups": len(numeric["groups"]),
         **{key: truth[key] for key in ("snapshot_sha256", "pair_ids_sha256", "ground_truth_sha256")}}
     if (output / "commit.json").exists():
         require(canonical(read_json(output / "commit.json")) == canonical(commit), "numeric_commit_changed")
@@ -390,6 +415,7 @@ def serve(session, output, input_stream, output_stream):
     publish(output / "truth.json", truth)  # immutable numeric GT before either scorer
     numeric = evaluate(session, rows, truth)
     validate_numeric(session.ready, truth, numeric)
+    publish(output / "score-seal.json", numeric_seal(session.ready, truth, numeric))
     publish(output / "numeric.json", numeric)
     completed = recover(output)
     output_stream.write(canonical(completed).decode());output_stream.flush()

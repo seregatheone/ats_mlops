@@ -183,8 +183,54 @@ class HoldoutWorkerTests(unittest.TestCase):
     def saved(self):
         output=self.root/'out';output.mkdir();payload=message();batch,truth=w.validate_snapshot(payload)
         session=toy_session([]);numeric=w.evaluate(session,batch,truth,clock=lambda:1.)
-        for name,value in [('ready.json',session.ready),('truth.json',truth),('numeric.json',numeric)]:w.publish(output/name,value)
+        for name,value in [('ready.json',session.ready),('truth.json',truth),
+                           ('score-seal.json',w.numeric_seal(session.ready,truth,numeric)),('numeric.json',numeric)]:
+            w.publish(output/name,value)
         return output,numeric
+
+    def test_crash_before_first_commit_then_valid_score_tamper_cannot_self_seal(self):
+        output=self.root/'out';output.mkdir();calls=[];session=toy_session(calls,output)
+        with patch.object(w,'recover',side_effect=RuntimeError('toy crash before commit')):
+            with self.assertRaises(RuntimeError):w.serve(session,output,io.BytesIO(w.canonical(message())),io.StringIO())
+        self.assertTrue((output/'score-seal.json').exists());self.assertFalse((output/'commit.json').exists())
+        numeric=w.read_json(output/'numeric.json');numeric['rows'][0]['model_score']=.01
+        (output/'numeric.json').write_bytes(w.canonical(numeric))
+        before=list(calls)
+        with patch.object(w,'prepare',side_effect=AssertionError('model load')),patch.object(w,'evaluate',side_effect=AssertionError('rescore')):
+            with self.assertRaises(w.WorkerError):w.recover(output)
+        self.assertEqual(before,calls);self.assertFalse((output/'commit.json').exists())
+
+    def test_missing_seal_is_unknown_even_for_complete_valid_numeric(self):
+        output,_=self.saved();(output/'score-seal.json').unlink()
+        with self.assertRaises(w.WorkerError):w.recover(output)
+        self.assertFalse((output/'score-seal.json').exists());self.assertFalse((output/'commit.json').exists())
+
+    def test_crash_after_seal_before_numeric_cannot_rescore_or_complete(self):
+        output=self.root/'out';output.mkdir();calls=[];session=toy_session(calls,output);publish=w.publish
+        def fail_numeric(path,value):
+            if Path(path).name=='numeric.json':
+                self.assertTrue((output/'score-seal.json').exists())
+                raise KeyboardInterrupt
+            return publish(path,value)
+        with patch.object(w,'publish',side_effect=fail_numeric):
+            with self.assertRaises(KeyboardInterrupt):w.serve(session,output,io.BytesIO(w.canonical(message())),io.StringIO())
+        self.assertFalse((output/'numeric.json').exists());self.assertFalse((output/'commit.json').exists())
+        with patch.object(w,'evaluate',side_effect=AssertionError('rescore')):
+            with self.assertRaises(w.WorkerError):w.recover(output)
+
+    def test_exact_numeric_bytes_and_existing_seal_provenance_are_required(self):
+        output,_=self.saved();original=(output/'numeric.json').read_bytes()
+        (output/'numeric.json').write_bytes(original+b'\n')
+        with self.assertRaises(w.WorkerError):w.recover(output)
+        (output/'numeric.json').write_bytes(original);seal=w.read_json(output/'score-seal.json')
+        for field,value in [('numeric_sha256','0'*64),('worker_sha256','0'*64),('model_artifact_sha256','0'*64),
+                            ('truth_sha256','0'*64),('rows',True),('phase','completed')]:
+            changed=deepcopy(seal);changed[field]=value;(output/'score-seal.json').write_bytes(w.canonical(changed))
+            with self.subTest(field=field),self.assertRaises(w.WorkerError):w.recover(output)
+            self.assertFalse((output/'commit.json').exists())
+        (output/'score-seal.json').write_bytes(w.canonical(seal));result=w.recover(output)
+        self.assertEqual(w.sha((output/'score-seal.json').read_bytes()),w.read_json(output/'commit.json')['score_seal_sha256'])
+        self.assertEqual('completed',result['status'])
 
     def test_recover_complete_numeric_only_without_model_loader_or_scorer(self):
         output,_=self.saved()
