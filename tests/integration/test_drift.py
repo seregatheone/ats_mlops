@@ -45,6 +45,7 @@ def main():
     args = parser.parse_args()
     out = args.output.resolve();out.mkdir(parents=True, exist_ok=False)
     (out / "monitoring.yaml").write_bytes((ROOT / "configs/monitoring.yaml").read_bytes())
+    write(out / "limits.json", {"services": {"ranking": {"cpus": 1, "mem_limit": "1536m"}}})
     assert not subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=all"], cwd=ROOT)
     source = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     project = "ats-t16-" + uuid.uuid4().hex[:10]
@@ -112,7 +113,6 @@ def main():
         numeric("calibrate", {"reference": str(out / "reference"), "reference_sha256": reference_sha, "config": str(out / "monitoring.yaml")}, "calibration")
         calibration = read_json(out / "calibration/calibration.json")
         checks["real_evidently_json_html_control_shift"] = calibration["outcome"] == "passed" and len(calibration["files"]) >= 6
-        write(out / "limits.json", {"services": {"ranking": {"cpus": 1, "mem_limit": "1536m"}}})
         compose_run("up", "-d", "--no-build", "--wait", "--wait-timeout", "60")
         container = subprocess.check_output([*compose, "ps", "-q", "ranking"], cwd=ROOT, env=env, text=True).strip()
         for _ in range(60):
@@ -160,11 +160,9 @@ def main():
             for index, candidate in enumerate(event["candidates"]):
                 labels.append({"feedback_event_id": event["request_id"] + "-" + str(index), "request_id": event["request_id"],
                     "vacancy_id": event["vacancy_id"], "candidate_id": candidate["candidate_id"], "model_version": event["model_version"],
-                    "relevance": int(index == 0), "event_time": event["event_time"], "label_source": "independent-fixture-v1", "label_revision": 1})
-        # Fixture judgments are declared synthetic, manually selected by candidate ID,
-        # never copied from model score/rank as truth.
-        for label in labels:
-            label["relevance"] = int(label["candidate_id"] == min(c["candidate_id"] for e in events if e["request_id"] == label["request_id"] for c in e["candidates"]))
+                    "relevance": int(candidate["candidate_id"] == min(c["candidate_id"] for c in event["candidates"])),
+                    "event_time": event["event_time"], "label_source": "independent-fixture-v1", "label_revision": 1})
+        # Synthetic judgments use candidate ID only, never model score/rank as truth.
         ledger = out / "feedback.sqlite3"
         admit_feedback(out / "export", [], out / "feedback-empty", ["independent-fixture-v1", "human-review-v1"], ledger=ledger)
         assert assess(events, [], stamp(), ["independent-fixture-v1", "human-review-v1"])["quality"] is None

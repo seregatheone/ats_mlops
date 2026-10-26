@@ -26,8 +26,10 @@ CANONICAL_PARTITIONS = {"train": "adef4de05783391cef598098b8886221bf4d8f28d9e296
                         "validation": "1cdd5f3189ba4241f5bb2399f33dac47f6b38e21a04819aa0c07900d1e29e0a8"}
 
 
-def configuration(path):
-    value = read_json(path)
+def configuration(path, *, with_sha=False):
+    require(not Path(path).is_symlink(), "input_symlink")
+    content = Path(path).read_bytes()
+    value = decode_json(content)
     require(isinstance(value, dict) and set(value) == CONFIG_KEYS and type(value["schema_version"]) is int
             and value["schema_version"] == 1, "invalid_monitoring_config")
     require(value["method"] == "wasserstein" and value["columns"] == list(NUMERIC), "unsupported_drift_schema")
@@ -42,7 +44,7 @@ def configuration(path):
             and set(value["label_sources"]) <= {"independent-fixture-v1", "human-review-v1"}
             and len(set(value["label_sources"])) == len(value["label_sources"]), "unapproved_label_sources")
     require(value["scope"] == "demo_only" and value["constant_policy"] == "exclude_unchanged; changed_or_all_constant_is_undefined", "unsupported_monitoring_scope")
-    return value
+    return (value, sha(content)) if with_sha else value
 
 
 def numeric_rows(rows):
@@ -164,7 +166,7 @@ def load_reference(directory, expected_sha):
 
 
 def calibrate(reference, reference_sha, config_path, output):
-    config = configuration(config_path)
+    config, config_sha = configuration(config_path, with_sha=True)
     card, matrices = load_reference(reference, reference_sha)
     require(all(card["matrices"][role]["pairs"] >= config["minimum_pairs"] and card["matrices"][role]["groups"] >= config["minimum_vacancies"]
                 for role in ("train", "validation")), "insufficient_calibration_data")
@@ -199,7 +201,7 @@ def calibrate(reference, reference_sha, config_path, output):
         require(chosen is not None, "calibration_failed")
         files = {path.relative_to(root).as_posix(): sha(path.read_bytes()) for path in root.rglob("*") if path.is_file()}
         result = {"schema_version": 1, "outcome": "passed", "evidence_scope": "demo_only", "reference_sha256": reference_sha,
-                  "config_sha256": sha(Path(config_path).read_bytes()), "method": config["method"], "threshold": chosen,
+                  "config_sha256": config_sha, "method": config["method"], "threshold": chosen,
                   "drift_share": config["drift_share"], "columns": list(NUMERIC), "constant_columns": fixed,
                   "seed": config["calibration_seed"], "observations": observations, "files": files,
                   "scenario": "canonical train reference; validation control/permutation; explicit synthetic numeric perturbation, not model truth",
@@ -209,10 +211,12 @@ def calibrate(reference, reference_sha, config_path, output):
 
 
 def runtime():
+    source_sha = os.environ.get("ATS_MONITORING_SOURCE_SHA")
+    require(isinstance(source_sha, str) and re.fullmatch(r"[0-9a-f]{40}", source_sha), "missing_monitoring_source_identity")
     return {"python": platform.python_version(), "packages": {name: importlib.metadata.version(name)
             for name in ("evidently", "pandas", "numpy", "scipy", "scikit-learn", "plotly")},
             "monitoring_lock_sha256": sha(Path("/opt/requirements-monitoring.lock").read_bytes()),
-            "source_git_sha": os.environ.get("ATS_MONITORING_SOURCE_SHA"),
+            "source_git_sha": source_sha,
             "code_sha256": {name: sha(Path(__file__).with_name(name).read_bytes()) for name in ("drift.py", "feedback.py", "quality.py")}}
 
 
@@ -257,7 +261,7 @@ try:
   assert all(math.isfinite(v) for v in row.values());rows.append(row)
  for n,module in list(sys.modules.items()):
   if n=='ats_mlops' or n.startswith('ats_mlops.'):assert pathlib.Path(module.__file__).resolve().is_relative_to(artifact/'code')
- state={'version':transformer.feature_version_,'vocabulary':sorted(transformer.vectorizer_.vocabulary_.items()),'idf':transformer.vectorizer_.idf_.tolist(),'parameters':record['params']['features']}
+ state={'version':transformer.feature_version_,'vocabulary':sorted((str(k),int(v)) for k,v in transformer.vectorizer_.vocabulary_.items()),'idf':transformer.vectorizer_.idf_.tolist(),'parameters':record['params']['features']}
  print(json.dumps({'outcome':'passed','rows':rows,'receipt':{'isolated':True,'bytecode_disabled':True,'credentials':False,'network':False,'training_checkout_mounted':False,'model_sha256':record['model']['sha256'],'feature_state_sha256':sha(canonical(state))}},allow_nan=False))
 except Exception as error:
  print(json.dumps({'outcome':'failed','reason':'isolated_feature_worker_failed','error_type':type(error).__name__}));raise SystemExit(1)
@@ -353,12 +357,12 @@ def report_window(request, output):
     require(set(request) == {"reference", "reference_sha256", "export", "feedback", "calibration", "calibration_sha256", "config", "start", "end", "cutoff"}, "invalid_window_request")
     start, end, cutoff = (utc(request[key]) for key in ("start", "end", "cutoff"))
     require(start < end <= cutoff, "invalid_window_interval")
-    config = configuration(request["config"])
+    request = dict(request, start=start.isoformat(), end=end.isoformat(), cutoff=cutoff.isoformat())
+    config, config_sha = configuration(request["config"], with_sha=True)
     card, reference = load_reference(request["reference"], request["reference_sha256"])
     calibration_root = Path(request["calibration"])
     calibration_bytes = checked_bytes(calibration_root, "calibration.json")
     calibration = decode_json(calibration_bytes)
-    config_sha = sha(Path(request["config"]).read_bytes())
     require(sha(calibration_bytes) == request["calibration_sha256"] and calibration["outcome"] == "passed"
             and calibration["reference_sha256"] == request["reference_sha256"] and calibration["config_sha256"] == config_sha
             and calibration["columns"] == list(NUMERIC) and calibration["runtime"] == runtime()
