@@ -499,7 +499,7 @@ class PolicyStore:
         require(type(ambiguous) is bool, "invalid_failure_flag")
         with self._transaction(now) as (db, meta, now):
             request = self._request(db, request_id)
-            if request["state"] == "terminal_failed" and request["failure"] == {"ambiguous": ambiguous}:
+            if request["state"] in ("terminal_failed", "recovery_required") and request["failure"] == {"ambiguous": ambiguous}:
                 return request
             require(request["state"] in ("queued", "candidate_running", "recovery_required"), "failure_transition_invalid")
             request["state"] = "recovery_required" if ambiguous else "terminal_failed"

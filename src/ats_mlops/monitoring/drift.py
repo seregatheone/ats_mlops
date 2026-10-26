@@ -125,15 +125,59 @@ def normalize_evidently(value, columns, config, threshold, fixed):
             "method": config["method"], "threshold": threshold, "drift_share": config["drift_share"]}
 
 
+def approved_receipt(value):
+    """Validate the immutable demo approval, independently of mutable ACTIVE."""
+    from . import policy as protocol
+    from .policy_worker import typed
+    require(isinstance(value, dict) and set(value) == {"approval", "proof"}, "invalid_dataset_approval")
+    approval = typed(protocol.DatasetApproval, value["approval"])
+    proof = value["proof"]
+    require(isinstance(proof, dict) and set(proof) == {"kind", "actor", "approved_at", "previous_labelset_sha256",
+            "labelset_sha256", "new_label_count", "manifest_sha256", "bundle_sha256"}
+            and approval.approved and approval.independent and approval.label_source == "approved_synthetic_fixture"
+            and approval.new_label_count > 0 and approval.labelset_sha256 != approval.parent_labelset_sha256
+            and approval.approval_sha256 == protocol.digest(proof) and proof["kind"] == "approved_synthetic_teacher_v2"
+            and proof["actor"] == approval.actor and proof["approved_at"] == protocol.stamp(approval.approved_at)
+            and proof["manifest_sha256"] == approval.manifest_sha256
+            and proof["bundle_sha256"] == approval.bundle_inventory_sha256
+            and proof["labelset_sha256"] == approval.labelset_sha256
+            and proof["previous_labelset_sha256"] == approval.parent_labelset_sha256
+            and type(proof["new_label_count"]) is int and proof["new_label_count"] == approval.new_label_count,
+            "reference_approval_mismatch")
+    return approval
+
+
 def load_reference(directory, expected_sha):
     root = Path(directory)
     content = checked_bytes(root, "reference.json")
     require(sha(content) == expected_sha, "reference_hash_mismatch")
     value = decode_json(content)
-    require(isinstance(value, dict) and set(value) == {"schema_version", "evidence_scope", "columns", "model", "matrices", "data", "feature_worker", "test_read", "limitations"}
-            and type(value["schema_version"]) is int and value["schema_version"] == 2 and value["columns"] == list(NUMERIC)
+    base_keys = {"schema_version", "evidence_scope", "columns", "model", "matrices", "data", "feature_worker", "test_read", "limitations"}
+    require(isinstance(value, dict) and type(value.get("schema_version")) is int
+            and value["schema_version"] in (2, 3)
+            and set(value) == (base_keys if value["schema_version"] == 2 else base_keys | {"admission"}) and value["columns"] == list(NUMERIC)
             and value["evidence_scope"] == "demo_only" and value["test_read"] is False, "reference_schema_mismatch")
     model, data, worker = value["model"], value["data"], value["feature_worker"]
+    if value["schema_version"] == 3:
+        admitted = value["admission"]
+        require(set(admitted) == {"approval_file_sha256", "guard"}, "invalid_reference_admission")
+        approval_bytes = checked_bytes(root, "dataset-approval.json")
+        require(sha(approval_bytes) == admitted["approval_file_sha256"], "reference_approval_changed")
+        approval = approved_receipt(decode_json(approval_bytes))
+        guard = admitted["guard"]
+        require(set(guard) == {"model_sha256", "manifest_sha256", "admission_sha256", "partition_sha256",
+                "policy_sha256", "root_policy_sha256", "guard_report_sha256", "read_partitions", "test_read", "image_id", "bootstrap_sha256"}
+                and guard["model_sha256"] == model["model_sha256"] and guard["manifest_sha256"] == data["manifest_sha256"] == approval.manifest_sha256
+                and guard["admission_sha256"] == data["admission_sha256"] == approval.admission_sha256
+                and guard["policy_sha256"] == data["reservation_policy_sha256"] == approval.reservation_policy_sha256
+                and data["bundle_sha256"] == approval.bundle_inventory_sha256
+                and guard["partition_sha256"] == data["partition_sha256"] and guard["read_partitions"] == ["train", "validation"]
+                and guard["test_read"] is False and guard["image_id"] == worker["image_id"]
+                and guard["bootstrap_sha256"] == sha(ADMISSION_BOOTSTRAP.encode())
+                and re.fullmatch(r"[0-9a-f]{64}", guard["guard_report_sha256"])
+                and model["lineage_status"] == "guarded_schema2", "reference_guard_mismatch")
+        from ats_mlops.data.reservation import ROOT_POLICY_SHA256
+        require(guard["root_policy_sha256"] == ROOT_POLICY_SHA256, "reference_root_policy_mismatch")
     model_hashes = {"release_manifest_sha256", "release_check_sha256", "model_sha256", "feature_state_sha256", "feature_schema_sha256", "run_manifest_sha256"}
     require(set(model) == model_hashes | {"model_name", "model_version", "release_id", "lineage_status"}
             and identifier(model["model_name"]) and identifier(model["release_id"]) and version(model["model_version"])
@@ -141,7 +185,10 @@ def load_reference(directory, expected_sha):
             and model["lineage_status"] in ("guarded_schema2", "legacy_engineering_only"), "invalid_reference_model")
     require(set(data) == {"manifest_sha256", "admission_sha256", "bundle_sha256", "reservation_policy_sha256", "partition_sha256", "schema_version", "read_partitions"}
             and type(data["schema_version"]) is int and data["schema_version"] == 2
-            and data["read_partitions"] == ["train", "validation"] and data["partition_sha256"] == CANONICAL_PARTITIONS
+            and data["read_partitions"] == ["train", "validation"]
+            and set(data["partition_sha256"]) == {"train", "validation"}
+            and all(isinstance(x, str) and re.fullmatch(r"[0-9a-f]{64}", x) for x in data["partition_sha256"].values())
+            and (value["schema_version"] == 3 or data["partition_sha256"] == CANONICAL_PARTITIONS)
             and all(isinstance(data[key], str) and re.fullmatch(r"[0-9a-f]{64}", data[key])
                     for key in ("manifest_sha256", "admission_sha256", "bundle_sha256", "reservation_policy_sha256")), "invalid_reference_data")
     require(set(worker) == {"isolated", "bytecode_disabled", "credentials", "network", "training_checkout_mounted", "model_sha256", "feature_state_sha256", "image_id", "bootstrap_sha256"}
@@ -270,6 +317,73 @@ except Exception as error:
 '''
 
 
+ADMISSION_BOOTSTRAP = r'''
+import hashlib,importlib.util,importlib.metadata,json,os,pathlib,sys
+def canonical(x):return (json.dumps(x,sort_keys=True,ensure_ascii=False,separators=(',',':'),allow_nan=False)+'\n').encode()
+def sha(x):return hashlib.sha256(x).hexdigest()
+try:
+ assert sys.flags.isolated and sys.dont_write_bytecode and importlib.util.find_spec('ats_mlops') is None
+ assert not any(n=='ats_mlops' or n.startswith('ats_mlops.') for n in sys.modules)
+ assert not any(os.environ.get(n) for n in ('MLFLOW_TRACKING_URI','AWS_ACCESS_KEY_ID','AWS_SECRET_ACCESS_KEY','AWS_SESSION_TOKEN'))
+ record=json.loads(pathlib.Path('/input/request.json').read_text());artifact=pathlib.Path('/artifact');bundle=pathlib.Path('/bundle')
+ files={}
+ for path in artifact.rglob('*'):
+  assert not path.is_symlink() and '__pycache__' not in path.parts and path.suffix.lower() not in ('.pyc','.pyo')
+  if path.is_file():files[path.relative_to(artifact).as_posix()]=sha(path.read_bytes())
+ assert files==record['model']['files'] and sha(canonical(files))==record['model']['sha256']
+ source={n.removeprefix('code/ats_mlops/'):v for n,v in files.items() if n.startswith('code/ats_mlops/')}
+ assert source==record['source_sha256'] and sha(canonical(source))==record['source_tree_sha256']
+ assert sys.version.split()[0]==record['environment']['python']
+ assert sha(pathlib.Path('/opt/requirements-ml.lock').read_bytes())==record['environment']['lockfile_sha256']
+ for n,v in record['environment']['packages'].items():assert importlib.metadata.version(n)==v
+ import mlflow.sklearn
+ assert importlib.util.find_spec('ats_mlops') is None
+ model=mlflow.sklearn.load_model(str(artifact))
+ from ats_mlops.data.validate import require_valid
+ from ats_mlops.data.dataset import load_manifest
+ assert sha((bundle/'data_manifest.json').read_bytes())==record['data_manifest_sha256']
+ rows=require_valid(bundle/'data_manifest.json',pathlib.Path('/tmp/reference-guard'),admission_report=bundle/'admission/data-admission.json')
+ manifest=load_manifest(bundle/'data_manifest.json');guard=json.loads(pathlib.Path('/tmp/reference-guard/data-training.json').read_text())
+ partitions={name:sha(b''.join(canonical(row) for row in part)) for name,part in rows.items()}
+ assert set(partitions)=={'train','validation'} and partitions==record['data_sha256']
+ for n,module in list(sys.modules.items()):
+  if n=='ats_mlops' or n.startswith('ats_mlops.'):assert pathlib.Path(module.__file__).resolve().is_relative_to(artifact/'code')
+ result={'model_sha256':record['model']['sha256'],'manifest_sha256':guard['manifest_sha256'],
+  'admission_sha256':sha((bundle/'admission/data-admission.json').read_bytes()),'partition_sha256':partitions,
+  'policy_sha256':guard['reservation']['policy_sha256'],'root_policy_sha256':guard['reservation']['root_policy_sha256'],
+  'guard_report_sha256':sha(pathlib.Path('/tmp/reference-guard/data-training.json').read_bytes()),
+  'read_partitions':['train','validation'],'test_read':False}
+ print(json.dumps({'outcome':'passed','receipt':result}))
+except Exception as failure:
+ print(json.dumps({'outcome':'failed','reason':'reference_admission_guard_failed','type':type(failure).__name__}));raise SystemExit(1)
+'''
+
+
+def admitted_training_guard(artifact, record, bundle):
+    """Sequential pinned ML worker: real GX/combined guard, zero fit/scoring."""
+    image = record["environment"]["image"]["id"]
+    require(re.fullmatch(r"sha256:[0-9a-f]{64}", image), "invalid_feature_image")
+    with tempfile.TemporaryDirectory(prefix="ats-reference-admission-") as directory:
+        Path(directory, "request.json").write_bytes(canonical(record))
+        name = "ats-reference-guard-" + uuid.uuid4().hex[:12]
+        command = ["docker", "run", "--rm", "--name", name, "--pull=never", "--network", "none", "--read-only", "--cpus", "1", "--memory", "1536m",
+            "--user", f"{os.getuid()}:{os.getgid()}", "--workdir", "/tmp", "--tmpfs", "/tmp:rw,size=128m,mode=1777",
+            "--mount", f"type=bind,source={Path(artifact).resolve()},target=/artifact,readonly",
+            "--mount", f"type=bind,source={Path(bundle).resolve()},target=/bundle,readonly",
+            "--mount", f"type=bind,source={directory},target=/input,readonly",
+            "-e", "HOME=/tmp", "-e", "USER=ats-reference", "-e", "LOGNAME=ats-reference", "-e", "PYTHONPATH=",
+            "-e", "MLFLOW_TRACKING_URI=", "-e", "AWS_ACCESS_KEY_ID=", "-e", "AWS_SECRET_ACCESS_KEY=", "-e", "AWS_SESSION_TOKEN=",
+            "-e", "OMP_NUM_THREADS=1", "-e", "OPENBLAS_NUM_THREADS=1", "--entrypoint", "/opt/ml-venv/bin/python", image, "-I", "-B", "-c", ADMISSION_BOOTSTRAP]
+        try:
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        finally:
+            subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+        result = decode_json(completed.stdout.strip().splitlines()[-1])
+        require(completed.returncode == 0 and result["outcome"] == "passed", "reference_admission_guard_failed")
+        result["receipt"].update(image_id=image,bootstrap_sha256=sha(ADMISSION_BOOTSTRAP.encode()))
+        return result["receipt"]
+
+
 def artifact_features(artifact, record, rows):
     """Artifact-only fresh container, never a subprocess inheriting source mounts."""
     image = record["environment"]["image"]["id"]
@@ -300,8 +414,10 @@ def artifact_features(artifact, record, rows):
 
 
 def build_reference(request, output):
-    require(set(request) == {"bundle", "bundle_sha256", "package", "release_check", "release_manifest_sha256", "scope"}
-            and request["scope"] == "engineering_fixture", "invalid_reference_request")
+    base = {"bundle", "bundle_sha256", "package", "release_check", "release_manifest_sha256", "scope"}
+    approved = request.get("scope") == "approved_training"
+    require(set(request) == (base | {"dataset_approval"} if approved else base)
+            and request["scope"] in {"engineering_fixture", "approved_training"}, "invalid_reference_request")
     # All imports below are stdlib-only validators. No model is loaded into this process.
     from ats_mlops.pipeline import verify_bundle
     from ats_mlops.data.dataset import load_manifest, load_partition
@@ -318,19 +434,43 @@ def build_reference(request, output):
     policy = manifest_policy(manifest_path, manifest)
     receipt_path = bundle / "admission/data-admission.json"
     require(_valid_receipt(read_json(receipt_path), sha(manifest_path.read_bytes())), "reference_admission_mismatch")
-    partitions = {name: load_partition(manifest_path, name) for name in ("train", "validation")}
-    validate_partitions(partitions, manifest["duplicate_detection"]["threshold"], policy)
-    canonical_hashes = CANONICAL_PARTITIONS
-    require(all(manifest["artifacts"][name]["sha256"] == digest for name, digest in canonical_hashes.items()), "canonical_reference_required")
+    canonical_hashes = {name:manifest["artifacts"][name]["sha256"] for name in ("train", "validation")}
+    if not approved:
+        require(all(manifest["artifacts"][name]["sha256"] == digest for name, digest in CANONICAL_PARTITIONS.items()), "canonical_reference_required")
     package = Path(request["package"])
     released, release_sha, check_sha = load_package(package, Path(request["release_check"]))
     _, _, record = release_binding(package)
     require(release_sha == request["release_manifest_sha256"], "release_manifest_mismatch")
+    admission = None
+    if approved:
+        from .retraining import semantic_labels
+        approval_path = Path(request["dataset_approval"])
+        require(not approval_path.is_symlink(), "input_symlink")
+        approval_bytes = approval_path.read_bytes()
+        approval = approved_receipt(decode_json(approval_bytes))
+        require(approval.manifest_sha256 == record["data_manifest_sha256"] == sha(manifest_path.read_bytes())
+                and canonical_hashes == record["data_sha256"]
+                and manifest["generator"]["config"]["seed"] == 20261027
+                and (approval.reservation_parent_sha256 == approval.reservation_policy_sha256
+                     or policy["parent_sha256"] == approval.reservation_parent_sha256), "approved_reference_binding_mismatch")
+        labels, _ = semantic_labels(bundle)
+        require(approval.approved and approval.independent and approval.label_source == "approved_synthetic_fixture"
+                and approval.new_label_count > 0 and approval.labelset_sha256 != approval.parent_labelset_sha256
+                and approval.labelset_sha256 == labels and approval.manifest_sha256 == record["data_manifest_sha256"] == sha(manifest_path.read_bytes())
+                and approval.bundle_inventory_sha256 == descriptor["sha256"]
+                and approval.reservation_policy_sha256 == manifest["reservation"]["policy"]["sha256"]
+                and approval.admission_sha256 == sha(receipt_path.read_bytes()), "approved_reference_binding_mismatch")
+        guard = admitted_training_guard(package / released["model_relative_path"],record,bundle)
+        admission = {"approval_file_sha256":sha(approval_bytes),"guard":guard}
+    partitions = {name: load_partition(manifest_path, name) for name in ("train", "validation")}
+    validate_partitions(partitions, manifest["duplicate_detection"]["threshold"], policy)
     rows = partitions["train"] + partitions["validation"]
     derived = artifact_features(package / released["model_relative_path"], record, rows)
     size = len(partitions["train"])
     matrices = {}
     with publication(output) as root:
+        if approved:
+            (root / "dataset-approval.json").write_bytes(approval_bytes)
         for role, values in (("train", derived["rows"][:size]), ("validation", derived["rows"][size:])):
             content = b"".join(canonical(row) for row in values)
             (root / (role + ".jsonl")).write_bytes(content)
@@ -343,14 +483,16 @@ def build_reference(request, output):
                  "run_manifest_sha256": sha((package / "run_manifest.json").read_bytes()),
                  "feature_schema_sha256": sha(canonical(record["features"])),
                  "lineage_status": "guarded_schema2" if record["data_manifest_sha256"] == sha(manifest_path.read_bytes()) else "legacy_engineering_only"}
-        result = {"schema_version": 2, "evidence_scope": "demo_only", "columns": list(NUMERIC), "model": model, "matrices": matrices,
+        result = {"schema_version": 3 if approved else 2, "evidence_scope": "demo_only", "columns": list(NUMERIC), "model": model, "matrices": matrices,
                   "data": {"manifest_sha256": sha(manifest_path.read_bytes()), "admission_sha256": sha(receipt_path.read_bytes()),
                            "bundle_sha256": descriptor["sha256"], "reservation_policy_sha256": manifest["reservation"]["policy"]["sha256"],
                            "partition_sha256": canonical_hashes, "schema_version": 2, "read_partitions": ["train", "validation"]},
                   "feature_worker": derived["receipt"], "test_read": False,
-                  "limitations": ["Reference input is canonical train/validation only; no CF/T9 training rows.",
+                  "limitations": ["Reference input is approved matched training train/validation." if approved else "Reference input is canonical train/validation only; no CF/T9 training rows.",
                                   "Private checked package is not an ACTIVE release; later reference refresh must follow approved ACTIVE catalog.",
                                   "Legacy A4 coordinates, if used, remain engineering-only and cannot establish E5 independence."]}
+        if admission is not None:
+            result["admission"] = admission
         write_document(root / "reference.json", result)
     return result
 

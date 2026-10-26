@@ -128,6 +128,27 @@ def create_bundle(source_root: Path, config_path: Path, output: Path) -> dict:
     return descriptor
 
 
+def bundle_files(manifest):
+    """Approve train/validation-only ingress before opening any data bodies."""
+    required = {"data_manifest.json", "admission/data-admission.json", "dataset-binding.json", *POINTERS.values()}
+    if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 2:
+        raise ValueError("anchored_schema2_bundle_required")
+    artifacts = manifest["artifacts"]
+    raw = {artifacts[name]["path"] for name in PARTITIONS}
+    forbidden = {artifacts[name]["path"] for name in ("source", "corpus", "test", "split_lists")}
+    policy = manifest.get("reservation", {}).get("policy", {}).get("path")
+    if (not isinstance(policy, str) or not policy.endswith("/reservation_policy.json")
+            or policy in raw | forbidden | required or raw.intersection(forbidden) or len(raw) != 2):
+        raise ValueError("unsafe_train_validation_carrier")
+    allowed = required | raw | {policy}
+    for name in allowed:
+        if (not isinstance(name, str) or not name or "\\" in name or Path(name).is_absolute()
+                or ".." in Path(name).parts or Path(name).as_posix() != name
+                or Path(name).name in {"source.jsonl", "corpus.jsonl", "test.jsonl", "split.json"}):
+            raise ValueError("unsafe_train_validation_carrier")
+    return allowed
+
+
 def verify_bundle(bundle: Path, expected_hash: str) -> dict:
     from ats_mlops.data.dataset import load_manifest
     from ats_mlops.data.reservation import manifest_policy
@@ -138,12 +159,12 @@ def verify_bundle(bundle: Path, expected_hash: str) -> dict:
     if (descriptor.get("schema_version") != 1 or not required.issubset(files)
             or expected_hash != inventory_hash(files) or descriptor.get("sha256") != expected_hash):
         raise ValueError("bundle_identity_mismatch")
-    manifest = load_manifest(bundle / "data_manifest.json")
-    manifest_policy(bundle / "data_manifest.json", manifest)
-    allowed = required | {manifest["artifacts"][name]["path"] for name in PARTITIONS} | {
-        manifest["reservation"]["policy"]["path"]}
+    metadata = read_json(bundle / "data_manifest.json")
+    allowed = bundle_files(metadata)
     if set(files) != allowed:
         raise ValueError("bundle_files_must_be_train_validation_only")
+    manifest = load_manifest(bundle / "data_manifest.json")
+    manifest_policy(bundle / "data_manifest.json", manifest)
     for name, digest in files.items():
         if file_hash(safe_path(bundle, name)) != digest:
             raise ValueError("bundle_content_mismatch")

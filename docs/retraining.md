@@ -33,7 +33,13 @@ quality joins using the T16 code, then checks T13 journal/package/API metadata,
 actual image and Registry under its lock. A `checked_fixture` model13 reference
 does not establish ACTIVE: the actual release/model/manifest/check/epoch must
 match. Numeric reference data must match the guarded model's training manifest;
-approved schema2-v2 reference support is integrated serially after T16 merge.
+approved schema2-v2 references use schema3 with an immutable dataset-approval
+file and a separate real GX/combined semantic guard receipt. The artifact's
+exact training manifest/partition hashes must match the approved bundle. That
+guard runs in its recorded ML image, loads exact artifact code first, then uses
+its validators; a second artifact-only worker computes reference numeric rows.
+Both workers are offline/read-only and have zero fits. The canonical schema2
+engineering path and historical reference cards retain their original meaning.
 Validated inputs are copied to an immutable hash-addressed host artifact store.
 The only mutable reference cursor is the policy DB; old artifacts remain intact.
 
@@ -66,7 +72,9 @@ the existing T10 scoped DVC/MinIO procedure before candidate dispatch.
 `train_candidate` DAG run using its original deterministic ID and exact typed
 conf hash. A lost POST reply triggers lookup of the same ID, never another run.
 The ack hash covers DAG/run/conf only; mutable status/timestamps are excluded.
-An uncertain post-registration outcome stays recovery_required/inflight. Retry
+An uncertain transport/post-registration outcome persists a sanitized immutable
+recovery receipt and stays recovery_required/inflight. Repeating the same fault
+does not append another failure transition. Retry
 or recovery must use the same T10 request/run/artifact; no second fit/new ID.
 
 Completed T10 artifacts are exported via a bounded allowlist helper, excluding
@@ -86,5 +94,5 @@ code never calls approve/activate and never treats cached rank replay as ready.
 Runtime acceptance remains separate: source publication/overlay review, genuine
 T16 ACTIVE-bound windows, waiting→approvedv2→ordinary candidate→gate→waiting
 approval, explicit release/reference update, concurrency/cooldown and crash
-deduplication evidence. CLI root registration is integrated only after T16;
-standalone modules keep ownership separate during implementation.
+deduplication evidence. The lazy root CLI route `ats retraining` delegates to
+the same standalone batch module after the serial T16 merge.

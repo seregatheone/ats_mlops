@@ -1,19 +1,23 @@
 """Protocol/boundary fixtures only; no provider, Docker, API or model effects."""
 
 from copy import deepcopy
+from contextlib import nullcontext
 from dataclasses import replace
 from datetime import timedelta
 import base64
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
+import types
 import unittest
 from unittest.mock import patch
 
 from ats_mlops.monitoring import policy as p, policy_worker as worker
 from ats_mlops.monitoring.retraining import AirflowAPI, NativePolicy, candidate_conf, file_sha, reference_binding, save_candidate_export, semantic_labelset
-from ats_mlops.monitoring.retraining_batch import execution_plan
+from ats_mlops.monitoring.retraining_batch import HostBatch, execution_plan
 from tests.unit.test_retraining_policy import START,HOUR,MINUTE,REFERENCE,MODEL,h,window,approval
 
 
@@ -54,6 +58,88 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(conf['request_id'],request_id)
         self.assertEqual(conf['params_hash'],self.plan.parameters_sha256)
         self.assertEqual(conf['parameters']['model']['features']['max_features'],2000)
+
+    def test_host_uncertain_trigger_is_durable_and_retry_preserves_original_run(self):
+        request_id=self.queued(); store=p.PolicyStore(self.root/'policy.sqlite3')
+        calls=[]; image=self.plan.training_image_id
+        class Native:
+            image_id=image
+            def call(inner,action,value):
+                calls.append(action)
+                if action=='runtime':return {'image_id':image}
+                return worker.execute(action,value,self.root,now=START+3*HOUR)
+        class API:
+            def trigger(inner,dag,run,conf):
+                calls.append((dag,run,conf))
+                raise OSError('sensitive remote response is never persisted')
+        batch=HostBatch(native=Native(),airflow=API(),release_state=self.root/'release',
+            artifacts=self.root/'artifacts',source_git_sha='a'*40,source_repository=self.root)
+        with patch('ats_mlops.monitoring.retraining_batch.active_state',return_value=nullcontext({})), \
+             patch('ats_mlops.monitoring.retraining_batch.same_incumbent'):
+            first=batch.advance(request_id); after=store.request(request_id)
+            count=store.snapshot()
+            self.assertEqual(first,batch.advance(request_id))
+        self.assertEqual('recovery_required',after['state'])
+        self.assertEqual(count,store.snapshot())
+        triggers=[value for value in calls if isinstance(value,tuple)]
+        self.assertEqual(2,len(triggers));self.assertEqual(triggers[0],triggers[1])
+        self.assertEqual(after['run_id'],triggers[0][1])
+        self.assertEqual(1,len(store.pending_outbox()))
+        recovery=(self.root/'artifacts'/request_id/'recovery.json').read_text()
+        self.assertNotIn('sensitive',recovery)
+        self.assertEqual('candidate_recovery_required',json.loads(recovery)['reason'])
+
+    def test_ingress_rejects_reserved_path_alias_before_manifest_loader_or_body_reads(self):
+        from ats_mlops import pipeline
+        from ats_mlops.lineage.manifest import inventory_hash
+        manifest={'schema_version':2,'artifacts':{key:{'path':'data/'+key+'.jsonl'} for key in ('source','corpus','train','validation','test','split_lists')},
+                  'reservation':{'policy':{'path':'data/reservation_policy.json'}}}
+        manifest['artifacts']['train']['path']=manifest['artifacts']['test']['path']
+        files={key:'a'*64 for key in {'data_manifest.json','admission/data-admission.json','dataset-binding.json',
+            *pipeline.POINTERS.values(),'data/test.jsonl','data/validation.jsonl','data/reservation_policy.json'}}
+        (self.root/'data_manifest.json').write_text(json.dumps(manifest))
+        descriptor={'schema_version':1,'files':files,'sha256':inventory_hash(files)}
+        (self.root/'bundle.json').write_text(json.dumps(descriptor))
+        with patch('ats_mlops.data.dataset.load_manifest',side_effect=AssertionError('loader reached')), \
+             patch('ats_mlops.pipeline.file_hash',side_effect=AssertionError('body opened')):
+            with self.assertRaisesRegex(ValueError,'unsafe_train_validation_carrier'):
+                pipeline.verify_bundle(self.root,descriptor['sha256'])
+
+    def test_monitoring_dag_accepts_only_receipt_and_sanitizes_helper_output(self):
+        captured=[]; context={'dag_run':types.SimpleNamespace(conf={'receipt_id':'a'*64,'receipt_sha256':'b'*64})}
+        class DAG:
+            def __init__(inner,**kwargs):inner.config=kwargs
+            def __enter__(inner):return inner
+            def __exit__(inner,*args):pass
+        class Fail(Exception):pass
+        def task(**kwargs):
+            def decorate(function):
+                captured.append(function)
+                return lambda:None  # DAG construction does not execute tasks.
+            return decorate
+        sdk=types.ModuleType('airflow.sdk');sdk.DAG=DAG;sdk.task=task;sdk.get_current_context=lambda:context
+        exceptions=types.ModuleType('airflow.sdk.exceptions');exceptions.AirflowFailException=Fail
+        path=Path(__file__).resolve().parents[2]/'dags/monitor_and_retrain.py'
+        spec=importlib.util.spec_from_file_location('test_monitoring_dag',path);module=importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules,{'airflow':types.ModuleType('airflow'),'airflow.sdk':sdk,'airflow.sdk.exceptions':exceptions}):
+            spec.loader.exec_module(module)
+        expected={'worker_sha256':worker.sha(b'code'),'policy_sha256':worker.sha(b'code'),'outcome':'passed',
+                  'result':{'request_id':'retrain-id','state':'waiting_for_labels','private':'secret'}}
+        with patch.object(module.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(expected),'')) as run, \
+             patch.object(Path,'read_bytes',return_value=b'code'):
+            self.assertEqual({'request_id':'retrain-id','state':'waiting_for_labels'},captured[0]())
+            command=run.call_args.args[0];env=run.call_args.kwargs['env']
+            self.assertEqual(command[-3:],['apply','--root','/state/retraining'])
+            self.assertEqual({'PATH','PYTHONPATH','PYTHONDONTWRITEBYTECODE','HOME'},set(env))
+            for conf in ({'window':{}},{'receipt_id':'a'*64,'receipt_sha256':'b'*64,'active':True},
+                         {'receipt_id':True,'receipt_sha256':'b'*64}):
+                context['dag_run'].conf=conf
+                with self.assertRaisesRegex(Fail,'verified_receipt_required'):captured[0]()
+            self.assertEqual(1,run.call_count)
+            context['dag_run'].conf={'receipt_id':'a'*64,'receipt_sha256':'b'*64}
+            expected['worker_sha256']='c'*64
+            run.return_value=subprocess.CompletedProcess([],0,json.dumps(expected),'private raw error')
+            with self.assertRaisesRegex(Fail,'policy_receipt_failed'):captured[0]()
 
     def test_native_helper_cannot_accept_raw_window_or_active_claim(self):
         with self.assertRaises(p.PolicyError):

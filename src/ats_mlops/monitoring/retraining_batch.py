@@ -59,18 +59,13 @@ def snapshot_window_inputs(spec, store):
             files[role+'/'+name] = (Path(spec[role])/name,Path(spec[role]))
     for role,names in (('reference',('reference.json','train.jsonl','validation.jsonl','train-groups.json','validation-groups.json')),
                        ('export',('export.json','events.jsonl')),('feedback',('feedback.json','feedback.jsonl'))):
+        if role == 'reference' and document(Path(spec[role])/'reference.json')['schema_version'] == 3:
+            names = (*names,'dataset-approval.json')
         for name in names:
             files[role+'/'+name] = (Path(spec[role])/name,Path(spec[role]))
     bundle = Path(spec['bundle']); descriptor = document(bundle/'bundle.json'); manifest = document(bundle/'data_manifest.json')
-    metadata = {'data_manifest.json','dataset-binding.json','admission/data-admission.json',
-                'data/train.jsonl.dvc','data/validation.jsonl.dvc','data/split.json.dvc'}
-    raw = {manifest['artifacts'][name]['path'] for name in ('train','validation')}
-    forbidden = {manifest['artifacts'][name]['path'] for name in ('source','corpus','test','split_lists')}
-    policy_path = manifest.get('reservation',{}).get('policy',{}).get('path')
-    p.require(type(manifest.get('schema_version')) is int and manifest['schema_version'] == 2
-              and isinstance(policy_path,str) and policy_path.endswith('/reservation_policy.json')
-              and not raw.intersection(forbidden) and policy_path not in raw|forbidden|metadata
-              and set(descriptor['files']) == metadata|raw|{policy_path},'unsafe_schema2_carrier')
+    from ats_mlops.pipeline import bundle_files
+    p.require(set(descriptor['files']) == bundle_files(manifest),'unsafe_schema2_carrier')
     for name in {'bundle.json',*descriptor['files']}:
         safe_name(name)
         p.require(Path(name).name not in {'test.jsonl','source.jsonl','corpus.jsonl','split.json'},'reserved_carrier_body')
@@ -250,64 +245,78 @@ class HostBatch:
 
     def advance(self, request_id):
         with batch_lock(self.artifacts,request_id) as directory:
-            request = self.native.call('request',{'request_id':request_id})
-            if request['state'] in {'waiting_for_labels','waiting_approval','reference_update_pending','active','gate_rejected','terminal_failed'}:
-                return {'request_id':request_id,'state':request['state']}
-            p.require(request['execution']['training_image_id'] == self.native.image_id, 'training_image_changed')
-            intent = {'request_id':request_id,'run_id':request['run_id'],'execution':request['execution'],
-                      'dataset_approval':request['dataset'],'incumbent':request['incumbent']}
-            delivery = self.native.call('outbox',{'request_id':request_id,'kind':'candidate'})
-            p.require(p.canonical(delivery['record']['intent']) == p.canonical(intent),'outbox_request_mismatch')
-            p.require(self.native.call('runtime',{})['image_id'] == request['execution']['training_image_id'],'runtime_image_file_changed')
-            conf = candidate_conf(intent)
-            with active_state(self.release_state) as observed:
-                same_incumbent(request['incumbent'],observed)
-                ack,run = self.airflow.trigger('train_candidate',request['run_id'],conf)
-                events = self.native.call('pending',{})
-                event = next((event for event in events if event['kind'] == 'candidate' and event['request_id'] == request_id),None)
-                if event is not None:
-                    self.native.call('ack',{'request_id':request_id,'event_id':event['event_id'],'receipt_sha256':p.digest(ack)})
-            if run['state'] != 'success':
-                if run['state'] == 'failed':
-                    self.native.call('failure',{'request_id':request_id,'ambiguous':True})
-                return {'request_id':request_id,'state':'recovery_required' if run['state']=='failed' else 'candidate_running'}
-            exported = self.native.call('export',{'request_id':request_id})
-            if exported['state'] != 'completed':
-                return {'request_id':request_id,'state':'recovery_required'}
-            save_candidate_export(directory,exported)
-            record = document(directory/'artifacts/training/final/run_manifest.json')
-            model = p.ModelIdentity(record['mlflow']['model_name'],record['mlflow']['model_version'],record['mlflow']['run_id'],record['model']['sha256'])
-            p.require(self.operations is not None,'host_operations_required')
-            with active_state(self.release_state) as observed:
-                same_incumbent(request['incumbent'],observed)
-                gate = self.operations.gate(directory,observed,request)
-                if gate['outcome'] != 'passed':
-                    evidence = p.CandidateEvidence(exported['candidate_receipt']['candidate_id'],model,file_sha(directory/'model-gate.json'),False)
-                    return self.native.call('candidate',{'request_id':request_id,'evidence':p.payload(evidence)})
-                manifest = self.operations.package(directory,request)
-                checked = self.operations.release_check(directory,observed['record']['mlflow']['model_version'])
-                if checked['outcome'] != 'passed':
-                    return self.native.call('failure',{'request_id':request_id,'ambiguous':False})
-                controller = observed['controller']
-            # T13 takes its own lock and atomically rechecks this exact epoch.
-            with controller.store.lock():
-                state = controller.store.read()
-                controller._consistent(state)
-                p.require(state['generation'] == request['incumbent']['cohort']['epoch'],'incumbent_changed')
-                existing = state['staged'].get(manifest['release_id'])
-                if existing is not None:
-                    p.require(existing['generation'] == state['generation']
-                              and existing['manifest_sha256'] == file_sha(directory/'package/release_manifest.json')
-                              and existing['check_sha256'] == file_sha(directory/'release-check.json'),'saved_stage_mismatch')
-                    controller._validate(existing)
-            if existing is None:
-                staged = controller.stage(directory/'package',directory/'release-check.json',
-                                            expected_generation=request['incumbent']['cohort']['epoch'])
-            else:
-                staged = existing
-            evidence = p.CandidateEvidence(exported['candidate_receipt']['candidate_id'],model,file_sha(directory/'model-gate.json'),True,
-                staged['release_id'],staged['manifest_sha256'],staged['check_sha256'],staged['image_id'])
-            return self.native.call('candidate',{'request_id':request_id,'evidence':p.payload(evidence)})
+            try:
+                return self._advance(request_id,directory)
+            except Exception:
+                # A transport/process failure cannot establish that remote fit
+                # did not commit. Hold the original IDs/slot for exact lookup.
+                request = self.native.call('request',{'request_id':request_id})
+                if request['state'] not in {'queued','candidate_running','recovery_required'}:
+                    raise
+                self.native.call('failure',{'request_id':request_id,'ambiguous':True})
+                write_once(directory/'recovery.json',{'request_id':request_id,'run_id':request['run_id'],
+                    'state':'recovery_required','reason':'candidate_recovery_required'})
+                return {'request_id':request_id,'state':'recovery_required','reason':'candidate_recovery_required'}
+
+    def _advance(self, request_id, directory):
+        request = self.native.call('request',{'request_id':request_id})
+        if request['state'] in {'waiting_for_labels','waiting_approval','reference_update_pending','active','gate_rejected','terminal_failed'}:
+            return {'request_id':request_id,'state':request['state']}
+        p.require(request['execution']['training_image_id'] == self.native.image_id, 'training_image_changed')
+        intent = {'request_id':request_id,'run_id':request['run_id'],'execution':request['execution'],
+                  'dataset_approval':request['dataset'],'incumbent':request['incumbent']}
+        delivery = self.native.call('outbox',{'request_id':request_id,'kind':'candidate'})
+        p.require(p.canonical(delivery['record']['intent']) == p.canonical(intent),'outbox_request_mismatch')
+        p.require(self.native.call('runtime',{})['image_id'] == request['execution']['training_image_id'],'runtime_image_file_changed')
+        conf = candidate_conf(intent)
+        with active_state(self.release_state) as observed:
+            same_incumbent(request['incumbent'],observed)
+            ack,run = self.airflow.trigger('train_candidate',request['run_id'],conf)
+            events = self.native.call('pending',{})
+            event = next((event for event in events if event['kind'] == 'candidate' and event['request_id'] == request_id),None)
+            if event is not None:
+                self.native.call('ack',{'request_id':request_id,'event_id':event['event_id'],'receipt_sha256':p.digest(ack)})
+        if run['state'] != 'success':
+            if run['state'] == 'failed':
+                self.native.call('failure',{'request_id':request_id,'ambiguous':True})
+            return {'request_id':request_id,'state':'recovery_required' if run['state']=='failed' else 'candidate_running'}
+        exported = self.native.call('export',{'request_id':request_id})
+        if exported['state'] != 'completed':
+            return {'request_id':request_id,'state':'recovery_required'}
+        save_candidate_export(directory,exported)
+        record = document(directory/'artifacts/training/final/run_manifest.json')
+        model = p.ModelIdentity(record['mlflow']['model_name'],record['mlflow']['model_version'],record['mlflow']['run_id'],record['model']['sha256'])
+        p.require(self.operations is not None,'host_operations_required')
+        with active_state(self.release_state) as observed:
+            same_incumbent(request['incumbent'],observed)
+            gate = self.operations.gate(directory,observed,request)
+            if gate['outcome'] != 'passed':
+                evidence = p.CandidateEvidence(exported['candidate_receipt']['candidate_id'],model,file_sha(directory/'model-gate.json'),False)
+                return self.native.call('candidate',{'request_id':request_id,'evidence':p.payload(evidence)})
+            manifest = self.operations.package(directory,request)
+            checked = self.operations.release_check(directory,observed['record']['mlflow']['model_version'])
+            if checked['outcome'] != 'passed':
+                return self.native.call('failure',{'request_id':request_id,'ambiguous':False})
+            controller = observed['controller']
+        # T13 takes its own lock and atomically rechecks this exact epoch.
+        with controller.store.lock():
+            state = controller.store.read()
+            controller._consistent(state)
+            p.require(state['generation'] == request['incumbent']['cohort']['epoch'],'incumbent_changed')
+            existing = state['staged'].get(manifest['release_id'])
+            if existing is not None:
+                p.require(existing['generation'] == state['generation']
+                          and existing['manifest_sha256'] == file_sha(directory/'package/release_manifest.json')
+                          and existing['check_sha256'] == file_sha(directory/'release-check.json'),'saved_stage_mismatch')
+                controller._validate(existing)
+        if existing is None:
+            staged = controller.stage(directory/'package',directory/'release-check.json',
+                                        expected_generation=request['incumbent']['cohort']['epoch'])
+        else:
+            staged = existing
+        evidence = p.CandidateEvidence(exported['candidate_receipt']['candidate_id'],model,file_sha(directory/'model-gate.json'),True,
+            staged['release_id'],staged['manifest_sha256'],staged['check_sha256'],staged['image_id'])
+        return self.native.call('candidate',{'request_id':request_id,'evidence':p.payload(evidence)})
 
     def update_reference(self, request_id, reference, reference_sha256, bundle, config_sha256):
         from .drift import load_reference
