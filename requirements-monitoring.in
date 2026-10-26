@@ -1,0 +1,2 @@
+# Batch reports only. Never install into the frozen ML environment.
+evidently==0.7.23
