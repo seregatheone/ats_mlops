@@ -94,8 +94,10 @@ def snapshot_window_inputs(spec, store):
             (staging/'inventory.json').chmod(0o444)
             for path in sorted(staging.rglob('*'),reverse=True):
                 if path.is_dir():path.chmod(0o555)
-            staging.chmod(0o555)
+            # macOS requires the moved top directory to remain writable during
+            # rename; children/files are already read-only before publication.
             os.rename(staging,target)
+            target.chmod(0o555)
     for role in ('window','reference','calibration','export','feedback','bundle'):
         spec[role] = str(target/role)
     spec['config'] = str(target/'config.json')

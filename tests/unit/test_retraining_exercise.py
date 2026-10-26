@@ -1,8 +1,10 @@
 """Preparation/default-adapter contracts; no real Docker/API/model execution."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
+import stat
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -10,7 +12,7 @@ from urllib.request import Request
 
 from ats_mlops.monitoring.exercise import DropAcceptedPost,Exercise
 from ats_mlops.monitoring.retraining import AirflowAPI,NativePolicy
-from ats_mlops.monitoring.retraining_batch import HostOperations,configured_batch
+from ats_mlops.monitoring.retraining_batch import HostOperations,configured_batch,snapshot_window_inputs
 from ats_mlops.monitoring import policy as p
 
 
@@ -41,6 +43,58 @@ class ExercisePreparationTests(unittest.TestCase):
     def test_non_private_port_and_foreign_project_rejected(self):
         for change in ({'port':3000},{'port':True},{'project':'working-demo'}):
             with self.subTest(change=change),self.assertRaises(p.PolicyError):Exercise({**self.config,**change})
+
+    def snapshot_fixture(self):
+        from ats_mlops.pipeline import POINTERS,bundle_files
+        spec={}
+        for role in ('window','calibration','reference','export','feedback','bundle'):
+            path=self.root/role;path.mkdir();spec[role]=str(path)
+        for role,card in (('window','window.json'),('calibration','calibration.json')):
+            (Path(spec[role])/card).write_text(json.dumps({'files':{}}))
+        (Path(spec['reference'])/'reference.json').write_text('{"schema_version":2}')
+        for name in ('train.jsonl','validation.jsonl','train-groups.json','validation-groups.json'):
+            (Path(spec['reference'])/name).write_bytes(b'[]\n')
+        for role,names in (('export',('export.json','events.jsonl')),('feedback',('feedback.json','feedback.jsonl'))):
+            for name in names:(Path(spec[role])/name).write_bytes(b'{}\n')
+        manifest={'schema_version':2,'reservation':{'policy':{'path':'data/reservation_policy.json'}},
+            'artifacts':{name:{'path':'data/'+name+'.jsonl'} for name in ('source','corpus','test','split_lists','train','validation')}}
+        names=bundle_files(manifest)
+        for name in names:
+            path=Path(spec['bundle'])/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'{}\n')
+        (Path(spec['bundle'])/'data_manifest.json').write_text(json.dumps(manifest))
+        (Path(spec['bundle'])/'bundle.json').write_text(json.dumps({'files':dict.fromkeys(names,'a'*64)}))
+        config=self.root/'monitoring.json';config.write_bytes(b'{}\n');spec['config']=str(config)
+        return spec
+
+    def test_snapshot_actual_rename_keeps_top_writable_then_publishes_readonly_and_replays(self):
+        spec=self.snapshot_fixture();original=os.rename;seen=[]
+        def rename(source,target):
+            self.assertTrue(Path(source).stat().st_mode & stat.S_IWUSR)
+            for path in Path(source).rglob('*'):
+                self.assertEqual(0,stat.S_IMODE(path.stat().st_mode)&0o222)
+            seen.append(str(target));return original(source,target)
+        with patch('ats_mlops.monitoring.retraining_batch.os.rename',side_effect=rename):
+            published,inventory=snapshot_window_inputs(spec,self.root/'snapshots')
+            replay,same=snapshot_window_inputs(spec,self.root/'snapshots')
+        self.assertEqual(1,len(seen));self.assertEqual(published,replay);self.assertEqual(inventory,same)
+        target=Path(published['config']).parent
+        self.assertEqual(0o555,stat.S_IMODE(target.stat().st_mode))
+        self.assertEqual(b'{}\n',Path(published['config']).read_bytes())
+        target.chmod(0o755);path=Path(published['config']);path.chmod(0o644);path.write_bytes(b'changed')
+        target.chmod(0o555)
+        with self.assertRaisesRegex(p.PolicyError,'artifact_inventory_mismatch'):
+            snapshot_window_inputs(spec,self.root/'snapshots')
+        self.assertEqual(b'changed',path.read_bytes())
+
+    def test_snapshot_publication_race_does_not_replace_existing_nonempty_target(self):
+        spec=self.snapshot_fixture();original=os.rename;targets=[]
+        def competing(source,target):
+            target=Path(target);target.mkdir();(target/'other-publisher').write_bytes(b'untouched')
+            targets.append(target);return original(source,target)
+        with patch('ats_mlops.monitoring.retraining_batch.os.rename',side_effect=competing):
+            with self.assertRaises(OSError):snapshot_window_inputs(spec,self.root/'snapshots')
+        self.assertEqual(b'untouched',(targets[0]/'other-publisher').read_bytes())
+        self.assertFalse((targets[0]/'inventory.json').exists())
 
     def test_source_only_context_is_committed_allowlist_without_local_state(self):
         module_path=Path(__file__).resolve().parents[2]/'docker/retraining/prepare.py'
