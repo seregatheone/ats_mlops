@@ -6,6 +6,7 @@ from copy import deepcopy
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import socket
 import sqlite3
@@ -15,12 +16,26 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from urllib.parse import urlsplit
 
 from service.contracts import canonical, require, sha
 from service.integrity import document, inventory, release_binding
 from service.package import exclusive
 
 SENTINEL = "T12_PRIVATE_TEXT_contact@example.invalid"
+
+
+def registry_transport(request):
+    """Explicit host-side fixture transport; never forwarded to serving."""
+    transport = request.get("registry_transport", {"network": "ats-core_default", "tracking_uri": "http://mlflow:5000"})
+    require(isinstance(transport, dict) and set(transport) == {"network", "tracking_uri"}, "invalid_registry_transport")
+    network, uri = transport["network"], transport["tracking_uri"]
+    require(isinstance(network, str) and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", network), "invalid_registry_network")
+    require(isinstance(uri, str), "invalid_registry_uri")
+    parsed = urlsplit(uri)
+    require(parsed.scheme == "http" and parsed.hostname and not parsed.username and not parsed.password
+            and parsed.path in ("", "/") and not parsed.query and not parsed.fragment, "invalid_registry_uri")
+    return ["--network", network, "-e", "MLFLOW_TRACKING_URI=" + uri]
 
 
 def command(args, *, timeout=60):
@@ -51,6 +66,7 @@ def http(port, route, payload=None, *, raw=None, headers=None):
 
 
 def stage(request, output):
+    transport = registry_transport(request)
     root = Path(request["package"]).resolve()
     manifest, manifest_sha, record = release_binding(root)
     image = manifest["serving"]["image"]["id"]
@@ -250,11 +266,11 @@ def stage(request, output):
                                  "from_version": manifest["candidate"]["model_version"], "to_version": request["alias_other_version"]}
                 require(alias_request["to_version"] != alias_request["from_version"])
                 alias_code = "import json,mlflow,os; x=json.loads(os.environ['ATS_ALIAS_REQUEST']); c=mlflow.MlflowClient(); "
-                alias_cleanup = ["docker", "run", "--rm", "--pull=never", "--network", "ats-core_default", "-e", "MLFLOW_TRACKING_URI=http://mlflow:5000",
+                alias_cleanup = ["docker", "run", "--rm", "--pull=never", *transport,
                                  "-e", "ATS_ALIAS_REQUEST=" + json.dumps(alias_request), "--entrypoint", "/opt/ml-venv/bin/python",
                                  record["environment"]["image"]["id"], "-I", "-B", "-c", alias_code + "c.delete_registered_model_alias(x['name'],x['alias'])"]
                 for target in ("from_version", "to_version"):
-                    command(["docker", "run", "--rm", "--pull=never", "--network", "ats-core_default", "-e", "MLFLOW_TRACKING_URI=http://mlflow:5000",
+                    command(["docker", "run", "--rm", "--pull=never", *transport,
                              "-e", "ATS_ALIAS_REQUEST=" + json.dumps(alias_request), "--entrypoint", "/opt/ml-venv/bin/python",
                              record["environment"]["image"]["id"], "-I", "-B", "-c", alias_code +
                              f"c.set_registered_model_alias(x['name'],x['alias'],x['{target}']); assert c.get_model_version_by_alias(x['name'],x['alias']).version==x['{target}']"])
