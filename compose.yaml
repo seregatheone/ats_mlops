@@ -116,7 +116,80 @@ services:
     volumes: [check-work:/work]
     mem_limit: 1g
 
+  airflow:
+    profiles: [orchestration]
+    image: ats-core-airflow:t10
+    build:
+      context: .
+      dockerfile: docker/runtime.Dockerfile
+      target: airflow_runtime
+    environment: &airflow-environment
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:?required}@postgres:5432/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_POOL_SIZE: "2"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_MAX_OVERFLOW: "0"
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__PARALLELISM: "1"
+      AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "1"
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: operator:admin
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /auth/passwords.json
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://localhost:8080/execution/
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-}
+      AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: "5"
+      AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: "5"
+      ATS_SOURCE_REPO: /source-repository
+      ATS_WORK_ROOT: /work
+      ATS_STATE_ROOT: /state
+      ATS_RUNTIME_IMAGE_FILE: /runtime/image.json
+      ATS_ORCHESTRATION_FAULT_FILE: /runtime/faults.json
+      AWS_ACCESS_KEY_ID: ${DVC_ACCESS_KEY_ID:?required}
+      AWS_SECRET_ACCESS_KEY: ${DVC_SECRET_ACCESS_KEY:?required}
+      AWS_DEFAULT_REGION: us-east-1
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+    command: standalone
+    volumes:
+      - ${ATS_ORCHESTRATION_GIT:-./.local/orchestration/source.git}:/source-repository:ro
+      - ${ATS_ORCHESTRATION_IMAGE_FILE:-./.local/orchestration/image.json}:/runtime/image.json:ro
+      - ${ATS_ORCHESTRATION_FAULT_FILE:-./.local/orchestration/faults.json}:/runtime/faults.json:ro
+      - orchestration-work:/work
+      - orchestration-state:/state
+      - orchestration-auth:/auth
+      - orchestration-logs:/opt/airflow/logs
+    ports: ["127.0.0.1:${AIRFLOW_PORT:-8080}:8080"]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/v2/monitor/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      start_period: 60s
+      retries: 40
+    mem_limit: 3g
+    cpus: 1
+
+  orchestration-init:
+    profiles: [orchestration]
+    image: ats-core-airflow:t10
+    user: "0:0"
+    environment: *airflow-environment
+    command: [python, /opt/orchestration/init.py]
+    volumes:
+      - ${ATS_ORCHESTRATION_PASSWORD_FILE:-./.local/orchestration/passwords.json}:/bootstrap/passwords.json:ro
+      - orchestration-work:/work
+      - orchestration-state:/state
+      - orchestration-auth:/auth
+      - orchestration-logs:/opt/airflow/logs
+    mem_limit: 768m
+    restart: "no"
+
 volumes:
   postgres-data:
   minio-data:
   check-work:
+  orchestration-work:
+  orchestration-state:
+  orchestration-auth:
+  orchestration-logs:

@@ -49,3 +49,36 @@ ATS_RUN_STORAGE_TRACKING=1 python3 -m unittest discover -s tests/integration -p 
 Тест использует отдельный случайный project/порты/volumes и синтетическую fixture, выполняет настоящий DVC push, удаляет локальный payload/cache и восстанавливает pull; сохраняет run/artifact/зарегистрированную модель в MLflow с SQL backend; проверяет чтение после restart и `down`→`up` без удаления volumes. Дополнительно проверяются S3 cross-bucket read/write/list denials, неверные S3/SQL credentials, SQL роли/межбазовые запреты, loopback bindings и отказ MLflow для недоверенного Host. В finally удаляются только ресурсы этого тестового проекта, чужие контейнеры и образы не удаляются. Санитизированные evidence/logs и ресурсный snapshot сохраняются в `.local/core-tests/<run_id>/`; `skip` без opt-in не является прохождением. Тестовое время включает инфраструктуру и не является E-2 или временем обучения ATS.
 
 Проверка на чистом commit `fd8677e7b36c0fdd1480d44b94184437c06e746a` завершилась **PASS**, все операции чтения/отказа и очистка подтверждены. Публикуемый [отчёт T-4](../reports/storage/t4.json) содержит hashes, точную model version и результаты. Снимок после проверок: MLflow 1.689 GiB из 2 GiB, MinIO 248.7 MiB, PostgreSQL 39.11 MiB; OOMKilled=false и RestartCount=0. Это один локальный snapshot, не peak/capacity benchmark. Исходные неудачные startup-прогоны и успешный прогон с прежним лимитом сохранены локально; публикуемый отчёт относится к повтору с 2 GiB. Bootstrap regression подтверждает восстановление недостающих client-файлов после прерванного init без ротации credentials и отказ для symlinks.
+
+## Airflow: кандидат из допущенного bundle
+
+Профиль `orchestration` добавляет один Airflow3.3.2 LocalExecutor с отдельным `/opt/ml-venv`; PostgreSQL/MinIO/MLflow остаются существующим `ats-core`. Запускайте последовательно, без `storage-check`, serving и monitoring: service limits core3.5GiB + Airflow3GiB =6.5GiB, DockerVM здесь7.75GiB, чужие контейнеры и overhead уменьшают остаток. Это бюджет по лимитам, не capacity benchmark. Airflow SQL использует существующую роль/БД airflow; one-shot migration заканчивается до training. Work, SQLite ledger, logs и auth сохраняются в отдельных named volumes. Redis и Docker socket отсутствуют.
+
+```sh
+python3 scripts/bootstrap_orchestration.py init
+python3 scripts/bootstrap_orchestration.py config
+python3 scripts/bootstrap_orchestration.py refresh-source
+python3 scripts/bootstrap_orchestration.py build
+python3 scripts/bootstrap_orchestration.py up
+python3 scripts/bootstrap_orchestration.py status
+# Останавливает только Airflow, volumes/core не удаляет:
+python3 scripts/bootstrap_orchestration.py stop
+```
+
+Для другого checkout используйте `--core-env /absolute/path/to/existing/.local/core/core.env`; для выделенной приватной конфигурации — `--state-dir`, для свободного loopback port — `--port` (одинаковый на всех командах). Default source — фиксированный public GitHub repository. `--sanitized-git-source /path/to/repo` создаёт отдельный bare clone без working tree/ignored host secrets; в контейнер монтируется только этот clone. После нового source commit выполнить refresh-source. Образ и lock pinned, metadata image.json фиксируется после build; rebuild требует нового request payload. Private random API password `operator` хранится в `.local/orchestration/passwords.json`, fernet/JWT в private airflow.env. Не печатать resolved Compose/env, не передавать эти файлы в Git. UI/API по умолчанию `http://127.0.0.1:8080`; API token получается через POST `/auth/token`, DAG trigger — POST `/api/v2/dags/train_candidate/dagRuns`.
+
+До DAG отдельно выполнить dataset admission (`pipeline bundle` для synthetic fixture) и upload **только** bundle descriptor + перечисленные train/validation/metadata files в `s3://ats-dvc/orchestration/bundles/<version>/`. DAG не генерирует корпус, не выполняет full admission и не читает raw test. Bundle inventory SHA берётся из `bundle.json.sha256`; dataset_version равен admitted generator config namespace. Клиент получает только DVC identity и MLflow proxy URI. SQL/auth/root/MLflow-bucket credentials не передаются ML subprocess.
+
+Conf имеет exact поля `request_id`, `run_id`, `dataset_version`, `git_sha` (40 hex), `bundle_uri` (trusted S3 descriptor URI), `bundle_inventory_sha256`, `parameters`, `params_hash`. Parameters — объект `{"model":{},"search":{},"smoke":true,"evaluation":{"score_decimals":12}}`; params_hash — SHA256 UTF-8 `json.dumps(parameters,sort_keys=True,separators=(",",":"))`. Smoke2 маркирован; основная серия сохраняет20trials и n_jobs1. Request identity не равна Airflow dag_run_id. Source detached/clean/read-only, DVC workspace mutable, audited `pipeline.reproduce` проверяет source перед cache decision. XCom содержит только request/candidate/MLflow IDs и receipt/model URIs; outcome/counts/hashes/events находятся в `/work/requests/<request_id>/candidate.json` и repro receipts.
+
+SQLite `/state/requests.sqlite3` атомарно связывает request с payload hash (включая runtime identity). Completed replay возвращает прежний candidate без DVC/refit/registration; другой payload с тем же request отвергается. Cache_hit использует проверенные exact исходные MLflow IDs, не создаёт новый run. DVC cache общий на work volume. Максимум3 orchestration attempts, бюджет сохраняется при clear/retrigger. Только typed transient download I/O повторяется; data/config/auth/missing object terminal. Durable intent предшествует DVC/fit. После сбоя восстанавливаются полностью записанные audited repro/candidate receipts; неоднозначный remote register→local receipt требует `recovery_required`, без автоматического refit и без обещания общей транзакции SQLite/MLflow. T10 создаёт кандидата; выпуск/alias не переключает.
+
+Проверка выполняется на clean committed/pushed SHA. `python -m unittest discover -s tests/integration -p test_airflow_run.py` без opt-in сообщает skip, что не считается прохождением. Для реального gate запустить orchestration на порту8088 с state `.local/orchestration-t10`, затем:
+
+```sh
+ATS_RUN_AIRFLOW=1 ATS_AIRFLOW_PORT=8088 ATS_AIRFLOW_STATE="$PWD/.local/orchestration-t10" \
+ATS_DVC_ENV_FILE=/absolute/path/to/existing/.local/core/dvc.env \
+python3 -m unittest discover -s tests/integration -p test_airflow_run.py -v
+```
+
+Gate подготавливает/publishes уникальную synthetic admission fixture **до trigger**, затем через real API выполняет normal/replay/conflict/cache/transient/exhausted/fataldata. Private driver `faults.json` связывает request с количеством failed downloads: только эти worker attempts используют закрытый loopback endpoint вместо MinIO. Общие endpoints и core не меняются, fault не принимается из DAG conf; после gate файл очистить `{}`. Сохраняются SQLite attempt journal, task try_numbers/XCom, MLflow delta и before/after resource samples в private state/evidence-*; исходные failed runs сохраняются. Ручная проверка использует тот же API trigger и request-scoped fault plan. Service health/OOM/restarts проверяются отдельно; snapshots не peak/benchmark. При исчерпании памяти остановить только свой Airflow, не менять чужие контейнеры и лимит MLflow2GiB.
