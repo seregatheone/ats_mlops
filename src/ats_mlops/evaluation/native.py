@@ -401,6 +401,13 @@ def select_qualification(plan, record, root):
     return value
 
 
+def core_overlay(images):
+    """The logical initializer key maps to the actual persistent-core service."""
+    require(set(images)=={"postgres","minio","minio-init","mlflow"}
+        and all(re.fullmatch(r"sha256:[0-9a-f]{64}",image) for image in images.values()),"pinned_core_images_required")
+    return {"services":{("storage-init" if name=="minio-init" else name):{"image":image} for name,image in images.items()}}
+
+
 def clean_start(spec, root):
     """S1's real isolated core → fit → T11/T12 → A3 → API/catalog/Registry.
 
@@ -425,9 +432,7 @@ def clean_start(spec, root):
     commands.run([sys.executable, "-B", repo / "scripts/bootstrap_core.py", "init", "--state-dir", root / "core", "--project", config["project"],
         "--minio-port", ports["minio"], "--console-port", ports["console"], "--mlflow-port", ports["mlflow"]])
     images = config["core"]["images"]
-    require(set(images) == {"postgres", "minio", "minio-init", "mlflow"}
-            and all(re.fullmatch(r"sha256:[0-9a-f]{64}", image) for image in images.values()), "pinned_core_images_required")
-    immutable(root / "core-images.json", {"services": {name: {"image": image} for name, image in images.items()}})
+    immutable(root / "core-images.json", core_overlay(images))
     compose = ["docker", "compose", "--project-directory", str(repo), "--env-file", str(root / "core/core.env"), "-p", config["project"],
                "-f", str(repo / "compose.yaml"), "-f", str(root / "core-images.json"), "--profile", "core"]
     commands.run([*compose, "up", "-d", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "180"], timeout=210)
