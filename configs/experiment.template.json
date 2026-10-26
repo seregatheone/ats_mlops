@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "study_id": "diploma-e1-e5",
+  "evidence_scope": "demo_only",
+  "source_git_sha": null,
+  "qualified_model_source_git_sha": null,
+  "bindings": {
+    "protocol_sha256": null,
+    "data_manifest_sha256": null,
+    "admission_sha256": null,
+    "root_policy_sha256": null,
+    "protected_test_documents_sha256": null,
+    "test_partition_sha256": null,
+    "split_sha256": null,
+    "features_sha256": null,
+    "params_sha256": null,
+    "environment_sha256": null,
+    "baseline_artifact_sha256": null,
+    "model_artifact_sha256": null,
+    "model_lineage_sha256": null,
+    "calibration_sha256": null
+  },
+  "test_inventory": {"pairs": null, "groups": null, "group_ids_sha256": null},
+  "registry_before": {"runs": [], "versions": []},
+  "adapter_bindings": {"E1": null, "E2": null, "E3": null, "E4": null, "E5": null},
+  "execution": {"search_mode": "frozen", "smoke": false, "C": 1.0, "max_features": 2000, "model_seed": 20261026, "data_seed": 20261027, "threads": 1},
+  "E1": {"replicas": 3, "atol": 0.000001, "rtol": 0.00001},
+  "E2": {"pairs": 5, "order": "alternating_manual_auto", "actor": "human", "hpo": false},
+  "E3": {"faults": ["corrupt_data", "minio_unavailable", "incomplete_artifact", "bad_candidate", "unready_container", "switch_alias_crash"], "repetitions": 3},
+  "E4": {"seed": 20261029, "calibration_seed": 1707, "minimum_pairs": 200, "minimum_vacancies": 10, "consecutive_windows": 2, "cooldown_seconds": 86400, "scenarios": ["control", "shifted_no_labels", "shifted_labeled", "replay", "cooldown", "false_signal", "insufficient"]},
+  "E5": {"bootstrap_replicates": 2000, "bootstrap_seed": 20261030, "bootstrap_min_groups": 10, "k": 10, "latency": "one_pass_per_group", "warmup": "train_validation_only"}
+}
