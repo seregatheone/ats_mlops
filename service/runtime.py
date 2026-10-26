@@ -28,6 +28,7 @@ class Runtime:
         require(not any(os.environ.get(name) for name in ("MLFLOW_TRACKING_URI", "AWS_ACCESS_KEY_ID",
                                                         "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")))
         self.manifest, self.manifest_sha, self.record = release_binding(root)
+        require(inventory(Path(__file__).parent) == self.manifest["serving"]["source_sha256"])
         require(environment() == self.manifest["serving"]["environment"])
         import bentoml.mlflow
         import yaml

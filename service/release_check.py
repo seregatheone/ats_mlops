@@ -44,7 +44,10 @@ def http(port, route, payload=None, *, raw=None, headers=None):
         with urllib.request.urlopen(request, timeout=15) as response:
             return response.status, json.loads(response.read())
     except urllib.error.HTTPError as error:
-        return error.code, json.loads(error.read())
+        try:
+            return error.code, json.loads(error.read())
+        finally:
+            error.close()
 
 
 def stage(request, output):
@@ -137,6 +140,9 @@ def stage(request, output):
                 report["metadata"] = metadata
                 require(metadata["runtime"]["environment"] == manifest["serving"]["environment"])
                 require(json.loads(command(["docker", "inspect", "--format", '{{json .Image}}', name])) == image)
+                revision = json.loads(command(["docker", "image", "inspect", "--format",
+                                               '{{json (index .Config.Labels "org.opencontainers.image.revision")}}', image]))
+                require(revision == manifest["serving"]["git_sha"])
                 mounts = json.loads(command(["docker", "inspect", "--format", '{{json .Mounts}}', name]))
                 require(all(not item["RW"] for item in mounts if item["Destination"] in ("/release", "/models")))
                 report["checks"]["metadata_image_and_readonly_mounts"] = True
@@ -208,17 +214,26 @@ def stage(request, output):
                 boundary.update(request_id="max-text", candidates=[])
                 boundary["vacancy"]["text"] = "\u044f" * 10000
                 require(http(port, "/rank", boundary)[0] == 200)
-                with sqlite3.connect(events / "predictions.sqlite3", isolation_level=None) as locked:
-                    locked.execute("BEGIN IMMEDIATE")
+                lock_code = "import sqlite3,sys;d=sqlite3.connect('/events/predictions.sqlite3',isolation_level=None);d.execute('BEGIN IMMEDIATE');print('locked',flush=True);sys.stdin.read();d.rollback();d.close()"
+                holder = subprocess.Popen(["docker", "exec", "-i", name, "/opt/ml-venv/bin/python", "-I", "-B", "-c", lock_code],
+                                          stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                try:
+                    require(holder.stdout.readline().strip() == b"locked")
                     busy = deepcopy(payload)
                     busy["request_id"] = "db-locked-new"
                     require(http(port, "/rank", busy)[0] == 503)
-                    locked.rollback()
-                    require(locked.execute("SELECT count(*) FROM prediction_events WHERE request_id='db-locked-new'").fetchone()[0] == 0)
-                    saved = locked.execute("SELECT response_json FROM prediction_events WHERE request_id='private-full'").fetchone()[0]
-                    locked.execute("UPDATE prediction_events SET response_json='{}' WHERE request_id='private-full'")
-                    require(http(port, "/rank", payload)[0] == 503)
-                    locked.execute("UPDATE prediction_events SET response_json=? WHERE request_id='private-full'", (saved,))
+                finally:
+                    holder.stdin.close()
+                    holder.wait(timeout=10)
+                    holder.stdout.close()
+                    holder.stderr.close()
+                corrupt_code = "import sqlite3;d=sqlite3.connect('/events/predictions.sqlite3');assert d.execute(\"SELECT count(*) FROM prediction_events WHERE request_id='db-locked-new'\").fetchone()[0]==0;d.execute(\"UPDATE prediction_events SET response_json='{}' WHERE request_id='private-full'\");d.commit();d.close()"
+                command(["docker", "exec", name, "/opt/ml-venv/bin/python", "-I", "-B", "-c", corrupt_code])
+                require(http(port, "/rank", payload)[0] == 503)
+                restore_code = "import sqlite3,sys;d=sqlite3.connect('/events/predictions.sqlite3');d.execute(\"UPDATE prediction_events SET response_json=? WHERE request_id='private-full'\",(sys.stdin.read(),));d.commit();d.close()"
+                restored = subprocess.run(["docker", "exec", "-i", name, "/opt/ml-venv/bin/python", "-I", "-B", "-c", restore_code],
+                                          input=canonical(original), capture_output=True, timeout=15)
+                require(restored.returncode == 0)
                 report["checks"]["strict_limits_empty_ties_and_privacy_errors"] = True
                 report["checks"]["full_event_before_top_k_and_idempotency"] = True
 

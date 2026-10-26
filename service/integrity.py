@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import re
 
-from service.contracts import API_SCHEMA, canonical, require, sha
+from service.contracts import API_SCHEMA, canonical, identifier, require, sha
 
 
 def document(path):
@@ -65,6 +65,8 @@ def release_binding(root):
                              "serving", "training_environment", "expected_incumbent"})
     require(manifest["schema_version"] == 1 and manifest["api_schema"] == API_SCHEMA
             and manifest["api_schema_sha256"] == sha(canonical(API_SCHEMA)))
+    require(identifier(manifest["release_id"]) and re.fullmatch(r"ats_ranker:m[0-9a-f]{60}", manifest["bento_tag"])
+            and manifest["bento_tag"] == "ats_ranker:m" + manifest["candidate"]["model_sha256"][:60])
     require(inventory(root, exclude=("release_manifest.json",)) == manifest["files"])
     require(manifest["model_relative_path"] == "bentoml/models/" + manifest["bento_tag"].replace(":", "/") + "/mlflow_model")
     gate, gate_sha = document(root / "model_gate_report.json")
