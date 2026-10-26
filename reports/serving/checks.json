@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "source_sha": "59967b72f963fd86472688c785c466ca4cd47f52",
+  "source_committed_before_build_and_check": true,
+  "image_id": "sha256:6123886de312aeea6c0dd0fc2dfd2463bad7a4913c2f0fc76a93cfa51a8b6cf7",
+  "model_uri": "models:/ats-pair-ranking/4",
+  "model_gate_report_sha256": "4629a39f659771f95713ebc98cc9247cea72cc5cd4b8447e60c00aa0d77aec35",
+  "evidence_scope": "demo_only",
+  "release_manifest_sha256": "6dacc847605267c917c27b32aaf81c23d5473652ca562dc3d4cc47230340ac1e",
+  "reports_sha256": {
+    "release_manifest.json": "6dacc847605267c917c27b32aaf81c23d5473652ca562dc3d4cc47230340ac1e",
+    "compose-smoke.json": "06f5112a9d45ab7abf7ad00cb87c95c1a25630240adafde7978b55624136cea1",
+    "release_check_report.json": "ff0d6c025b362949d91547f1ef8cff193be00f4054f1164d7d4e7dad87b420b1"
+  },
+  "unit": {
+    "focused_tests": 8,
+    "outcome": "passed",
+    "command": "PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest tests.unit.test_serving tests.unit.test_packaging",
+    "canonical": {
+      "tests": 121,
+      "outcome": "passed",
+      "python": "3.11.17",
+      "source_sha": "59967b72f963fd86472688c785c466ca4cd47f52",
+      "independent_root_run": true
+    }
+  },
+  "actual_integration": {
+    "outcome": "passed",
+    "tests": 1,
+    "named_checks": 12,
+    "pairs": 240,
+    "groups": 12,
+    "max_abs_difference": 0.0
+  },
+  "earlier_failed_checks": [
+    {
+      "case": "check-001",
+      "outcome": "rejected",
+      "source": "6496b73",
+      "reason": "Docker internal network suppressed host HTTP port; preserved private report"
+    },
+    {
+      "case": "check-002 and check-003",
+      "outcome": "rejected",
+      "source": "d411e4f / 6a184c2",
+      "reason": "Host bind SQLite WAL/lock probes cross VM boundary; replaced by Linux named-volume probes"
+    },
+    {
+      "case": "check-004",
+      "outcome": "rejected",
+      "source": "07eac84",
+      "reason": "Readonly SQLite export needed explicit WAL checkpoint; ten earlier named checks passed"
+    }
+  ],
+  "limitations": [
+    "Synthetic validation only: demo_only.",
+    "This model4 proof uses training/serving Python3.11.17; distinct environments are recorded, no universal patch equality required. Airflow3.11.16 candidates require their own passed gate and actual serving check.",
+    "No release approval, activation, candidate/champion move or hiring-quality claim."
+  ]
+}

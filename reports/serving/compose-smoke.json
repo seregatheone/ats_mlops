@@ -1,0 +1,8 @@
+{
+  "outcome": "passed",
+  "source_sha": "59967b72f963fd86472688c785c466ca4cd47f52",
+  "image_id": "sha256:6123886de312aeea6c0dd0fc2dfd2463bad7a4913c2f0fc76a93cfa51a8b6cf7",
+  "fresh_volume_without_manual_chown": true,
+  "metadata_ready": true,
+  "rank_http_status": 200
+}

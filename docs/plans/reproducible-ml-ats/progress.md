@@ -14,7 +14,7 @@
 - [x] T-9 — DVC DAG
 - [x] T-10 — Airflow
 - [x] T-11 — Gate кандидата
-- [ ] T-12 — BentoML API
+- [x] T-12 — BentoML API
 - [ ] T-13 — Выпуск и откат
 - [ ] T-14 — GitHub Actions
 - [ ] T-15 — Prometheus/Grafana
@@ -26,6 +26,8 @@
 
 ## Learnings
 <!-- Добавлять наблюдения по мере выполнения задач. -->
+
+- T-12: exact MLflow version4 упакована в Bento, manifest заморожен до staging. На executable59967b7 прошли121 unit, actual12checks и Compose smoke с новым volume; все240 HTTP scores совпали с native reference. Независимая приёмка VERIFIED: контракт, SQLite replay/concurrency/corrupt rows, model/source/image/report binding и actual privacy. Manifest6dacc847 не изменился. Журнал хранится на native Docker volume; macOS bind mount не подходит для проверки SQLite WAL/locks. Отчёты reports/serving; approval/activation относятся к T-13, scope demo_only.
 
 - T-11: modelgate связывает exactmodel/pipeline/authoritative-data hashes с validation-onlycohort, NDCGdrop≤0.005 противbaseline/incumbent, outcome/scope разделены. Firstrelease и fixtureincumbent прошли actualisolated artifact gates на240rows; bytecode/cross-artifact rejected. Оба P2 metadataTOCTOU/outputrace исправлены; независимаяacceptance VERIFIED, 102unit наfixsource и113 integratedunitPASS послеAirflowbase. Qualityreport неapprove/activate; incumbent recheck принадлежитT13.
 
