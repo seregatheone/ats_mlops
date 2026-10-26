@@ -28,6 +28,25 @@ from .retraining_batch import configured_batch,execution_plan,write_once
 def stamp():return datetime.now(timezone.utc).isoformat()
 
 
+class DropAcceptedPost:
+    """Fault only the caller after a real accepted T10 POST; backend stays real."""
+    def __init__(self,marker,intent):self.marker,self.intent=Path(marker),intent
+
+    def __call__(self,request,**kwargs):
+        response=urlopen(request,**kwargs)
+        if request.get_method()=='POST' and request.full_url.endswith('/api/v2/dags/train_candidate/dagRuns'):
+            sent=json.loads(request.data);body=response.read(32*1024*1024+1)
+            accepted=json.loads(body)
+            p.require(200<=response.status<300 and sent['dag_run_id']==self.intent['run_id']==accepted['dag_run_id']
+                and p.canonical(sent['conf'])==p.canonical(accepted['conf']),'actual_post_acceptance_mismatch')
+            write_once(self.marker,{'schema_version':1,'point':'after_real_POST_acceptance_before_native_ACK',
+                'request_id':self.intent['request_id'],'dag_run_id':sent['dag_run_id'],'outbox_event_id':self.intent['outbox_event_id'],
+                'conf_sha256':p.digest(sent['conf']),'accepted_response_sha256':hashlib.sha256(body).hexdigest(),
+                'http_status':response.status,'backend':'real_Airflow_public_API','expected_exit':86})
+            response.close();os._exit(86)
+        return response
+
+
 class Exercise:
     def __init__(self,config):
         self.config=config;self.batch_config=document(config['batch_config'])
@@ -111,8 +130,8 @@ finally:db.close()
             self.config['monitoring_image'],action,'--request',str(request_path),'--output',str(target)])
         return target
 
-    def wait_monitor(self,saved):
-        run_id='monitor__'+saved['installed']['receipt_id'];deadline=time.monotonic()+180
+    def wait_monitor(self,saved,run_id=None):
+        run_id=run_id or 'monitor__'+saved['installed']['receipt_id'];deadline=time.monotonic()+180
         while time.monotonic()<deadline:
             run=self.batch.airflow.lookup('monitor_and_retrain',run_id,saved['installed'])
             if run and run['state']=='success':return self.batch.native.call('snapshot',{})
@@ -120,7 +139,7 @@ finally:db.close()
             time.sleep(1)
         raise p.PolicyError('monitor_dag_timeout')
 
-    def cohort(self):
+    def cohort(self,*,cooldown=False):
         """Private API/event volume, genuine numeric reports, real monitor DAGs."""
         fresh=self.preflight();p.require(not (self.output/'cohort.json').exists(),'cohort_already_recorded')
         registry_before=self.registry_versions()
@@ -212,13 +231,56 @@ print(json.dumps({name:base64.b64encode(Path('/tmp/export',name).read_bytes()).d
             write_once(self.output/('window-'+str(index)+'-inputs.json'),spec)
             dispatched=self.batch.install_window(spec,execution_plan(self.batch_config['source_git_sha'],self.batch_config['training_image_id']))
             snapshot=self.wait_monitor(dispatched);saved.append({'dispatch':dispatched,'snapshot':snapshot})
-        request_id=saved[-1]['snapshot']['inflight'];request=self.batch.native.call('request',{'request_id':request_id})
-        p.require(request['state']=='waiting_for_labels' and saved[-1]['snapshot']['requests']==1,'single_waiting_request_required')
+        snapshot=saved[-1]['snapshot'];request_id=snapshot['inflight']
+        if cooldown:
+            decision=self.batch.native.call('apply',saved[-1]['dispatch']['installed'])
+            p.require(request_id is None and snapshot['requests']==1 and decision['reason']=='cooldown'
+                and self.registry_versions()==registry_before,'cooldown_dedup_required')
+            request={'run_id':None,'state':'cooldown'}
+        else:
+            request=self.batch.native.call('request',{'request_id':request_id})
+            p.require(request['state']=='waiting_for_labels' and snapshot['requests']==1,'single_waiting_request_required')
         working_after=self.working_events();p.require(working_after==working_before,'working_events_changed')
         proof={'source_git_sha':fresh['source_git_sha'],'incumbent':fresh,'request_id':request_id,'run_id':request['run_id'],
             'state':request['state'],'windows':saved,'reference_sha256':ref_sha,'registry_before':registry_before,
             'training_runs_created':0,'working_events_before':working_before,'working_events_after':working_after}
         write_once(self.output/'cohort.json',proof);return proof
+
+    def replay(self):
+        self.preflight();cohort=document(self.output/'cohort.json');before=self.batch.native.call('snapshot',{})
+        registry=self.registry_versions();deliveries=[]
+        for window in cohort['windows']:
+            saved=window['dispatch'];installed=saved['installed'];run_id='monitor_replay__'+installed['receipt_id']
+            acknowledgement,_=self.batch.airflow.trigger('monitor_and_retrain',run_id,installed)
+            after=self.wait_monitor(saved,run_id)
+            p.require(all(after[key]==before[key] for key in ('windows','requests','inflight','reference')),'real_receipt_replay_changed_policy')
+            deliveries.append({'dag_run_id':run_id,'receipt':installed,'dispatch_sha256':p.digest(acknowledgement)})
+        p.require(registry==self.registry_versions(),'replay_created_model')
+        result={'deliveries':deliveries,'windows':before['windows'],'requests':before['requests'],'inflight':before['inflight'],
+            'new_models':0,'scope':'real monitor DAG, identical installed receipts, real native SQLite'}
+        write_once(self.output/'receipt-replay.json',result);return result
+
+    def advance_drop_ack(self):
+        self.preflight();cohort=document(self.output/'cohort.json');request_id=cohort['request_id']
+        request=self.batch.native.call('request',{'request_id':request_id})
+        from .retraining import candidate_conf
+        event=self.batch.native.call('outbox',{'request_id':request_id,'kind':'candidate'})['record']
+        p.require(self.batch.airflow.lookup('train_candidate',request['run_id'],candidate_conf(event['intent'])) is None,
+            'fault_requires_first_original_dispatch')
+        marker=self.output/'accepted-post-before-ack.json';p.require(not marker.exists(),'fault_already_recorded')
+        self.batch.airflow.open_url=DropAcceptedPost(marker,{'request_id':request_id,'run_id':request['run_id'],'outbox_event_id':event['event_id']})
+        self.batch.advance(request_id)
+        raise p.PolicyError('expected_transport_exit_not_observed')
+
+    def cooldown(self):
+        self.preflight();initial=document(self.output/'cohort.json')
+        request=self.batch.native.call('request',{'request_id':initial['request_id']})
+        p.require(request['state']=='active' and self.batch.native.call('snapshot',{})['inflight'] is None,'active_reference_required')
+        child=Exercise({**self.config,'output':str(self.output/'cooldown'),'project':self.project+'-cooldown',
+            'baseline_reference':str(self.output/'reference-v2'),'baseline_bundle':str(self.output/'bundle-v2')})
+        child.phase='cooldown';result=child.cohort(cooldown=True)
+        p.require(result['state']=='cooldown' and self.batch.native.call('snapshot',{})['requests']==1,'cooldown_new_request')
+        write_once(self.output/'cooldown.json',result);return result
 
     def dataset(self):
         """Genuine fixed-seed admission/upload, then the real monitoring DAG."""
@@ -316,7 +378,7 @@ print(json.dumps({'outcome':'passed','inventory_sha256':descriptor['sha256']}))
         write_once(self.output/'reference-active.json',result);return result
 
     def recipe(self):
-        steps=['preflight','cohort','dataset','advance','reference-ready','reference']
+        steps=['preflight','cohort','replay','dataset','advance-drop-ack (expected exit86)','advance','reference-ready','reference','cooldown']
         return {'outcome':'prepared_only','steps':steps,'advance':'Repeat exact command until waiting_approval; no new IDs/refit on failure.',
             'A3':'Between reference-ready and reference: root separately approves/activates the named staged release using existing T13.',
             'source_overlay':'Root builds/installs reviewed source+DAG and monitoring overlays before preflight; SQL0active first.',
@@ -324,7 +386,7 @@ print(json.dumps({'outcome':'passed','inventory_sha256':descriptor['sha256']}))
 
 
 def main(argv=None):
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('action',choices=('recipe','preflight','cohort','dataset','advance','reference-ready','reference','cleanup'))
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('action',choices=('recipe','preflight','cohort','replay','dataset','advance-drop-ack','advance','reference-ready','reference','cooldown','cleanup'))
     parser.add_argument('--config',type=Path,required=True);args=parser.parse_args(argv)
     exercise=None
     try:

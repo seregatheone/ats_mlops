@@ -6,8 +6,9 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.request import Request
 
-from ats_mlops.monitoring.exercise import Exercise
+from ats_mlops.monitoring.exercise import DropAcceptedPost,Exercise
 from ats_mlops.monitoring.retraining import AirflowAPI,NativePolicy
 from ats_mlops.monitoring.retraining_batch import HostOperations,configured_batch
 from ats_mlops.monitoring import policy as p
@@ -88,6 +89,30 @@ class ExercisePreparationTests(unittest.TestCase):
         path.write_bytes(b'changed')
         with self.assertRaisesRegex(ValueError,'overlay_context_changed'):
             module.checked_command(context,'airflow','ats-t17-base-airflow:frozen','sha256:'+'b'*64,'ats-core-airflow:t17',run=run)
+
+    def test_transport_fault_exits_only_after_accepted_exact_real_interface_reply_and_durable_marker(self):
+        # Protocol fixture only. Actual mode uses the real urllib opener and
+        # Airflow backend; it never accepts a backend callback from CLI config.
+        class ExitExpected(BaseException):pass
+        class Response:
+            status=200
+            def __init__(self,body):self.body=body;self.closed=False
+            def read(self,size):return json.dumps(self.body).encode()
+            def close(self):self.closed=True
+        marker=self.root/'marker.json';conf={'version':1}
+        body={'dag_run_id':'original-run','conf':conf};request=Request('http://127.0.0.1:8080/api/v2/dags/train_candidate/dagRuns',
+            data=json.dumps(body).encode(),headers={'Authorization':'Bearer private-token'},method='POST')
+        response=Response(body);fault=DropAcceptedPost(marker,{'request_id':'original-request','run_id':'original-run','outbox_event_id':'original-event'})
+        with patch('ats_mlops.monitoring.exercise.urlopen',return_value=response), \
+             patch('ats_mlops.monitoring.exercise.os._exit',side_effect=ExitExpected) as terminate:
+            with self.assertRaises(ExitExpected):fault(request,timeout=10)
+        self.assertTrue(response.closed);terminate.assert_called_once_with(86)
+        proof=json.loads(marker.read_bytes());self.assertEqual('original-run',proof['dag_run_id'])
+        self.assertNotIn('private-token',marker.read_text());self.assertEqual(200,proof['http_status'])
+        bad=Response({'dag_run_id':'original-run','conf':{'version':True}})
+        with patch('ats_mlops.monitoring.exercise.urlopen',return_value=bad),patch('ats_mlops.monitoring.exercise.os._exit') as terminate:
+            with self.assertRaisesRegex(p.PolicyError,'actual_post_acceptance_mismatch'):fault(request,timeout=10)
+            terminate.assert_not_called()
 
 
 if __name__=='__main__':unittest.main()

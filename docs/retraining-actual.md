@@ -74,7 +74,9 @@ steps; the other commands execute real effects. No callbacks are accepted.
 PYTHONPATH=src:. python3 -B -m ats_mlops.monitoring.exercise recipe --config /private/tmp/ats-issue-18-actual-20261026/exercise.json
 PYTHONPATH=src:. python3 -B -m ats_mlops.monitoring.exercise preflight --config /private/tmp/ats-issue-18-actual-20261026/exercise.json
 PYTHONPATH=src:. python3 -B -m ats_mlops.monitoring.exercise cohort --config /private/tmp/ats-issue-18-actual-20261026/exercise.json
+PYTHONPATH=src:. python3 -B -m ats_mlops.monitoring.exercise replay --config /private/tmp/ats-issue-18-actual-20261026/exercise.json
 PYTHONPATH=src:. python3 -B -m ats_mlops.monitoring.exercise dataset --config /private/tmp/ats-issue-18-actual-20261026/exercise.json
+PYTHONPATH=src:. python3 -B -m ats_mlops.monitoring.exercise advance-drop-ack --config /private/tmp/ats-issue-18-actual-20261026/exercise.json
 PYTHONPATH=src:. python3 -B -m ats_mlops.monitoring.exercise advance --config /private/tmp/ats-issue-18-actual-20261026/exercise.json
 ```
 
@@ -103,6 +105,22 @@ zero new Optuna trials), actual T11 validation gate, credential-free T12 import
 worker, private T12 API/restart/privacy/idempotency checks and guarded T13 stage.
 Bad/ambiguous outcome preserves the incumbent; no tuning after rejection.
 
+`replay` sends each exact installed window receipt through an additional real
+monitor DAG delivery, checks success and proves native windows/request/inflight
+and Registry counts did not change. Its deterministic replay run IDs are test
+delivery IDs; the policy receipt/window/request IDs remain original.
+
+`advance-drop-ack` is an explicit real transport fault, expected process exit86.
+It uses the normal real urllib opener and Airflow backend. After the actual T10
+POST returns2xx and the exact run/conf match, it fsyncs a sanitized acceptance
+marker and exits before native ACK. It cannot inject a fake backend or another
+run ID. Preserve the marker; start a fresh normal `advance` process. That process
+GETs the same public DAG run/conf and the same native pending outbox/request,
+then resumes acknowledgment/gates without clear/new run/refit. Exit86 is not a
+generic PASS: acceptance must verify the marker, fresh lookup and exactly one
+new registered model/run at the terminal state. These fixed T17 fault fixtures
+are integration evidence, not formal E4 experiment measurements.
+
 Before any A3, exercise the new artifact-own GX/features and actual provider
 calibration and require the same effective rule:
 
@@ -121,6 +139,7 @@ After root's actual ready/alias/journal check:
 
 ```sh
 PYTHONPATH=src:. python3 -B -m ats_mlops.monitoring.exercise reference --config /private/tmp/ats-issue-18-actual-20261026/exercise.json
+PYTHONPATH=src:. python3 -B -m ats_mlops.monitoring.exercise cooldown --config /private/tmp/ats-issue-18-actual-20261026/exercise.json
 ```
 
 Fresh target ACTIVE+epoch and actual new reference/config/calibration are checked
@@ -129,6 +148,12 @@ schema3 backing files include full sanitized `data-training-guard.json`, approva
 numeric rows and groups; hashes are auditable after workers exit. A changed rule
 fails closed and requires a separate protocol revision. Evidence does not claim
 ACTIVATION until root A3 has actually completed.
+
+After actual cursor reconciliation, `cooldown` creates two fresh real signal
+windows on the new ACTIVE/reference using its own labelled fixture resources
+and the same native policy. Real monitor DAG delivery plus exact receipt replay
+must report reason=cooldown, inflight=None, requests=1 and unchanged Registry.
+It does not advance a production clock, age the ledger, reset state or fit.
 
 Own crash cleanup command (no native policy, default service or foreign cleanup):
 
