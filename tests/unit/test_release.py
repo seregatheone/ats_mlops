@@ -208,6 +208,42 @@ class ReleaseTests(unittest.TestCase):
             self.controller.status()
         self.assertEqual(count, len(self.runtime.effects))
 
+    def test_unhealthy_target_and_registry_outage_restore_local_previous_first(self):
+        self.bootstrap()
+        self.stage("B", "A", "5")
+        self.runtime.fail.add("B")
+        self.controller.checkpoint = lambda phase: setattr(self.registry, "unavailable", True) if phase == "previous_stopped" else None
+        with self.assertRaisesRegex(ReleaseError, "registry_unavailable"):
+            self.controller.activate("B")
+        self.assertEqual("A", self.runtime.active["release_id"])
+        self.assertEqual("previous_ready", self.controller.store.read()["pending"]["phase"])
+        count = len(self.runtime.effects)
+        with self.assertRaisesRegex(ReleaseError, "registry_unavailable"):
+            self.controller.reconcile()
+        self.assertEqual(count, len(self.runtime.effects))
+        self.registry.unavailable = False
+        self.controller.checkpoint = lambda phase: None
+        self.assertEqual("A", self.controller.reconcile()["active"]["release_id"])
+        self.assertIsNone(self.controller.store.read()["pending"])
+
+    def test_valid_json_tail_epoch_corruption_cannot_reactivate_stale_candidate(self):
+        self.bootstrap()
+        self.stage("B", "A")
+        self.stage("C", "A")
+        self.controller.activate("B")
+        self.controller.rollback("A")
+        path = self.controller.root / "journal.jsonl"
+        lines = path.read_bytes().splitlines(keepends=True)
+        event = json.loads(lines[-1])
+        event["state"]["generation"] = 1
+        lines[-1] = json.dumps(event).encode() + b"\n"
+        path.write_bytes(b"".join(lines))
+        count = len(self.runtime.effects)
+        for function in (self.controller.status, lambda: self.controller.activate("C")):
+            with self.assertRaisesRegex(ReleaseError, "journal_corrupt"):
+                function()
+        self.assertEqual(count, len(self.runtime.effects))
+
     def test_separate_process_lock_is_nonblocking(self):
         script = ("from ats_mlops.release.state import Store,ReleaseError\n"
                   "import sys\ntry:\n with Store(sys.argv[1]).lock(): pass\n"

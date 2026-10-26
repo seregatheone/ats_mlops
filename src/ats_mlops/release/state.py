@@ -85,6 +85,9 @@ class Store:
             for line in journal.read_bytes().splitlines(keepends=True):
                 require(line.endswith(b"\n"), "journal_corrupt")
                 event = json.loads(line)
+                payload = dict(event)
+                digest = payload.pop("payload_sha256", None)
+                require(digest == sha(canonical(payload)), "journal_corrupt")
                 require(event["sequence"] == state["sequence"] + 1
                         and event["previous_sha256"] == state["journal_sha256"], "journal_corrupt")
                 state = event["state"]
@@ -102,6 +105,7 @@ class Store:
         projected["sequence"] += 1
         event = {"schema_version": 1, "sequence": projected["sequence"], "previous_sha256": previous,
                  "timestamp_ns": time.time_ns(), "kind": kind, "detail": detail or {}, "state": projected}
+        event["payload_sha256"] = sha(canonical(event))
         line = canonical(event) + b"\n"
         with (self.root / "journal.jsonl").open("ab") as stream:
             stream.write(line)

@@ -66,10 +66,11 @@ class ReleaseIntegrationTests(unittest.TestCase):
 
         def operation(name, function):
             start = time.monotonic()
-            value = function()
-            report["operations"].append({"name": name, "started_monotonic": start,
-                                          "ended_monotonic": time.monotonic()})
-            return value
+            try:
+                return function()
+            finally:
+                report["operations"].append({"name": name, "started_monotonic": start,
+                                              "ended_monotonic": time.monotonic()})
 
         def stage(key):
             return controller.stage(fixtures[key]["package"], fixtures[key]["check"])
@@ -124,9 +125,21 @@ class ReleaseIntegrationTests(unittest.TestCase):
             report["checks"]["concurrent_process_refused"] = True
             normal = controller.runtime
             controller.runtime = BadEventRuntime(root, specification["config"], b)
-            with self.assertRaisesRegex(ReleaseError, "new_service_failed_previous_restored"):
+            healthy_registry = controller.registry
+
+            def unavailable_during_start(phase):
+                if phase == "previous_stopped":
+                    controller.registry = Registry(dict(specification["config"], registry_uri="http://127.0.0.1:1"))
+
+            controller.checkpoint = unavailable_during_start
+            with self.assertRaisesRegex(ReleaseError, "registry_unavailable"):
                 operation("unhealthy_B_restore_A", lambda: controller.activate(b))
+            self.assertEqual(a, controller.runtime.observe()["metadata"]["release_id"])
+            self.assertEqual("previous_ready", controller.store.read()["pending"]["phase"])
+            report["checks"]["unhealthy_target_registry_outage_local_restore"] = True
+            controller.registry, controller.checkpoint = healthy_registry, lambda phase: None
             controller.runtime = normal
+            operation("reconcile_restored_A", controller.reconcile)
             self.assertEqual(a, controller.status()["active"]["release_id"])
             report["checks"]["actual_unhealthy_container_restores_A"] = True
             operation("crash_ready_B", lambda: crash("B", "target_ready"))

@@ -246,12 +246,14 @@ class Controller:
         old, target = state["pending"]["from"], state["pending"]["to"]
         require(old is not None, "recovery_required_no_previous")
         self._validate(old, approval=True)
-        require(self.registry.get() in (old["candidate"]["model_version"], target["candidate"]["model_version"]), "registry_drift_recovery_required")
         self._phase(state, "restore_intent")
         self.runtime.stop()
         self.runtime.launch(old)
         self.runtime.wait(old)
         self._phase(state, "previous_ready")
+        # Restore local availability first; Registry failure leaves this healthy
+        # previous API with pending intent until its alias can reconcile.
+        require(self.registry.get() in (old["candidate"]["model_version"], target["candidate"]["model_version"]), "registry_drift_recovery_required")
         self.registry.set(old["candidate"]["model_version"])
         state["last_restoration"] = {"release_id": old["release_id"], "failed_release_id": target["release_id"],
                                      "elapsed_seconds": (time.time_ns() - state["pending"]["started_ns"]) / 1e9}
@@ -312,14 +314,13 @@ class Controller:
             self._validate(target, approval=True)
             require(pending["kind"] == "rollback" or target["generation"] == state["generation"], "stale_recovery_intent")
             observed = self.runtime.observe()
-            alias = self.registry.get()
-            require(alias in (None if old is None else old["candidate"]["model_version"], target["candidate"]["model_version"]), "registry_drift_recovery_required")
             if self.runtime.matches(observed, target):
                 if pending["phase"] == "restore_intent":
                     return self._restore(state)
                 return self._promote(state)
             if old and self.runtime.matches(observed, old):
                 self._validate(old, approval=True)
+                require(self.registry.get() in (old["candidate"]["model_version"], target["candidate"]["model_version"]), "registry_drift_recovery_required")
                 self.registry.set(old["candidate"]["model_version"])
                 state["pending"] = None
                 self.store.append(state, "previous_restored_after_interruption", {"release_id": old["release_id"]})
