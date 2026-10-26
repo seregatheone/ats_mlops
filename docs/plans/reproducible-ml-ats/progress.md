@@ -11,7 +11,7 @@
 - [x] T-6 — Baseline и метрики
 - [x] T-7 — Модель и происхождение
 - [x] T-8 — Optuna
-- [ ] T-9 — DVC DAG
+- [x] T-9 — DVC DAG
 - [ ] T-10 — Airflow
 - [ ] T-11 — Gate кандидата
 - [ ] T-12 — BentoML API
@@ -26,6 +26,8 @@
 
 ## Learnings
 <!-- Добавлять наблюдения по мере выполнения задач. -->
+
+- T-9: audited pipeline repro проверяет immutable source/bundle до cache; DVC выполняет validate/prepare/train/evaluate. Два fresh forced main20 дали разные run/version4/5 и совпадающие prepared/features/vocab/IDF/ranks/scores/metrics; cache/restore/eval-only создали0runs. 79 unit, actualintegration76.344s и независимая R1приёмка VERIFIED. Preparedsnapshot P2 исправлен доfit. Fullstatus честно показывает4missing reserved standalone outputs, pipeline-status clean; rawcachedDVC metadatapreflight не обещан. Reports/recompute и docs/reproducibility.md сохраняют границы и executable0601a5ae.
 
 - T-8: seeded sequential Optuna выполнила smoke 2 и основную серию 20 trials; все COMPLETE/NDCG1.0 на demo_only validation, tie выбирает trial0. Selected C1/max_features2000 применены отдельным final training run, exact Registry version3. Immutable study→selected config→final receipt hashes и live MLflow binding проверены; 68 accumulated unit PASS. Trial models не регистрируются, test не использовался, улучшение реального найма не заявляется.
 

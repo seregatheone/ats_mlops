@@ -1,0 +1,38 @@
+{
+  "evidence_scope": "demo_only",
+  "executable_git_sha": "0601a5ae2d6728a0ebad3c4bbd5829a7254186d2",
+  "first_attempt": {
+    "outcome": "failed_before_stages",
+    "raw_evidence": "external failed-recipe attempt retained by operator",
+    "reason": "DVC forbids dvc.yaml and .dvc filenames as file dependencies",
+    "source_git_sha": "b53b0324e08dc7e96bbb1a47393ef608ba7dc687",
+    "training_runs_created": 0
+  },
+  "integration": {
+    "actual_forced_command": [
+      "dvc",
+      "repro",
+      "-f",
+      "--no-run-cache"
+    ],
+    "command": "ATS_RUN_RECOMPUTE=1 python -m unittest discover -s tests/integration -p test_recompute.py",
+    "fresh_directories": 2,
+    "passed": 1,
+    "seconds": 76.344,
+    "study_budget_each": 20
+  },
+  "limitations": [
+    "Synthetic demo_only; not real hiring quality or release gate.",
+    "Two independent forced runs; third E1 recompute deferred.",
+    "Separate ordinary model-parameter invalidation creates one additional run in an existing workspace.",
+    "No model download/cache or raw text data committed."
+  ],
+  "outcome": "passed",
+  "schema_version": 1,
+  "unit": {
+    "command": "python -m unittest discover -s tests/unit",
+    "passed": 79,
+    "pipeline_cases_included": 11,
+    "seconds": 11.155
+  }
+}

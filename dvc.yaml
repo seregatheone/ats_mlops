@@ -1,0 +1,54 @@
+stages:
+  validate:
+    cmd: '"$ATS_ML_PYTHON" -m ats_mlops pipeline stage validate --workspace . --source-root ../source'
+    deps:
+      - ../source/src/ats_mlops
+      - ../source/requirements-ml.lock
+      - ../source/requirements-build.lock
+      - pipeline-inputs.json
+      - dataset-binding.json
+      - data_manifest.json
+      - admission/data-admission.json
+      - data/train.jsonl
+      - data/validation.jsonl
+    outs:
+      - artifacts/validation
+  prepare:
+    cmd: '"$ATS_ML_PYTHON" -m ats_mlops pipeline stage prepare --workspace . --source-root ../source'
+    deps:
+      - artifacts/validation
+      - ../source/configs/model.json
+      - ../source/configs/search.json
+      - ../source/src/ats_mlops
+      - pipeline-inputs.json
+      - data_manifest.json
+      - admission/data-admission.json
+      - data/train.jsonl
+      - data/validation.jsonl
+    params:
+      - model
+      - search
+      - smoke
+    outs:
+      - artifacts/prepared
+  train:
+    cmd: '"$ATS_ML_PYTHON" -m ats_mlops pipeline stage train --workspace . --source-root ../source'
+    deps:
+      - artifacts/prepared
+      - ../source/src/ats_mlops
+      - pipeline-inputs.json
+      - dataset-binding.json
+    outs:
+      - artifacts/training
+  evaluate:
+    cmd: '"$ATS_ML_PYTHON" -m ats_mlops pipeline stage evaluate --workspace . --source-root ../source'
+    deps:
+      - artifacts/training
+      - artifacts/prepared
+      - ../source/src/ats_mlops
+      - pipeline-inputs.json
+      - dataset-binding.json
+    params:
+      - evaluation
+    outs:
+      - artifacts/evaluation
