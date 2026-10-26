@@ -16,7 +16,7 @@
 - [x] T-11 — Gate кандидата
 - [x] T-12 — BentoML API
 - [x] T-13 — Выпуск и откат
-- [ ] T-14 — GitHub Actions
+- [x] T-14 — GitHub Actions
 - [ ] T-15 — Prometheus/Grafana
 - [ ] T-16 — Evidently и обратная связь
 - [ ] T-17 — Переобучение
@@ -26,6 +26,8 @@
 
 ## Learnings
 <!-- Добавлять наблюдения по мере выполнения задач. -->
+
+- T-14: изолированный GitHub-hosted ARM CI выполняет static/unit и synthetic lifecycle с временными MinIO/MLflow, DVC/Optuna/gate/Bento/API/release. Genuine negative40260037093 отклонил fixture99; восстановленный code2292065 прошёл145unit/11lifecycle/12API, maxdiff0. Docs head15216ff отдельно прошёл Actions40263217470. Подтверждённые Linux UID/private-dir/package-mode дефекты исправлены без ослабления hash/isolation guards; пустая/неполная/неверно типизированная fixture отвергается. Локальная серия1b6 и последующие targeted fixes атрибутированы отдельно; reports/ci хранит исходные failed/pass receipts. Airflow recovery и production deploy в smoke не выполняются.
 
 - T-13: контроллер проверяет immutable gates/approval и current release под lock; journal payload checksums защищают tail и generation guard. На executable5fd94b0 прошли135 unit, syntax70py и actual18checks с process crashes, stale C/ABA, rollback и combined container/Registry failure. Независимая приёмка PASS, оба semantic findings закрыты. API восстанавливается локально до согласования alias при outage. Reports/releases/t13.json хранит raw hashes и monotonic outage intervals. Постоянный demo_only release модели4 активен на loopback3000 по A3; champion обновлён после ready, рабочий журнал событий пуст. После executed source — только docs/EOF whitespace.
 
