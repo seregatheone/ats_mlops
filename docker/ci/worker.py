@@ -33,6 +33,8 @@ def bundle(root):
     dvc("remote", "modify", "--local", "ci", "endpointurl", "http://minio:9000")
     paths = [workspace / "data" / (name + ".jsonl") for name in ("train", "validation")]
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
+    # init installs admitted bytes/pointers, not the previous admission's DVC cache.
+    dvc("commit", "--force", "data/train.jsonl.dvc", "data/validation.jsonl.dvc")
     dvc("push", "data/train.jsonl.dvc", "data/validation.jsonl.dvc")
     for path in paths:
         path.unlink()

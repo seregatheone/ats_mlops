@@ -1,1 +1,1 @@
-{"routes":{"/rank":"POST","/metadata":"POST"},"max_candidates":99,"top_k":[1,100]}
+{"routes":{"/rank":"POST","/metadata":"POST"},"max_candidates":100,"top_k":[1,100]}
