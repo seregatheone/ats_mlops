@@ -15,6 +15,10 @@ from ats_mlops.data import DataError, audit_manifest, generate_dataset
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["monitoring"]:
+        from ats_mlops.monitoring.drift import main as monitoring_main
+
+        return monitoring_main(argv[1:])
     if argv[:1] == ["release"]:
         from ats_mlops.release.cli import main as release_main
 
