@@ -40,6 +40,19 @@ def free_ports():
             item.close()
 
 
+def retain_checkout_history(source, checkout):
+    """Keep Actions' remote-only ancestry in the private nested clone.
+
+    A detached outer checkout advertises its commit but a subsequent clone does
+    not copy refs/remotes. After a squash merge, acceptance source snapshots may
+    still need exactly those older commits. Fetch only this local ref namespace;
+    leave the nested HEAD, working tree and ordinary branches unchanged.
+    """
+    subprocess.run(["git", "-C", str(checkout), "fetch", "--no-tags", "--no-write-fetch-head",
+                    str(source), "+refs/remotes/origin/*:refs/codex-ci-history/*"],
+                   check=True, capture_output=True, text=True, timeout=60)
+
+
 class Lifecycle:
     def __init__(self, directory, public):
         self.root, self.public = directory.resolve(), public.resolve()
@@ -137,6 +150,7 @@ class Lifecycle:
                                  for name in ("ml", "postgres", "minio", "mc")}
         self.command("clone", ["git", "clone", "--no-local", ROOT, self.root / "checkout"])
         source = self.root / "checkout"
+        retain_checkout_history(ROOT, source)
         unit_log = self.command("unit", ["docker", "run", "--rm", "--network", "none", "--cpus", "1", "--memory", "1536m",
             "--mount", f"type=bind,source={source},target=/source,readonly", "--workdir", "/source",
             "-e", "PYTHONPATH=/source/src:/source", "-e", "OMP_NUM_THREADS=1", "-e", "OPENBLAS_NUM_THREADS=1",
