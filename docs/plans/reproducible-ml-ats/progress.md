@@ -12,7 +12,7 @@
 - [x] T-7 — Модель и происхождение
 - [x] T-8 — Optuna
 - [x] T-9 — DVC DAG
-- [ ] T-10 — Airflow
+- [x] T-10 — Airflow
 - [ ] T-11 — Gate кандидата
 - [ ] T-12 — BentoML API
 - [ ] T-13 — Выпуск и откат
@@ -26,6 +26,8 @@
 
 ## Learnings
 <!-- Добавлять наблюдения по мере выполнения задач. -->
+
+- T-10: Airflow3.3.2 LocalExecutor вызывает отдельный locked ML venv/immutable source и admittedbundle; SQLiteledger сохраняет idempotency/retrybudget. 90 unit, DAGimport, actual APIgate89.950s и independentacceptance VERIFIED; normal/transient2runs, replay/cache/conflict/fatal/exhausted0extra. XCom только5IDs/URIs, noOOM/restarts. Исправлены nonroot readonly code packaging, childmanifest replaybinding, attempt3recovery и forbiddeningress. Report reports/airflow/t10.json; ambiguouspostregister остаётся recovery_required, не exactly-onceclaim.
 
 - T-9: audited pipeline repro проверяет immutable source/bundle до cache; DVC выполняет validate/prepare/train/evaluate. Два fresh forced main20 дали разные run/version4/5 и совпадающие prepared/features/vocab/IDF/ranks/scores/metrics; cache/restore/eval-only создали0runs. 79 unit, actualintegration76.344s и независимая R1приёмка VERIFIED. Preparedsnapshot P2 исправлен доfit. Fullstatus честно показывает4missing reserved standalone outputs, pipeline-status clean; rawcachedDVC metadatapreflight не обещан. Reports/recompute и docs/reproducibility.md сохраняют границы и executable0601a5ae.
 
