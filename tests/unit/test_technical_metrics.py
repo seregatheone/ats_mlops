@@ -1,4 +1,5 @@
 import asyncio
+import importlib.util
 import json
 from pathlib import Path
 import sqlite3
@@ -68,6 +69,26 @@ class HTTPMetricTests(unittest.TestCase):
 
 
 class CollectorTests(unittest.TestCase):
+    def test_host_runtime_override_is_exact_image_only_and_bound_to_identity(self):
+        source = Path(__file__).resolve().parents[2] / "scripts/bootstrap_orchestration.py"
+        spec = importlib.util.spec_from_file_location("metrics_orchestration_bootstrap", source)
+        bootstrap = importlib.util.module_from_spec(spec);spec.loader.exec_module(bootstrap)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.assertIsNone(bootstrap.runtime_override(root))
+            image = "sha256:" + "a" * 64
+            (root / "image.json").write_text(json.dumps({"id": image}))
+            path = root / "runtime-override.json"
+            accepted = {"services": {"airflow": {"image": image}}}
+            path.write_text(json.dumps(accepted))
+            self.assertEqual(path, bootstrap.runtime_override(root))
+            for invalid in ({"services": {"airflow": {"image": "sha256:" + "b" * 64}}},
+                            {"services": {"airflow": {"image": image, "volumes": ["/:/host"]}}},
+                            {"services": {"airflow": {"image": image}, "postgres": {"image": image}}}):
+                path.write_text(json.dumps(invalid))
+                with self.assertRaises(ValueError):
+                    bootstrap.runtime_override(root)
+
     def test_numeric_snapshot_tracks_durable_transitions_and_final_checkpoint(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "requests.sqlite3"

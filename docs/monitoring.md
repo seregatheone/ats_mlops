@@ -32,6 +32,15 @@ onto the previously verified Airflow image by digest, with no dependency or
 lock changes. Keep its prior digest/tag and all state/auth/work volumes. Update
 the runtime image identity sidecar and recreate only the idle Airflow service;
 do not claim that an old running image executes the new hooks.
+For a durable local overlay, store a private `runtime-override.json` in the
+existing orchestration state directory with exactly
+`{"services":{"airflow":{"image":"sha256:ACTUAL_IMAGE_ID"}}}` and matching
+`image.json.id`. The normal orchestration bootstrap validates and includes that
+image-only override on future up/config/status/stop operations. Extra services,
+mounts or environment changes are rejected. A normal build is blocked while
+the override is active: build the next overlay separately, update identity and
+override together, then recreate only idle Airflow. Old image/state receipts
+remain historical evidence; no automatic refit/retry is implied by maintenance.
 
 Release metrics derive from the read-only checksummed journal, including its
 final entry, rather than trusting the cached JSON alone. They expose active,
