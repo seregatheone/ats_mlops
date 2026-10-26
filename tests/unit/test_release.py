@@ -2,15 +2,17 @@
 
 from copy import deepcopy
 import json
+import io
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from ats_mlops.release.controller import CHECKS, Controller, DEFAULT_CONFIG, load_package
-from ats_mlops.release.runtime import DockerRuntime
+from ats_mlops.release.runtime import DockerRuntime, Registry
 from ats_mlops.release.state import ReleaseError, Store, atomic_json, sha
 
 
@@ -229,6 +231,19 @@ class ReleaseTests(unittest.TestCase):
 
 
 class CheckBindingTests(unittest.TestCase):
+    def test_registry_missing_alias_is_exact_typed_400_only(self):
+        for code, message, expected in ((400, "Registered model alias champion not found.", None),
+                                         (400, "Other invalid parameter", "error"),
+                                         (503, "Registered model alias champion not found.", "error")):
+            body = io.BytesIO(json.dumps({"error_code": "INVALID_PARAMETER_VALUE", "message": message}).encode())
+            error = HTTPError("http://local.invalid", code, "error", {}, body)
+            with patch("ats_mlops.release.runtime.http_json", side_effect=error):
+                if expected == "error":
+                    with self.assertRaisesRegex(ReleaseError, "registry_unavailable"):
+                        Registry(DEFAULT_CONFIG).get()
+                else:
+                    self.assertIsNone(Registry(DEFAULT_CONFIG).get())
+
     def test_report_exact_required_checks_and_immutable_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "check.json"

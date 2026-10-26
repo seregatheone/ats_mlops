@@ -28,8 +28,17 @@ class Registry:
             value = http_json(self.config["registry_uri"] + "/api/2.0/mlflow/registered-models/alias?" + query)
             return str(value["model_version"]["version"])
         except HTTPError as exc:
-            if exc.code == 404:
-                return None
+            try:
+                error = json.loads(exc.read())
+                # MLflow 3.10 returns HTTP 400 for a missing alias, rather than 404.
+                missing = (error.get("error_code") == "INVALID_PARAMETER_VALUE"
+                           and error.get("message") == f"Registered model alias {self.config['alias']} not found.")
+                if exc.code == 400 and missing:
+                    return None
+            except (ValueError, TypeError):
+                pass
+            finally:
+                exc.close()
             raise ReleaseError("registry_unavailable") from exc
         except Exception as exc:
             raise ReleaseError("registry_unavailable") from exc
