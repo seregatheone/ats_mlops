@@ -81,18 +81,23 @@ for p in Path('/fixture/bundle').rglob('*'):
                         "bundle_inventory_sha256": bundle_hash, "params_hash": digest(params), "parameters": params}
 
             initial_counts = self.mlflow_ids()
+            initial_versions = self.model_versions()
             normal = conf("normal")
             self.trigger(normal, "normal", "success")
             normal_receipt = self.receipt(normal)
             self.assertEqual(normal_receipt["outcome"], "new_training")
             after_normal = self.mlflow_ids()
+            versions_normal = self.model_versions()
             self.assertEqual(len(set(after_normal) - set(initial_counts)), 1)
+            self.assertEqual(len(versions_normal) - len(initial_versions), 1)
             self.trigger(normal, "replay", "success")
             self.assertEqual(self.receipt(normal), normal_receipt)
             self.assertEqual(self.mlflow_ids(), after_normal)
+            self.assertEqual(self.model_versions(), versions_normal)
             changed = {**normal, "run_id": normal["run_id"] + "-conflict"}
             self.trigger(changed, "conflict", "failed")
             self.assertEqual(self.mlflow_ids(), after_normal)
+            self.assertEqual(self.model_versions(), versions_normal)
 
             cached = conf("cached")
             self.trigger(cached, "cached", "success")
@@ -100,6 +105,7 @@ for p in Path('/fixture/bundle').rglob('*'):
             self.assertEqual(cached_receipt["outcome"], "cache_hit")
             self.assertEqual(cached_receipt["mlflow"], normal_receipt["mlflow"])
             self.assertEqual(self.mlflow_ids(), after_normal)
+            self.assertEqual(self.model_versions(), versions_normal)
 
             transient = conf("transient")
             # Force a distinct real fit after the one request-scoped failed download.
@@ -114,16 +120,20 @@ for p in Path('/fixture/bundle').rglob('*'):
             self.assertEqual([row["outcome"] for row in attempts], ["retryable", "completed"])
             self.assertEqual(len(set(self.mlflow_ids()) - set(after_normal)), 1)
             after_io = self.mlflow_ids()
+            versions_io = self.model_versions()
+            self.assertEqual(len(versions_io) - len(versions_normal), 1)
             self.trigger(exhausted, "exhausted", "failed")
             self.assertEqual(len(self.attempts(exhausted)), 3)
             self.trigger(exhausted, "exhausted-replay", "failed")
             self.assertEqual(len(self.attempts(exhausted)), 3)
             self.assertEqual(self.mlflow_ids(), after_io)
+            self.assertEqual(self.model_versions(), versions_io)
 
             invalid = {**conf("invalid"), "bundle_inventory_sha256": "0" * 64}
             self.trigger(invalid, "invalid", "failed")
             self.assertEqual(len(self.attempts(invalid)), 1)
             self.assertEqual(self.mlflow_ids(), after_io)
+            self.assertEqual(self.model_versions(), versions_io)
             self.assertEqual(self.exec("test", "!", "-e", "/work/requests/" + invalid["request_id"] + "/repro-intent.json"), "")
             for item in (normal, cached, transient):
                 source = "/work/requests/" + item["request_id"] + "/run/source"
@@ -134,7 +144,8 @@ for p in Path('/fixture/bundle').rglob('*'):
             self.evidence.update({"status": "passed", "normal": normal_receipt, "cached": cached_receipt,
                                   "transient": self.receipt(transient), "io_attempts": attempts,
                                   "exhausted_attempts": self.attempts(exhausted), "invalid_attempts": self.attempts(invalid),
-                                  "mlflow_run_ids_before": initial_counts, "mlflow_run_ids_after": after_io})
+                                  "mlflow_run_ids_before": initial_counts, "mlflow_run_ids_after": after_io,
+                                  "model_versions_before": initial_versions, "model_versions_after": versions_io})
         finally:
             if self.evidence["status"] == "running":
                 self.evidence["status"] = "failed"
@@ -202,6 +213,10 @@ for p in Path('/fixture/bundle').rglob('*'):
 
     def mlflow_ids(self):
         code = "import mlflow,json;c=mlflow.MlflowClient();e=c.get_experiment_by_name('ats-t9');print(json.dumps(sorted(r.info.run_id for r in c.search_runs([e.experiment_id],max_results=10000)) if e else []))"
+        return json.loads(self.exec("/opt/ml-venv/bin/python", "-c", code))
+
+    def model_versions(self):
+        code = "import mlflow,json;c=mlflow.MlflowClient();print(json.dumps(sorted([(v.name,v.version,v.run_id) for v in c.search_model_versions(\"name='ats-pair-ranking'\",max_results=10000)])))"
         return json.loads(self.exec("/opt/ml-venv/bin/python", "-c", code))
 
     def resources(self):

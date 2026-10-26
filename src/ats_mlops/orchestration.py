@@ -98,7 +98,7 @@ def claim(db, request_id, payload_hash):
             return row
         if row and row["status"] in {"failed", "recovery_required"}:
             raise Failure(row["kind"] or "request_failed")
-        if row and row["attempts"] >= 3:
+        if row and row["attempts"] >= 3 and row["status"] != "in_progress":
             raise Failure("retry_budget_exhausted")
         if not row:
             db.execute("INSERT INTO requests(request_id,payload_hash,status) VALUES(?,?,'ready')", (request_id, payload_hash))
@@ -213,9 +213,8 @@ def verify_result(root, expected_hash=None, conf=None):
     record = read(training / "run_manifest.json")
     if file_hash(training / "run_manifest.json") != pipeline_training["run_manifest_sha256"]:
         raise Failure("completed_training_manifest_mismatch")
-    actual = {path.relative_to(training / "model").as_posix(): file_hash(path)
-              for path in (training / "model").rglob("*") if path.is_file()}
-    from ats_mlops.lineage.manifest import inventory_hash
+    from ats_mlops.lineage.manifest import inventory_hash, tree_inventory
+    actual = tree_inventory(training / "model")
     if (record["model"]["files"] != actual or record["mlflow"] != result["mlflow"]
             or inventory_hash(actual) != record["model"]["sha256"]
             or record["model"]["sha256"] != pipeline_training["model_sha256"]):
@@ -259,6 +258,9 @@ def run(conf):
             result = verify_result(root, conf=conf)
             recovered(db, conf["request_id"], file_hash(root / "candidate.json"))
             return xcom(result)
+        if row and row["attempts"] >= 3:
+            finish(db, conf["request_id"], row["attempts"], "failed", kind="retry_budget_exhausted", phase="recovered")
+            raise Failure("retry_budget_exhausted")
         attempt = begin_attempt(db, conf["request_id"])
         phase = "download"
         try:

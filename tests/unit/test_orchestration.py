@@ -69,6 +69,18 @@ class OrchestrationTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT status FROM requests").fetchone()[0], "completed")
             self.assertEqual(tuple(db.execute("SELECT phase,outcome FROM attempts").fetchone()), ("recovered", "completed"))
 
+    def test_third_attempt_crash_can_recover_complete_receipt_without_fourth_attempt(self):
+        with tempfile.TemporaryDirectory() as temporary, runner.database(Path(temporary) / "ledger") as db:
+            for _ in range(3):
+                runner.claim(db, "r", "payload")
+                attempt = runner.begin_attempt(db, "r")
+                if attempt < 3:
+                    runner.finish(db, "r", attempt, "retryable")
+            self.assertEqual(runner.claim(db, "r", "payload")["attempts"], 3)
+            runner.recovered(db, "r", "receipt")
+            self.assertEqual(runner.claim(db, "r", "payload")["status"], "completed")
+            self.assertEqual(db.execute("SELECT count(*) FROM attempts").fetchone()[0], 3)
+
     def test_ml_environment_drops_airflow_sql_and_root_credentials(self):
         with patch.dict(os.environ, {"AIRFLOW__DATABASE__SQL_ALCHEMY_CONN": "secret", "MINIO_ROOT_PASSWORD": "secret",
                                      "MLFLOW_SECRET_ACCESS_KEY": "secret", "AWS_SECRET_ACCESS_KEY": "dvc", "MLFLOW_TRACKING_URI": "http://mlflow:5000"}):
