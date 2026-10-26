@@ -18,9 +18,9 @@ def require(condition, reason):
         raise GateError(reason)
 
 
-def thresholds(path: Path) -> dict:
+def thresholds(path: Path, *, content: bytes | None = None) -> dict:
     # JSON is a strict YAML subset; the host coordinator needs no YAML dependency.
-    document = json.loads(path.read_text())
+    document = json.loads(path.read_bytes() if content is None else content)
     require(type(document.get("schema_version")) is int
             and document == {"schema_version": 1, "metric": "ndcg_at_10",
                          "max_ndcg_drop": 0.005, "recall_policy": "report_only"},

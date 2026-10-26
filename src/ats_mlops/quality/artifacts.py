@@ -10,8 +10,10 @@ from ats_mlops.data.validate import _valid_receipt
 from ats_mlops.quality.policy import GateError, require
 
 
-def read_json(path):
-    return json.loads(Path(path).read_text())
+def read_document(path):
+    """Return the parsed document and identity of the same validated bytes."""
+    content = Path(path).read_bytes()
+    return json.loads(content), sha256(content)
 
 
 def digest(path):
@@ -56,15 +58,15 @@ def validation_snapshot(manifest_path: Path, admission_path: Path, binding_path:
     original = manifest_path.read_bytes()
     manifest = load_manifest(manifest_path)
     require(manifest == json.loads(original), "validation_manifest_changed")
-    receipt = read_json(admission_path)
+    receipt, admission_sha = read_document(admission_path)
     require(_valid_receipt(receipt, sha256(original)), "invalid_validation_admission")
     rows = load_partition(manifest_path, "validation")
     require(manifest_path.read_bytes() == original, "validation_manifest_changed")
     content = b"".join(canonical_json(row) for row in rows)
-    binding = read_json(binding_path)
+    binding, binding_sha = read_document(binding_path)
     require(binding["schema_version"] == 1 and binding["evidence_scope"] == manifest["evidence_scope"]
             and binding["manifest_sha256"] == sha256(original)
-            and binding["admission_sha256"] == digest(admission_path), "current_dataset_binding_mismatch")
+            and binding["admission_sha256"] == admission_sha, "current_dataset_binding_mismatch")
     require(set(binding["workspace_pointers"]) == {"train", "validation", "split_lists"},
             "missing_current_workspace_pointers")
     for name, pointer in binding["workspace_pointers"].items():
@@ -72,27 +74,28 @@ def validation_snapshot(manifest_path: Path, admission_path: Path, binding_path:
         path = binding_path.parent / relative
         require(not path.is_symlink() and path.resolve().is_relative_to(binding_path.parent.resolve()),
                 "invalid_current_pointer_path")
+        pointer_bytes = path.read_bytes()
         require(pointer["artifact_path"] == manifest["artifacts"][name]["path"]
                 and pointer["sha256"] == manifest["artifacts"][name]["sha256"]
-                and digest(path) == pointer["pointer_sha256"], "current_pointer_binding_mismatch")
+                and sha256(pointer_bytes) == pointer["pointer_sha256"], "current_pointer_binding_mismatch")
         # The pinned DVC writer emits this single-file pointer form. No YAML
         # interpreter or reserved dataset bytes are needed by the host gate.
         require(valid_hash(pointer["md5"], 32) and type(pointer["size"]) is int and pointer["size"] > 0,
                 "invalid_current_pointer")
         expected = (f"outs:\n- md5: {pointer['md5']}\n  size: {pointer['size']}\n  hash: md5\n"
                     f"  path: {PurePosixPath(pointer['artifact_path']).name}\n")
-        require(path.read_text() == expected, "current_pointer_metadata_mismatch")
+        require(pointer_bytes.decode("utf-8") == expected, "current_pointer_metadata_mismatch")
     point = binding["workspace_pointers"]["validation"]
     require(point["md5"] == hashlib.md5(content).hexdigest() and point["size"] == len(content),
             "current_validation_pointer_mismatch")
     return {"rows": rows, "manifest": manifest,
-            "manifest_sha256": sha256(original), "admission_sha256": digest(admission_path),
+            "manifest_sha256": sha256(original), "admission_sha256": admission_sha,
             "validation_sha256": sha256(content), "validation_md5": hashlib.md5(content).hexdigest(),
             "validation_size": len(content),
             "split_sha256": manifest["artifacts"]["split_lists"]["sha256"],
             "inventory_sha256": sha256(canonical_json(manifest["splits"]["validation"])),
             "groups": manifest["splits"]["validation"]["vacancy_ids"],
-            "binding": binding, "dataset_binding_sha256": digest(binding_path),
+            "binding": binding, "dataset_binding_sha256": binding_sha,
             "evidence_scope": manifest["evidence_scope"]}
 
 
@@ -100,7 +103,8 @@ def validate_model(spec: dict, snapshot: dict, *, candidate: bool):
     require(isinstance(spec, dict), "missing_model_descriptor")
     record_path, pipeline_path = Path(spec["run_manifest"]), Path(spec["pipeline_manifest"])
     artifact = Path(spec["model_dir"])
-    record, pipeline = read_json(record_path), read_json(pipeline_path)
+    record, record_sha = read_document(record_path)
+    pipeline, pipeline_sha = read_document(pipeline_path)
     identity = record["mlflow"]
     require(set(identity) == {"model_name", "model_version", "run_id", "experiment_id", "exact_uri", "source"}
             and all(isinstance(value, str) for value in identity.values()), "invalid_model_identity")
@@ -143,13 +147,14 @@ def validate_model(spec: dict, snapshot: dict, *, candidate: bool):
             and record["features"]["parameters"] == record["params"]["features"]
             and record["features"]["version"] == record["params"]["feature_version"]
             and type(record["seed"]) is int and record["seed"] == record["params"]["seed"], "model_configuration_mismatch")
-    embedded = read_json(artifact / "extra_files/input-provenance.json")
+    embedded, embedded_sha = read_document(artifact / "extra_files/input-provenance.json")
+    require(embedded_sha == files["extra_files/input-provenance.json"], "embedded_provenance_changed")
     require(all(key in record and record[key] == value for key, value in embedded.items())
             and {"git_sha", "source_sha256", "source_tree_sha256", "environment", "data_sha256",
                  "data_manifest_sha256", "features_sha256", "params_sha256", "split_sha256"} <= set(embedded),
             "embedded_provenance_mismatch")
     training = pipeline["training"]
-    require(training["run_manifest_sha256"] == digest(record_path)
+    require(training["run_manifest_sha256"] == record_sha
             and training["model_sha256"] == record["model"]["sha256"]
             and training["mlflow"] == identity
             and training["authoritative_dataset_pointers"] == "inputs.binding.workspace_pointers"
@@ -205,8 +210,8 @@ def validate_model(spec: dict, snapshot: dict, *, candidate: bool):
         require(isinstance(spec.get("release_id"), str)
                 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", spec["release_id"]) is not None
                 and type(spec.get("release_is_fixture", False)) is bool, "incumbent_release_identity_required")
-    public = {**identity, "run_manifest_sha256": digest(record_path),
-              "pipeline_manifest_sha256": digest(pipeline_path), "model_sha256": record["model"]["sha256"],
+    public = {**identity, "run_manifest_sha256": record_sha,
+              "pipeline_manifest_sha256": pipeline_sha, "model_sha256": record["model"]["sha256"],
               "model_payload_sha256": record["model"]["payload_sha256"],
               "training_git_sha": record["git_sha"], "source_tree_sha256": record["source_tree_sha256"],
               "authoritative_workspace_pointers": pointers}

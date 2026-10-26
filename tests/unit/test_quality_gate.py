@@ -16,6 +16,7 @@ from ats_mlops.model.baseline import score_rows
 from ats_mlops.quality.artifacts import digest, strict_inventory, validation_snapshot
 from ats_mlops.quality.gate import run_gate
 from ats_mlops.quality.policy import assess_scores, comparison, GateError
+from ats_mlops.quality.policy import thresholds
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -139,6 +140,74 @@ class GateTests(unittest.TestCase):
         self.assertNotIn("vacancy_text", (self.root / "gate.json").read_text())
         with self.assertRaisesRegex(GateError, "new_gate_report_required"):
             self.gate()
+
+    def test_competing_output_created_after_initial_check_is_never_overwritten(self):
+        output = self.root / "racing-gate.json"
+        original_mkdir = Path.mkdir
+        def racing_mkdir(path, *args, **kwargs):
+            if path == output.parent:
+                output.write_text("competing immutable report")
+            return original_mkdir(path, *args, **kwargs)
+        with patch.object(Path, "mkdir", new=racing_mkdir):
+            with self.assertRaises(FileExistsError):
+                run_gate({}, output)
+        self.assertEqual(output.read_text(), "competing immutable report")
+
+    def test_model_metadata_hashes_identify_exact_loaded_bytes_during_replacement(self):
+        original_inventory = strict_inventory
+        spec = self.request["candidate"]
+        for field in ("pipeline_manifest", "run_manifest"):
+            path = Path(spec[field])
+            original = path.read_bytes()
+            mutated = False
+            def racing_inventory(directory):
+                nonlocal mutated
+                if not mutated:
+                    changed = json.loads(original)
+                    if field == "pipeline_manifest":
+                        changed["source"]["git_sha"] = "0" * 40
+                    else:
+                        changed["git_sha"] = "0" * 40
+                    write(path, changed)
+                    mutated = True
+                return original_inventory(directory)
+            with self.subTest(field=field), patch("ats_mlops.quality.artifacts.strict_inventory", side_effect=racing_inventory):
+                result = run_gate(self.request, self.root / (field + "-race.json"), scorer=self.scorer)
+            self.assertEqual(result["outcome"], "passed")
+            self.assertEqual(result["candidate"][field + "_sha256"], sha256(original))
+            self.assertNotEqual(result["candidate"][field + "_sha256"], digest(path))
+            path.write_bytes(original)
+
+    def test_snapshot_receipt_and_binding_hashes_identify_validated_bytes(self):
+        receipt = self.root / "admission/data-admission.json"
+        binding = self.root / "dataset-binding.json"
+        expected = {"admission_sha256": digest(receipt), "dataset_binding_sha256": digest(binding)}
+        original_md5 = hashlib.md5
+        def racing_md5(*args, **kwargs):
+            receipt.write_text('{"replaced":true}\n')
+            binding.write_text('{"replaced":true}\n')
+            return original_md5(*args, **kwargs)
+        with patch("ats_mlops.quality.artifacts.hashlib.md5", side_effect=racing_md5):
+            result = validation_snapshot(self.root / "manifest.json", receipt, binding)
+        for key, value in expected.items():
+            self.assertEqual(result[key], value)
+        self.assertNotEqual(result["admission_sha256"], digest(receipt))
+        self.assertNotEqual(result["dataset_binding_sha256"], digest(binding))
+
+    def test_threshold_file_hash_identifies_loaded_policy_bytes(self):
+        path = self.root / "policy.yaml"
+        original = (ROOT / "configs/quality.yaml").read_bytes()
+        path.write_bytes(original)
+        self.request["thresholds"] = str(path)
+        def racing_thresholds(*args, **kwargs):
+            result = thresholds(*args, **kwargs)
+            path.write_text('{"replaced":true}\n')
+            return result
+        with patch("ats_mlops.quality.gate.thresholds", side_effect=racing_thresholds):
+            result = self.gate()
+        self.assertEqual(result["outcome"], "passed")
+        self.assertEqual(result["thresholds"]["file_sha256"], sha256(original))
+        self.assertNotEqual(result["thresholds"]["file_sha256"], digest(path))
 
     def test_incumbent_with_older_training_data_is_rescored_on_current_snapshot(self):
         self.request["incumbent"] = self.model_fixture("older", older=True)

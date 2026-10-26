@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 import platform
 import sys
@@ -25,9 +26,10 @@ def run_gate(request: dict, output: Path, *, scorer=None):
         require(set(request) == {"validation_manifest", "admission_report", "dataset_binding", "thresholds", "candidate", "incumbent"},
                 "invalid_gate_request")
         policy_path = Path(request["thresholds"])
-        policy = thresholds(policy_path)
+        policy_bytes = policy_path.read_bytes()
+        policy = thresholds(policy_path, content=policy_bytes)
         report["thresholds"] = {"config": policy, "sha256": sha256(canonical_json(policy)),
-                                "file_sha256": digest(policy_path)}
+                                "file_sha256": sha256(policy_bytes)}
         snapshot = validation_snapshot(Path(request["validation_manifest"]), Path(request["admission_report"]),
                                        Path(request["dataset_binding"]))
         report["evidence_scope"] = snapshot["evidence_scope"]
@@ -64,7 +66,10 @@ def run_gate(request: dict, output: Path, *, scorer=None):
     if report["reasons"]:
         report["outcome"] = "rejected"
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(report, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n")
+    with output.open("x", encoding="utf-8") as stream:
+        stream.write(json.dumps(report, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
     return report
 
 
