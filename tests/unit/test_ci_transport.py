@@ -20,5 +20,5 @@ class TransportTests(unittest.TestCase):
 
     def test_explicit_compose(self):
         result = compose_command(Path("/tmp/ci-state"), "ci-123", Path("/tmp/ci-compose.yaml"))
-        self.assertIn("/tmp/ci-compose.yaml", result)
+        self.assertIn(str(Path("/tmp/ci-compose.yaml").resolve()), result)
         self.assertNotIn(str(Path.cwd() / "compose.yaml"), result)
