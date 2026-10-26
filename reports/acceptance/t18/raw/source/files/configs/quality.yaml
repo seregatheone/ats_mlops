@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "metric": "ndcg_at_10",
+  "max_ndcg_drop": 0.005,
+  "recall_policy": "report_only"
+}

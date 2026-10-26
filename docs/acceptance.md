@@ -1,10 +1,14 @@
-# T18 acceptance and experiment freeze — preparation
+# T18 acceptance and frozen experiment protocol
 
-Status: **preparation / blocked**, not acceptance PASS. T17 implementation and
-independent acceptance are still pending. No E1–E5 measurement or original test
-read is authorized by preparing this document. This phase executes only pure
-contract/sandbox unit tests. A missing report, skip, mocked service or a file named
-`passed.json` cannot qualify a scenario.
+Status: **PASS for eight actual scenarios S1–S8 and requirements R1–R8**.
+The [public summary](../reports/acceptance/t18/summary.json) and
+[native audit](../reports/acceptance/t18/raw/acceptance-audit.json) record the result.
+The complete private freeze has SHA256
+`3d081dba7f13ee46366b10417b1a8f7472da64bbe62220bb5c9de090807d6481`;
+its spec SHA256 is `74eff657e0974f1877af04645ca017aa2184c43afee58399c7aea7cec9d6049d`.
+The public projection contains an explicit safe subset and a hash map of included
+and omitted files. It is not the complete replayable freeze: binary models and
+private operational inputs remain in the private artifact graph.
 
 The authoritative scope is T18/#19 and the eight final scenarios in
 `docs/plans/reproducible-ml-ats/plan.md`. T18's three engineering recomputations are
@@ -12,6 +16,38 @@ separate from the later three E1 experimental runs. E2 remains **not_run** until
 five real human/automation pairs exist; an AI run cannot be the manual half.
 The available corpus is publishable synthetic data (`demo_only`). No independent
 real hiring corpus or independent real hiring-quality result is established.
+At this freeze, E1–E5 are all **not_run**, original test rows have not been read,
+and the account-wide one-use ledger has not been opened.
+
+S1–S5 executed on `01ccf13d123857ea7b0c8c36fef6c29a13935b78`; S6–S8 and
+the final executable protocol use `14be8edffb68a2320404e8e1a03f37a740694466`.
+The audit checks Git ancestry, exact historical source bytes, a narrow allowed
+change set and the original phase/spec/environment/authorization bindings.
+Training identity is preserved across later runner and audit fixes. The negative
+model producer has its own explicit Git/file identity; it does not replace S1.
+
+Observed qualification results:
+
+- Three fresh S2 fits produced identical prepared features, ranks and scores:
+  maximum score difference0 across220 pairs and11 groups.
+- Invalid data failed before fitting; the zero-fit degraded model was rejected
+  by actual isolated scoring with validation NDCG@10 of0 against baseline/incumbent1.
+- Managed-release and fault scenarios exercised approval/gate checks, immutable
+  serving, Registry/MinIO failure, failed readiness and crash reconciliation.
+  Outage bounds reflect finite sampling; zero downtime is not asserted.
+- S6 created one logical request after two shifted windows of11 vacancies/220
+  pairs, waited for labels, then performed one fit and activated model8. The
+  refreshed child reference uses12 vacancies/240 pairs per full window. Replay
+  and cooldown produced no new requests, runs or versions.
+- Private qualification used five fits: one S1, three S2 and one S6. Additional
+  model versions include zero-fit fixtures; CI uses its own isolated lifecycle.
+- [Positive Actions40362504417](https://github.com/seregatheone/ats_mlops/actions/runs/40362504417)
+  passed364 unit tests,11 lifecycle checks and12 API checks. The retained
+  [negative Actions40260037093](https://github.com/seregatheone/ats_mlops/actions/runs/40260037093)
+  verifies rejection of the deliberately broken contract at its historical head.
+- Full L5 discovery passed16 tests, including actual eight-scenario validation.
+  Independent metadata review verified the733-file private graph and the
+  original S6/S7 command, cohort, source and model bindings.
 
 The qualified candidate is the **first required S1 qualification fit**, declared
 before fitting or inspecting metrics in `qualification-plan.json`. Its exact
@@ -39,17 +75,18 @@ Every receipt binds scenario, source Git SHA, spec SHA, UTC interval, exact
 argv/exit status, hashed stdout/stderr and native evidence references. A receipt's
 `outcome` or boolean checks alone are insufficient. `tests/e2e/audit.py` verifies
 the closed artifact graph and delegates each scenario to an explicit native
-schema validator; absent/unfrozen validators return blocked. The early
-`validate_freeze(path, expected_sha256)` API deliberately refuses final freeze
-until serial dependencies, all native adapters and actual evidence are qualified.
-It starts no services and never reads reserved test row files.
+schema validator; absent/unfrozen validators return blocked.
+`validate_freeze(path, expected_sha256)` verifies the complete private graph,
+including all native adapters and actual evidence. It starts no services and
+never reads reserved test row files. Missing reports and skipped checks cannot
+qualify a scenario.
 
 ## Freeze sequence and one-use test boundary
 
-T4 owns `evaluation/experiment.py` and `configs/experiment.template.json` in the
-T19 preparation lane. Root will transfer its frozen prep files serially into T18
-before final qualification; there is one protocol algorithm. T18 consumes
-`validate_spec` and writes a later immutable `reports/acceptance/freeze.json`.
+`evaluation/experiment.py` and `configs/experiment.template.json` define the
+shared T18/T19 protocol. T18 validates and freezes the populated private spec.
+The public `reports/acceptance/t18/summary.json` identifies that private freeze;
+it is not a replacement input for `validate_freeze`.
 The freeze references a **before-evidence executable Git SHA**, spec bytes,
 qualified model's original training SHA and exact native evidence hashes.
 Evidence/docs commits do not reattribute training. No source↔freeze self-hash cycle.
@@ -86,14 +123,14 @@ Canonical JSON uses sorted keys, compact separators and a trailing newline.
 Candidate/protocol/namespace changes do not reset it. Exact test-partition SHA is
 a separate immutable input binding: row-ID serialization cannot create a new
 semantic holdout. `derive_holdout_lineage` verifies the anchored parent chain
-and reads only reservation metadata. No E5 ledger is initialized in preparation.
+and reads only reservation metadata. No E5 ledger was initialized by T18.
 The local guard is an operational control, not a signature against an administrator;
 there is no public force/reset path.
 The native `evaluate_e5(directory, authorization)` API derives one persistent
 ledger from the OS account's canonical home, independent of the study directory.
 It accepts no guard path and ignores HOME overrides; ancestor symlinks reject
-before warmup. Freeze binds the stable path-rule/ledger identity. Preparation
-does not create or consume this real ledger.
+before warmup. Freeze binds the stable path-rule/ledger identity. T18 did not
+create or consume this real ledger.
 
 The exact full-pair inventory digest is separately derived from sorted manifest
 `splits.test.pair_ids` metadata, without reading test rows. After durable consume,
@@ -105,32 +142,45 @@ ledger-bound hash and the retained result hash, then commits without rereading
 text or rescoring. Failure after intent without a retained result remains
 consumed/unknown. Numeric IDs/GT are private proof; publication is aggregate only.
 
-## Later runtime window — not an instruction to execute now
+## Runtime isolation and replay
 
-Only after T17 actual acceptance, zero open material defects and executable source
-commit may root authorize a resource window. The future harness uses existing
-audited scripts: `bootstrap_core.py` for unique private state/config, pipeline
-init/repro, T11/T12 checks, `test_release.py`, frozen T17 callbacks/DAG and genuine
-Actions receipts. Exact commands/transport adapters remain pending T17 freeze;
-current historical receipts cannot stand in for the eight new actual scenarios.
+The actual harness used private core state/config, forced pipeline recomputation,
+T11/T12 checks, native release controllers, T17 callbacks/DAGs and genuine Actions
+receipts. Every retained attempt is attributed to its actual executable source.
+Failed launch-hash, negative-model metadata and host/VM clock attempts were kept.
+The final monitoring runner derives windows from the event-store clock and
+checks the exact predeclared request inventory before inspecting drift.
 
 All resources have an `ats-acceptance-*` namespace, separate ports, network,
 credentials, Registry/artifact buckets and native event volume. No production
 alias/deploy, default-service predictions, global Docker prune, foreign resources
 or primary `.local/core` reuse. With the 7.75GiB VM, root may stop only its own idle
-ATS core in a declared maintenance window after checking active DAGs; no implicit
-shared-stop command exists in this preparation. Default artifact-only serving may
+ATS core in a declared maintenance window after checking active DAGs. Default artifact-only serving may
 remain. Do not run three fits or services in parallel; CPU1/1536MiB workers and
 measured per-service limits are explicit inputs. Source-only Airflow overlay is
-provided after T17 freeze; do not rebuild full Airflow here.
+pins the actual source and cached dependencies.
 
-Later execution order: isolated startup/admission → three separate qualification
+Execution order: isolated startup/admission → three separate qualification
 recomputations → API/release and scoped failure controls → T17 monitoring/retrain
 → final Actions binding → claim/defect review → immutable freeze. Preserve failed
 attempts and negative outcomes. Cleanup removes only this run's resources.
 Root owns final merge and any default release changes.
 
-Preparation check: `PYTHONPATH=src python3 -B -m unittest
-tests.e2e.test_audit_contract`. This checks the auditor, not the eight actual
-scenarios. The final `python -m unittest discover -s tests/e2e` gate will require
-actual receipt inputs and cannot report acceptance PASS from skips or placeholders.
+The private freeze records planned fresh native state/work volumes for formal
+E4. Qualification volumes and history remain intact; declaration of the formal
+volumes does not execute an experiment or reset a policy.
+
+To revalidate the retained private artifact graph from the pinned executable
+checkout, set its full path and the expected digest explicitly:
+
+```sh
+export ATS_ACCEPTANCE_FREEZE=/absolute/path/to/private/freeze.json
+export ATS_ACCEPTANCE_FREEZE_SHA256=3d081dba7f13ee46366b10417b1a8f7472da64bbe62220bb5c9de090807d6481
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -B -m unittest discover -s tests/e2e -v
+```
+
+This verifies retained evidence without rerunning services or reading original
+test rows. A new machine must perform its own private qualification and preserve
+the resulting complete graph; the public subset alone intentionally fails this
+gate. Formal E1–E5 results belong to T19 and must not reuse qualification timings
+or label agent activity as human E2 observations.
