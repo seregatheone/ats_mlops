@@ -1,4 +1,6 @@
 import json
+import hashlib
+import io
 import os
 from pathlib import Path
 import tempfile
@@ -17,6 +19,36 @@ def request():
 
 
 class OrchestrationTests(unittest.TestCase):
+    def test_forbidden_bundle_bytes_are_rejected_before_s3_get(self):
+        required = {"data_manifest.json", "admission/data-admission.json", "dataset-binding.json",
+                    "data/train.jsonl.dvc", "data/validation.jsonl.dvc", "data/split.json.dvc"}
+        for forbidden in ("data/test.jsonl", "reserved/hidden-test.jsonl"):
+            with self.subTest(forbidden=forbidden), tempfile.TemporaryDirectory() as temporary:
+                manifest = {"artifacts": {name: {"path": path} for name, path in {
+                    "train": "data/train.jsonl", "validation": "data/validation.jsonl", "test": forbidden,
+                    "source": "data/source.jsonl", "corpus": "data/corpus.jsonl", "split_lists": "data/split.json"}.items()}}
+                metadata = json.dumps(manifest).encode()
+                files = {name: "a" * 64 for name in required | {"data/train.jsonl", "data/validation.jsonl", forbidden}}
+                files["data_manifest.json"] = hashlib.sha256(metadata).hexdigest()
+                descriptor = {"schema_version": 1, "files": files, "sha256": inventory_hash(files)}
+                conf = {**request(), "bundle_inventory_sha256": descriptor["sha256"]}
+                calls = []
+
+                class RecordingS3:
+                    def get_object(self, Bucket, Key):
+                        name = Key.rsplit("/", 1)[-1]
+                        calls.append(Key)
+                        if name == "bundle.json":
+                            return {"Body": io.BytesIO(json.dumps(descriptor).encode())}
+                        if name == "data_manifest.json":
+                            return {"Body": io.BytesIO(metadata)}
+                        raise AssertionError("partition bytes fetched before ingress plan approval")
+
+                with self.assertRaisesRegex(runner.Failure, "data_invalid"):
+                    runner.fetch_bundle(RecordingS3(), conf, Path(temporary) / "bundle")
+                self.assertTrue(all(key.endswith(("/bundle.json", "/data_manifest.json")) for key in calls))
+                self.assertFalse(any(key.endswith("/" + forbidden) for key in calls))
+
     def test_request_hash_and_uri_fail_closed(self):
         conf = request()
         self.assertEqual(runner.validate(conf), conf)

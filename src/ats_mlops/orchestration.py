@@ -154,6 +154,55 @@ def command(args, *, env=None, cwd=None):
     return process.stdout
 
 
+def fetch_bundle(client, conf, output):
+    """Validate the complete ingress plan before requesting any partition bytes."""
+    from ats_mlops.lineage.manifest import inventory_hash
+
+    prefix = urlsplit(conf["bundle_uri"]).path.lstrip("/").removesuffix("bundle.json")
+
+    def fetch(name, expected=None, limit=16777216):
+        body = client.get_object(Bucket="ats-dvc", Key=prefix + name)["Body"]
+        try:
+            content = body.read(limit + 1)
+        finally:
+            body.close()
+        if len(content) > limit or (expected and hashlib.sha256(content).hexdigest() != expected):
+            raise Failure("bundle_content_mismatch")
+        return content
+
+    descriptor = json.loads(fetch("bundle.json", limit=131072))
+    files = descriptor.get("files", {})
+    if (descriptor.get("schema_version") != 1 or not isinstance(files, dict) or len(files) > 16
+            or descriptor.get("sha256") != conf["bundle_inventory_sha256"]
+            or inventory_hash(files) != conf["bundle_inventory_sha256"]):
+        raise Failure("bundle_identity_mismatch")
+    required = {"data_manifest.json", "admission/data-admission.json", "dataset-binding.json",
+                "data/train.jsonl.dvc", "data/validation.jsonl.dvc", "data/split.json.dvc"}
+    reserved = {"data/test.jsonl", "data/source.jsonl", "data/corpus.jsonl", "data/split.json"}
+    if not required.issubset(files) or reserved.intersection(files):
+        raise Failure("data_invalid")
+    for name, expected in files.items():
+        if (not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_./-]+", name)
+                or name.startswith("/") or ".." in name.split("/")
+                or not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected)):
+            raise Failure("unsafe_bundle_path")
+    # Only trusted metadata is fetched until the exact train/validation plan is known.
+    manifest_bytes = fetch("data_manifest.json", files["data_manifest.json"])
+    manifest = json.loads(manifest_bytes)
+    partitions = {manifest["artifacts"][name]["path"] for name in ("train", "validation")}
+    forbidden = {manifest["artifacts"][name]["path"] for name in ("source", "corpus", "test", "split_lists")}
+    if partitions.intersection(forbidden) or set(files) != required | partitions:
+        raise Failure("data_invalid")
+    output.mkdir(parents=True, exist_ok=True)
+    write(output / "bundle.json", descriptor)
+    for name, expected in files.items():
+        path = output / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(manifest_bytes if name == "data_manifest.json" else fetch(name, expected))
+    from ats_mlops.pipeline import verify_bundle
+    verify_bundle(output, conf["bundle_inventory_sha256"])
+
+
 def download(conf, output, attempt):
     import boto3
     from botocore.config import Config
@@ -167,28 +216,8 @@ def download(conf, output, attempt):
         if attempt <= plan.get(conf["request_id"], 0):
             endpoint = "http://127.0.0.1:9"
     client = boto3.client("s3", endpoint_url=endpoint, config=Config(connect_timeout=2, read_timeout=10, retries={"total_max_attempts": 1}))
-    prefix = urlsplit(conf["bundle_uri"]).path.lstrip("/").removesuffix("bundle.json")
     try:
-        descriptor = json.loads(client.get_object(Bucket="ats-dvc", Key=prefix + "bundle.json")["Body"].read(131073))
-        files = descriptor.get("files", {})
-        if (not isinstance(files, dict) or len(files) > 16 or descriptor.get("sha256") != conf["bundle_inventory_sha256"]):
-            raise Failure("bundle_identity_mismatch")
-        from ats_mlops.lineage.manifest import inventory_hash
-        if inventory_hash(files) != conf["bundle_inventory_sha256"]:
-            raise Failure("bundle_identity_mismatch")
-        output.mkdir(parents=True, exist_ok=True)
-        write(output / "bundle.json", descriptor)
-        for name, expected in files.items():
-            if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_./-]+", name) or name.startswith("/") or ".." in name.split("/"):
-                raise Failure("unsafe_bundle_path")
-            path = output / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            data = client.get_object(Bucket="ats-dvc", Key=prefix + name)["Body"].read(16777217)
-            if len(data) > 16777216 or hashlib.sha256(data).hexdigest() != expected:
-                raise Failure("bundle_content_mismatch")
-            path.write_bytes(data)
-        from ats_mlops.pipeline import verify_bundle
-        verify_bundle(output, conf["bundle_inventory_sha256"])
+        fetch_bundle(client, conf, output)
     except (EndpointConnectionError, ConnectTimeoutError, ConnectionClosedError, ReadTimeoutError):
         raise Failure("io_transient", True) from None
     except ClientError as error:
