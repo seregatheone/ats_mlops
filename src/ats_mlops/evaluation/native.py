@@ -147,7 +147,8 @@ class Commands:
             path = self.root / "commands" / f"{number:03}-{stream}.txt"
             content = getattr(completed, stream);path.write_bytes(content)
             paths[stream] = {"path": path.relative_to(self.root).as_posix(), "sha256": sha(content)}
-        self.records.append({"argv": list(map(str, argv)), "exit_code": completed.returncode, **paths})
+        self.records.append({"argv": list(map(str, argv)), "exit_code": completed.returncode,
+                             "accepted_exit_codes": list(accepted), **paths})
         immutable(self.root / "commands" / f"{number:03}.json", self.records[-1])
         require(completed.returncode in accepted, "native_command_failed")
         return completed

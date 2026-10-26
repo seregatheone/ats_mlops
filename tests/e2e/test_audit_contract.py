@@ -24,7 +24,7 @@ def receipt():
     return {"schema_version": 1, "outcome": "passed", "execution_kind": "actual_acceptance", "evidence_scope": "demo_only",
             "source_git_sha": SOURCE, "spec_sha256": SPEC, "started_at": "2026-10-26T00:00:00Z", "finished_at": "2026-10-26T00:00:01Z",
             "scenario": "S2", "name": SCENARIOS["S2"][0], "commands": [{"id": "run-1", "argv": ["dvc", "repro", "-f", "--no-run-cache"],
-            "exit_code": 0, "expected_exit_code": 0, "stdout": {"path": "stdout.txt", "sha256": digest(b"executed")},
+            "exit_code": 0, "expected_exit_code": 0, "accepted_exit_codes": [0], "stdout": {"path": "stdout.txt", "sha256": digest(b"executed")},
             "stderr": {"path": "stderr.txt", "sha256": digest(b"")}}]}
 
 

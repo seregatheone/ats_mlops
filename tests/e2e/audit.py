@@ -142,12 +142,14 @@ def execution(receipt, source_sha, spec_sha):
     require(isinstance(commands, list) and commands, "missing_actual_commands")
     ids = set()
     for command in commands:
-        require(set(command) == {"id", "argv", "exit_code", "expected_exit_code", "stdout", "stderr"}
+        require(set(command) == {"id", "argv", "exit_code", "expected_exit_code", "accepted_exit_codes", "stdout", "stderr"}
                 and isinstance(command["id"], str) and command["id"] not in ids, "invalid_command_record")
         ids.add(command["id"])
         require(isinstance(command["argv"], list) and command["argv"] and all(isinstance(value, str) and value for value in command["argv"])
                 and type(command["exit_code"]) is int and type(command["expected_exit_code"]) is int
-                and command["exit_code"] == command["expected_exit_code"], "unexpected_command_result")
+                and isinstance(command["accepted_exit_codes"],list) and command["accepted_exit_codes"]
+                and all(type(code) is int for code in command["accepted_exit_codes"])
+                and command["exit_code"] == command["expected_exit_code"] and command["exit_code"] in command["accepted_exit_codes"], "unexpected_command_result")
     return receipt
 
 
@@ -297,7 +299,7 @@ def validate_freeze(path, expected_sha256):
     required={"src/ats_mlops/evaluation/native.py","src/ats_mlops/evaluation/native_monitoring.py",
         "src/ats_mlops/evaluation/negative_model.py",
         "src/ats_mlops/evaluation/holdout_worker.py","src/ats_mlops/evaluation/experiment.py",
-        "tests/e2e/audit.py","tests/e2e/native.py","configs/experiment.template.json","configs/monitoring.yaml",
+        "tests/e2e/audit.py","tests/e2e/native.py","tests/e2e/driver.py","configs/experiment.template.json","configs/monitoring.yaml",
         "configs/quality.yaml","requirements-ml.lock","requirements-monitoring.lock","requirements-build.lock","docs/experiment-protocol.md"}
     require(isinstance(files,dict) and required<=set(files),"incomplete_frozen_executable_source")
     for name,reference in files.items():
