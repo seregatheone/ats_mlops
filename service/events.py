@@ -6,7 +6,12 @@ import math
 from pathlib import Path
 import sqlite3
 
-from service.contracts import BoundaryError, canonical, identifier, input_hash, require
+from service.contracts import BoundaryError, canonical, identifier, input_hash, require, sha
+
+
+def completeness(ids):
+    require(len(ids) == len(set(ids)) and all(identifier(value) for value in ids), "candidate_inventory_invalid")
+    return {"schema_version": 2, "candidate_count": len(ids), "candidate_ids_sha256": sha(canonical(sorted(ids)))}
 
 
 class EventStore:
@@ -28,6 +33,7 @@ class EventStore:
 
     def predict(self, request, produce, identity):
         digest = input_hash(request)
+        witness = completeness([item["id"] for item in request["candidates"]])
         db = self.connect()
         try:
             db.execute("BEGIN IMMEDIATE")
@@ -43,6 +49,8 @@ class EventStore:
                         and event["model_version"].isdecimal() and int(event["model_version"]) > 0,
                         "stored_event_invalid")
                 complete = event["candidates"]
+                if "completeness" in event:
+                    require(canonical(event["completeness"]) == canonical(witness), "stored_completeness_invalid")
                 require(len(complete) == len(request["candidates"])
                         and {item["candidate_id"] for item in complete} == {item["id"] for item in request["candidates"]},
                         "stored_event_invalid")
@@ -60,9 +68,13 @@ class EventStore:
                 db.commit()
                 return result
             complete = produce(request)
+            require(len(complete) == witness["candidate_count"]
+                    and completeness([item["candidate_id"] for item in complete]) == witness,
+                    "incomplete_producer_result")
             event = {"schema_version": 1, "request_id": request["request_id"], "input_hash": digest,
                      "vacancy_id": request["vacancy"]["id"], "top_k": request["top_k"], **identity,
-                     "event_time": datetime.now(timezone.utc).isoformat(), "candidates": complete}
+                     "event_time": datetime.now(timezone.utc).isoformat(), "candidates": complete,
+                     "completeness": witness}
             # No transaction reservation is ever committed. The full event precedes top_k.
             db.execute("INSERT INTO prediction_events VALUES (?,?,?,NULL)",
                        (request["request_id"], digest, canonical(event).decode()))

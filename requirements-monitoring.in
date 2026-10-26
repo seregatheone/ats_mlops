@@ -1,0 +1,5 @@
+# Batch reports only. Never install into the frozen ML environment.
+evidently==0.7.23
+# 0.7.23 imports pandas.core.dtypes.common.infer_dtype_from_object, removed in3.x.
+# Actual pinned Python3.11 import failure retained; ML pandas remains unchanged.
+pandas>=2.2,<3
