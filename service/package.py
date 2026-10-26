@@ -19,6 +19,16 @@ def exclusive(path, content):
         os.fsync(stream.fileno())
 
 
+def portable_permissions(root):
+    """Publish readable delivery files without broadening the private staging parent."""
+    root = Path(root)
+    before = inventory(root)  # Reject symlinks/bytecode before any chmod.
+    for path in root.rglob("*"):
+        path.chmod(0o755 if path.is_dir() else 0o444)
+    root.chmod(0o755)
+    require(inventory(root) == before, "package_bytes_changed")
+
+
 def package(request, output):
     output = Path(output)
     require(not output.exists(), "new_package_required")
@@ -59,6 +69,7 @@ def package(request, output):
         model_binding(destination / "mlflow_model", record, gate, pipeline, record_sha, pipeline_sha)
         for name, (content, _, _) in documents.items():
             exclusive(root / name, content)
+        portable_permissions(root)
         manifest = {"schema_version": 1, "release_id": request["release_id"],
                     "evidence_scope": gate["evidence_scope"], "candidate": candidate,
                     "bento_tag": tag, "model_relative_path": relative + "/mlflow_model",
@@ -66,6 +77,7 @@ def package(request, output):
                     "api_schema_sha256": sha(canonical(API_SCHEMA)), "serving": serving,
                     "training_environment": record["environment"], "expected_incumbent": gate["expected_incumbent"]}
         exclusive(root / "release_manifest.json", canonical(manifest))
+        (root / "release_manifest.json").chmod(0o444)
         release_binding(root)
         # Atomic publication of a complete immutable package. Existing output is never replaced.
         require(not output.exists(), "new_package_required")
