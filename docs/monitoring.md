@@ -68,6 +68,12 @@ Grafana; the collector is 128 MiB / 0.25 CPU. Grafana's initial startup measured
 382.9 MiB against 384 MiB. The final limit was raised to 512 MiB, with a targeted
 frontend/query/persistence/resource check. The full 004 traffic gate remains
 separately attributed to its exact source/config before this budget-only change.
+The near-limit sample was mostly anonymous memory rather than file cache.
+The final profile sets Go's soft `GOMEMLIMIT=128MiB` and disables only the 12
+unused bundled backend datasource IDs (verified from their plugin manifests),
+leaving Prometheus and panel plugins available. This is a soft Go runtime setting,
+not a hard bound for all container processes; cgroup and repeated query checks
+are recorded separately. No additional plugin or dependency is installed.
 Prometheus configures seven-day / 256 MB retention; WAL/head add storage overhead. Limits do not prove
 capacity; check actual memory and OOM/restart state alongside core/Airflow.
 
