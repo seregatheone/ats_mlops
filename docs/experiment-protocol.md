@@ -5,6 +5,11 @@ The executable procedure, statistical methods and this file must be committed
 before T18 qualification and the later experiment freeze. Exact source, inputs,
 candidate, image IDs and resources are supplied by the hash-closed freeze receipt,
 not inferred from a later documentation HEAD.
+The authoritative design is the experiment section of
+[the original plan](plans/reproducible-ml-ats/plan.md), T18/T19 in its
+[tasks](plans/reproducible-ml-ats/tasks.md), and the shared
+[data/metric contract](data-contract.md). This revision fixes their remaining
+parameters; it does not reduce the original number of repetitions.
 
 The data are publishable synthetic skill matching fixtures. There is no
 independent real hiring corpus. Engineering acceptance and experiments measure
@@ -27,6 +32,12 @@ Source, data/admission/root reservation/split, feature state, model parameters,
 ML and monitoring locks, actual image IDs/platform and resource limits are
 immutable inputs. Private core/T13/Airflow/Registry identities are genuine;
 default Registry model numbers are not copied into a different backend.
+For the negative-artifact case, reverse the fitted logistic coefficients and
+intercept by a predeclared operation, create zero fits, and log a distinct real
+MLflow fault run/version. Preserve parent training identity plus current source,
+artifact hashes and a derivation manifest. Validation must reach actual isolated
+scoring and fail the performance threshold; lineage corruption is a separate
+rejection. This fault never replaces the first S1 candidate or counts as E1.
 
 The source Git and selected model's original source Git are separate fields.
 The before-evidence executable source is retained in a clean immutable checkout.
@@ -87,6 +98,14 @@ then genuine private A3/ACTIVE and matched reference refresh. Replays/cooldown
 create no duplicate requests/runs/versions. Report the scenario-specific outcome
 even if the predeclared perturbation fails to produce the intended signal.
 
+Before E4, predeclare a genuine child of S1's v2 reservation: seed20261027,
+62 groups (the 60-group parent plus2), fixed namespace/config/source and exact
+parent/root/bundle/approval identities. Preflight must find new semantic TRAIN
+labels compared with all parent train/validation labels; renamed IDs or only new
+validation labels do not qualify. Retain structural admission failures and resolve
+them before freeze, without observing/tuning model quality. Pin the admitted child
+inventory before any E4 metrics; this carrier never changes the E5 candidate.
+
 ## E5 — one attempted final synthetic holdout evaluation
 
 Use the same selected S1 model and committed Jaccard baseline. Before the attempt,
@@ -105,6 +124,9 @@ vacancy once per method, freezes a score seal before numeric publication, and
 returns hashes. No test text is persisted in the worker input/output directories.
 
 Compute NDCG@10/Recall@10, counts and one-pass per-vacancy baseline/model latency.
+Use the same eligible groups for both methods, macro-average by vacancy and
+report excluded/no-positive groups and undefined quality explicitly, according
+to the shared metric contract.
 Bootstrap paired vacancy groups2000 times with seed20261030 only when at least10
 eligible groups exist; otherwise intervals are undefined with the reason. Retain
 private numeric IDs/GT/results and publish aggregate results only. Numeric recovery

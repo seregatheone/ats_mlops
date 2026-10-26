@@ -295,6 +295,7 @@ def validate_freeze(path, expected_sha256):
         and artifacts.content(source["status"])==b"","before_evidence_source_was_not_clean")
     files=source["files"]
     required={"src/ats_mlops/evaluation/native.py","src/ats_mlops/evaluation/native_monitoring.py",
+        "src/ats_mlops/evaluation/negative_model.py",
         "src/ats_mlops/evaluation/holdout_worker.py","src/ats_mlops/evaluation/experiment.py",
         "tests/e2e/audit.py","tests/e2e/native.py","configs/experiment.template.json","configs/monitoring.yaml",
         "configs/quality.yaml","requirements-ml.lock","requirements-monitoring.lock","requirements-build.lock","docs/experiment-protocol.md"}
@@ -325,6 +326,16 @@ def validate_freeze(path, expected_sha256):
     selected,plan=(artifacts.document(s1_inputs[key]) for key in ("selection","plan"))
     require(canonical(plan["execution"])==canonical(spec["execution"])
         and all(canonical(plan["runtime"][key])==canonical(environment[key]) for key in plan["runtime"]),"qualification_runtime_or_params_changed")
+    run=artifacts.document(s1_inputs["run"])
+    require(all(run[key]==spec["bindings"][key] for key in ("data_manifest_sha256","split_sha256","features_sha256","params_sha256"))
+        and run["reports_sha256"]["admission"]==spec["bindings"]["admission_sha256"]
+        and run["environment"]["lockfile_sha256"]==files["requirements-ml.lock"]["sha256"]
+        and run["environment"]["build_lockfile_sha256"]==files["requirements-build.lock"]["sha256"],"freeze_actual_data_model_or_lock_mismatch")
+    recomputed=result["scenarios"]["S2"]["validation"]["comparison"]
+    require(selected["mlflow"]["run_id"] not in recomputed["run_ids"] and selected["mlflow"]["model_version"] not in recomputed["model_versions"],
+        "four_qualification_fits_not_distinct")
+    s2_inputs=artifacts.document(value["scenarios"]["S2"])["native"]["replicas"]
+    require(all(item["features"]["sha256"]==s1["fitted_features_sha256"] for item in s2_inputs),"qualified_S1_feature_state_different")
     require(selected["model_artifact_sha256"]==spec["bindings"]["model_artifact_sha256"]
         and selected["model_lineage_sha256"]==spec["bindings"]["model_lineage_sha256"]
         and selected["source_git_sha"]==spec["qualified_model_source_git_sha"],"frozen_model_differs_from_first_S1")

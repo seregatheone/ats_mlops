@@ -67,11 +67,17 @@ def validation_gate(gate, *, accepted):
 
 
 def startup(artifacts, receipt):
-    refs=native(receipt,("startup","plan","selection","run","pipeline","gate","package","check","journal","package_files"))
+    refs=native(receipt,("startup","plan","selection","run","pipeline","features","gate","package","check","journal","isolation","package_files"))
     values={key:artifacts.document(value) for key,value in refs.items() if key not in {"journal","package_files"}}
     start,plan,selection,run,pipeline,gate,package,check=(values[key] for key in ("startup","plan","selection","run","pipeline","gate","package","check"))
     require(start["source_git_sha"]==run["git_sha"]==plan["source_git_sha"]==selection["source_git_sha"]==receipt["source_git_sha"]
         and run["dirty_worktree"] is False and run["test_read"] is False and run["read_partitions"]==["train","validation"],"startup_source_or_partition_mismatch")
+    isolation=values["isolation"]
+    require(set(isolation)=={"postgres","minio","mlflow"} and all(item["project"]==plan["runtime"]["project"]
+        and hash_value(item["id"]) and item["image"]==plan["runtime"]["core"]["images"][role] for role,item in isolation.items()),"startup_core_ownership_mismatch")
+    require(run["environment"]["image"]==plan["runtime"]["image"] and run["generator"]["config"]["seed"]==20261027
+        and all(run[name]==plan[name] for name in ("data_manifest_sha256","split_sha256"))
+        and run["reports_sha256"]["admission"]==plan["admission_sha256"],"startup_actual_inputs_mismatch")
     require(plan["slot"]==selection["slot"]=="S1" and plan["selection_rule"]==selection["selection_rule"]=="first_required_fit_before_metrics"
         and plan["formal_E1"]=="not_run" and type(plan["qualification_recomputations"]) is int and plan["qualification_recomputations"]==3
         and utc(plan["declared_at"])<=utc(selection["selected_at"]),"qualification_selection_not_predeclared")
@@ -99,7 +105,9 @@ def startup(artifacts, receipt):
     require(state==start["state"] and "active_committed" in kinds and state["active"]["candidate"]==package["candidate"]
         and state["active"]["manifest_sha256"]==refs["package"]["sha256"],"startup_catalog_mismatch")
     consistent(state,start["observation"])
-    return passed(len(refs)+len(files),qualified_model=run["mlflow"],first_S1_selection_sha256=refs["selection"]["sha256"])
+    require(pipeline["evaluation"]["features.json"]==refs["features"]["sha256"],"startup_fitted_feature_evidence_mismatch")
+    return passed(len(refs)+len(files),qualified_model=run["mlflow"],first_S1_selection_sha256=refs["selection"]["sha256"],
+                  fitted_features_sha256=refs["features"]["sha256"])
 
 
 def recomputations(artifacts, receipt):

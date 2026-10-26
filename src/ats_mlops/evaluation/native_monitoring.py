@@ -22,7 +22,7 @@ from .experiment import canonical, immutable, read, require, sha
 
 ORDER = ("control", "false_signal", "insufficient", "shifted_no_labels", "shifted_labeled", "replay", "cooldown")
 SETTINGS = {"root", "batch", "monitoring_image", "monitoring_sources", "reference", "calibration", "config", "port",
-            "approved_bundle", "approved_bundle_sha256", "approved_at", "bundle_uri", "dvc_env_file"}
+            "approved_bundle", "approved_bundle_sha256", "approved_at", "bundle_uri", "dvc_env_file", "child_plan"}
 BATCH = {"airflow_container", "training_image_id", "airflow_url", "password_file", "serving_identity", "packager_image", "registry_transport"}
 
 
@@ -94,6 +94,38 @@ class Campaign:
         document(settings["config"])
         self.monitoring_config = Path(settings["config"]["path"])
         self.bundle = Path(config["bundle"])
+        self.child_preflight = self.verify_child_before_metrics()
+
+    def verify_child_before_metrics(self):
+        """Genuine new TRAIN semantic labels, not namespace or validation-only."""
+        from ats_mlops.data.dataset import load_partition
+        from ats_mlops.monitoring.retraining import approved_synthetic_v2,semantic_labelset
+        from ats_mlops.monitoring import policy as p
+        from .native import document
+        plan=document(self.settings["child_plan"]);child=Path(self.settings["approved_bundle"])
+        parent_manifest=read(self.bundle/"data_manifest.json");child_manifest=read(child/"data_manifest.json")
+        require(plan["source_git_sha"]==self.spec["source_git_sha"] and plan["seed"]==20261027
+            and plan["config"]["vacancy_groups"]==62 and plan["config"]["seed"]==20261027
+            and parent_manifest["generator"]["config"]["vacancy_groups"]==60
+            and plan["parent_manifest_sha256"]==sha((self.bundle/"data_manifest.json").read_bytes())
+            and plan["parent_bundle_sha256"]==self.config["bundle_sha256"]
+            and sha(canonical(plan["config"]))==child_manifest["generator"]["config_sha256"]==plan["config_sha256"],"E4_child_was_not_predeclared")
+        approval,proof=approved_synthetic_v2(self.bundle,child,actor="agent-operator",approved_at=p.parse_stamp(self.settings["approved_at"]),
+            bundle_uri=self.settings["bundle_uri"])
+        require(approval.bundle_inventory_sha256==self.settings["approved_bundle_sha256"],"E4_approved_child_changed")
+        previous=load_partition(self.bundle/"data_manifest.json","train")+load_partition(self.bundle/"data_manifest.json","validation")
+        _,old=semantic_labelset(previous);_,new=semantic_labelset(load_partition(child/"data_manifest.json","train"))
+        new_train=set(new)-set(old)
+        require(bool(new_train),"E4_child_has_no_genuinely_new_training_labels")
+        receipt={"schema_version":1,"outcome":"admitted_new_training_labels","source_git_sha":self.spec["source_git_sha"],
+            "plan_sha256":self.settings["child_plan"]["sha256"],"parent_manifest_sha256":plan["parent_manifest_sha256"],
+            "child_manifest_sha256":approval.manifest_sha256,"child_bundle_sha256":approval.bundle_inventory_sha256,
+            "new_training_semantic_labels":len(new_train),"new_training_labels_sha256":sha(canonical({key:new[key] for key in sorted(new_train)})),
+            "approval":p.payload(approval),"approval_proof_sha256":sha(canonical(proof)),"test_read":False}
+        path=self.root/"child-preflight.json"
+        if path.exists():require(canonical(read(path))==canonical(receipt),"E4_child_preflight_changed")
+        else:immutable(path,receipt)
+        return receipt
 
     def _active(self):
         from ats_mlops.monitoring.retraining import active_state
@@ -325,6 +357,7 @@ print(json.dumps({'inventory_sha256':descriptor['sha256']}))
             require(request["state"]=="waiting_for_labels" and all(item["card"]["quality"]["quality"] is None for item in windows),"E4_quality_without_independent_labels")
         with self._active() as observed:journal_after=observed["journal_sha256"]
         proof={"schema_version":1,"scenario":scenario,"source_git_sha":self.spec["source_git_sha"],"seed":20261029,
+            "child_preflight_sha256":sha(canonical(self.child_preflight)),
             "effective_config_sha256":self.spec["bindings"]["effective_config_sha256"],"before":before,"after":after,
             "registry_before":versions_before,"registry_after":versions_after,"journal_before":journal_before,"journal_after":journal_after,
             "windows":windows,"labeled":details}

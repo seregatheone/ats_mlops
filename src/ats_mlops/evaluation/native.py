@@ -698,6 +698,44 @@ def claim_traceability(register, evidence_root):
             "limitations": ["Synthetic engineering qualification is not real hiring evidence.", "E2 remains not_run until five actual human pairs exist."]}
 
 
+def degraded_fixture(spec, root):
+    """Build one honestly registered controlled fault for later real T11 denials.
+
+    It creates zero fits and is never eligible as the selected S1/E5 candidate.
+    The normal training implementation and its input rows are not patched.
+    """
+    from service.integrity import release_binding
+    config = environment(spec, series="E3");root = Path(root);commands = Commands(root)
+    owned_core(commands,config)
+    baseline,_ = checked_fixture(config,"baseline")
+    manifest,_,parent = release_binding(Path(baseline["package"]))
+    require(parent["model"]["sha256"]==spec["bindings"]["model_artifact_sha256"]
+            and parent["git_sha"]==spec["source_git_sha"],"negative_fixture_requires_selected_S1_parent")
+    run = prepare_run(spec,config,root);workspace = run/"workspace"
+    target = workspace/"negative-parent";target.mkdir()
+    shutil.copytree(Path(baseline["package"])/manifest["model_relative_path"],target/"model")
+    for name in ("run_manifest.json","pipeline_manifest.json"):
+        shutil.copyfile(Path(baseline["package"])/name,target/name)
+    (workspace/"negative-image.json").write_bytes(canonical(config["image"]))
+    worker(commands,config,run,["-m","ats_mlops.evaluation.negative_model","--source-root","/run/source",
+        "--parent","/run/workspace/negative-parent","--manifest","/run/workspace/data_manifest.json",
+        "--admission","/run/workspace/admission/data-admission.json","--output","/run/workspace/.local/controlled-negative",
+        "--image","/run/workspace/negative-image.json"])
+    output = workspace/".local/controlled-negative";proof = read(output/"fault-provenance.json")
+    require(proof["scope"]=="controlled_negative_artifact_fault" and type(proof["fit_events"]) is int and proof["fit_events"]==0
+            and proof["selected_for_E5"] is False and proof["candidate_mlflow"]["run_id"]!=parent["mlflow"]["run_id"],"negative_fixture_not_fresh_or_attributed")
+    request = {"validation_manifest":str(workspace/"data_manifest.json"),"admission_report":str(workspace/"admission/data-admission.json"),
+        "dataset_binding":str(workspace/"dataset-binding.json"),"thresholds":str(Path(config["repo"])/"configs/quality.yaml"),
+        "candidate":{"model_dir":str(output/"model"),"run_manifest":str(output/"run_manifest.json"),"pipeline_manifest":str(output/"pipeline_manifest.json")},
+        "incumbent":{"model_dir":str(Path(baseline["package"])/manifest["model_relative_path"]),
+            "run_manifest":str(Path(baseline["package"])/"run_manifest.json"),"pipeline_manifest":str(Path(baseline["package"])/"pipeline_manifest.json"),
+            "release_id":manifest["release_id"],"release_is_fixture":False}}
+    immutable(root/"bad-candidate-request.json",request)
+    immutable(root/"fault-provenance.json",proof)
+    return {"outcome":"created_controlled_fault","candidate_mlflow":proof["candidate_mlflow"],"fit_events":0,
+            "request_sha256":sha(canonical(request)),"evidence_sha256":commands.finish()}
+
+
 def schema_rejection(spec, root):
     """S3 runs real GX on a fresh owned negative fixture, not frozen test bytes."""
     config = environment(spec, series="E3");root = Path(root);commands = Commands(root)
@@ -820,6 +858,23 @@ def e3(spec, root):
         finally:
             evidence_sha = commands.finish()
     return {"outcome": "expected_rejection", "observations": observation, "evidence_sha256": evidence_sha}
+
+
+def declare_monitoring_child(spec, output):
+    """Pin seed27/+2 groups BEFORE admission or E4 metrics; no generator call."""
+    config = environment(spec,series="E4")
+    parent = read(Path(config["bundle"])/"data_manifest.json")
+    parameters = deepcopy(parent["generator"]["config"])
+    require(type(parameters["vacancy_groups"]) is int and parameters["vacancy_groups"]==60
+            and parameters["seed"]==20261027,"E4_parent_fixture_must_be_v2_60_groups")
+    parameters.update(vacancy_groups=62,seed=20261027,namespace="e4-"+sha(config["project"].encode())[:20])
+    value={"schema_version":1,"scope":"predeclared_E4_independent_synthetic_child","source_git_sha":spec["source_git_sha"],
+        "seed":20261027,"config":parameters,"config_sha256":sha(canonical(parameters)),
+        "parent_bundle_sha256":config["bundle_sha256"],"parent_manifest_sha256":sha((Path(config["bundle"])/"data_manifest.json").read_bytes()),
+        "parent_policy_sha256":parent["reservation"]["policy"]["sha256"],"root_policy_sha256":spec["bindings"]["root_policy_sha256"],
+        "criterion":"genuine schema2 admission and >0 new TRAIN semantic labels before any E4 metrics; preserve any structural rejection"}
+    immutable(Path(output),value)
+    return value
 
 
 def prepare_monitoring(spec, root):
