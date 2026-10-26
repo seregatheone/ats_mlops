@@ -134,6 +134,10 @@ def bad_data(artifacts,receipt):
     require(fault["parent_run_manifest_sha256"]==refs["parent_run"]["sha256"]
         and fault["parent_model_sha256"]==parent["model"]["sha256"] and fault["parent_training_mlflow"]==parent["mlflow"]
         and all(fault["candidate_mlflow"][key]!=parent["mlflow"][key] for key in ("run_id","model_version","source")),"negative_model_reused_parent_identity")
+    require(gate["incumbent"] is not None and gate["incumbent"]["run_manifest_sha256"]==refs["parent_run"]["sha256"]
+        and gate["incumbent"]["model_sha256"]==parent["model"]["sha256"]
+        and all(gate["incumbent"][key]==value for key,value in parent["mlflow"].items())
+        and gate["expected_incumbent"]["release_is_fixture"] is False,"negative_gate_not_against_S1_incumbent")
     require(fault["candidate_run_manifest_sha256"]==refs["candidate_run"]["sha256"]==gate["candidate"]["run_manifest_sha256"]
         and fault["candidate_pipeline_manifest_sha256"]==refs["candidate_pipeline"]["sha256"]==gate["candidate"]["pipeline_manifest_sha256"]
         and fault["candidate_mlflow"]==run["mlflow"]==pipeline["training"]["mlflow"]
@@ -154,7 +158,8 @@ def bad_data(artifacts,receipt):
         require(reference["sha256"]==run["model"]["files"][name],"negative_artifact_inventory_mismatch");artifacts.content(reference)
     require(digest(canonical(run["model"]["files"]))==run["model"]["sha256"]
         and run["model"]["files"]["model.pkl"]==run["model"]["payload_sha256"],"negative_model_payload_mismatch")
-    return passed(8+len(files),parent_run_manifest_sha256=refs["parent_run"]["sha256"],parent_model_sha256=parent["model"]["sha256"])
+    return passed(8+len(files),parent_run_manifest_sha256=refs["parent_run"]["sha256"],parent_model_sha256=parent["model"]["sha256"],
+                  incumbent_release_id=gate["expected_incumbent"]["release_id"])
 
 
 def controlled_release(artifacts,receipt):
