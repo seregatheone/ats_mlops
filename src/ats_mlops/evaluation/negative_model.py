@@ -7,8 +7,10 @@ an immutable derivation receipt; never reattribute the fault to the parent run.
 """
 from copy import deepcopy
 import argparse
+import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 
 
@@ -21,7 +23,25 @@ def invert_coefficients(model):
     return model
 
 
-def create(*,source_root,parent,manifest,admission,output,image):
+def model_metadata(record,training_git_sha):
+    """The same strict MLmodel contract consumed by the offline scorer."""
+    return {"feature_version":record["features"]["version"],"classes":[0,1],
+            "training_git_sha":training_git_sha,"features_sha256":record["features_sha256"]}
+
+
+def checked_producer_identity(value):
+    """The caller verifies Git membership; this process checks its own bytes."""
+    if value is None:return None
+    if (not isinstance(value,dict) or set(value)!={"schema_version","source_git_sha","repository_path","file_sha256"}
+            or type(value["schema_version"]) is not int or value["schema_version"]!=1
+            or not isinstance(value["source_git_sha"],str) or re.fullmatch(r"[0-9a-f]{40}",value["source_git_sha"]) is None
+            or value["repository_path"]!="src/ats_mlops/evaluation/negative_model.py"
+            or value["file_sha256"]!=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()):
+        raise ValueError("negative_fixture_producer_identity_mismatch")
+    return deepcopy(value)
+
+
+def create(*,source_root,parent,manifest,admission,output,image,producer_identity=None):
     # Deliberately lazy: ordinary CLI/unit imports need no ML dependency.
     from ats_mlops.data.validate import require_valid
     from ats_mlops.data.dataset import load_manifest,canonical_json,sha256
@@ -34,6 +54,7 @@ def create(*,source_root,parent,manifest,admission,output,image):
     from mlflow.models import infer_signature
     import numpy as np
 
+    producer=checked_producer_identity(producer_identity)
     parent,source_root,output=Path(parent),Path(source_root),Path(output)
     if output.exists():raise ValueError("new_controlled_fault_output_required")
     output.mkdir(parents=True)
@@ -68,6 +89,7 @@ def create(*,source_root,parent,manifest,admission,output,image):
         "idf":transformer.vectorizer_.idf_.tolist(),"transformed_sha256":{role:sha256(np.asarray(transformer.transform(pair_frame(rows[role])),dtype='<f8').tobytes()) for role in ('train','validation')}})
     provenance={key:deepcopy(value) for key,value in record.items() if key not in {"mlflow","model","reports_sha256"}}
     provenance["artifact_derivation"]=derivation
+    if producer is not None:provenance["artifact_producer"]=producer
     write_json(output/"input-provenance.json",provenance)
     mlflow.set_experiment("ats-controlled-artifact-faults")
     with mlflow.start_run(tags={"artifact_origin":"controlled_negative_artifact_fault","training_git_sha":current["git_sha"],
@@ -77,8 +99,7 @@ def create(*,source_root,parent,manifest,admission,output,image):
             info=mlflow.sklearn.log_model(model,name="negative-artifact",code_paths=[str(code)],serialization_format="cloudpickle",
                 pyfunc_predict_fn="predict_proba",pip_requirements=[f"{name}=={value}" for name,value in provenance["environment"]["packages"].items()],
                 signature=infer_signature(example,model.predict_proba(example)),input_example=example,
-                metadata={"feature_version":record["features"]["version"],"classes":[0,1],"training_git_sha":current["git_sha"],
-                    "features_sha256":record["features_sha256"],"artifact_origin":"controlled_negative_artifact_fault"},extra_files=[str(output/"input-provenance.json")])
+                metadata=model_metadata(record,current["git_sha"]),extra_files=[str(output/"input-provenance.json")])
         registered=mlflow.register_model(info.model_uri,record["mlflow"]["model_name"])
         exact=f"models:/{registered.name}/{registered.version}"
         version=mlflow.MlflowClient().get_model_version(registered.name,registered.version)
@@ -94,26 +115,33 @@ def create(*,source_root,parent,manifest,admission,output,image):
                               "validation":file_hash(output/"metrics.json"),"derivation":file_hash(output/"fault-intent.json")}}
         write_json(output/"run_manifest.json",result)
         derived=deepcopy(pipeline);derived["artifact_derivation"]=derivation
+        if producer is not None:derived["artifact_producer"]=producer
         derived["execution_kind"]="controlled_fault_derivation; guarded input/config inherited; no new pipeline fit"
         derived["training"].update(run_manifest_sha256=file_hash(output/"run_manifest.json"),model_sha256=result["model"]["sha256"],mlflow=identity)
         derived["evaluation"]={name:file_hash(output/name) for name in ('metrics.json','scores.json','features.json')}
         write_json(output/"pipeline_manifest.json",derived)
         receipt={**derivation,"candidate_mlflow":identity,"candidate_model_sha256":result["model"]["sha256"],
             "candidate_run_manifest_sha256":file_hash(output/"run_manifest.json"),"candidate_pipeline_manifest_sha256":file_hash(output/"pipeline_manifest.json")}
+        if producer is not None:receipt["artifact_producer"]=producer
         write_json(output/"fault-provenance.json",receipt)
         for name in ('fault-intent.json','fault-provenance.json','input-provenance.json','run_manifest.json','pipeline_manifest.json','metrics.json','scores.json','features.json'):
             mlflow.log_artifact(str(output/name),artifact_path='controlled-fault')
         mlflow.set_tag('run_manifest_sha256',file_hash(output/'run_manifest.json'))
+        if producer is not None:
+            mlflow.set_tag('artifact_producer_git_sha',producer['source_git_sha'])
+            mlflow.set_tag('artifact_producer_file_sha256',producer['file_sha256'])
     return receipt
 
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('source-root','parent','manifest','admission','output','image'):parser.add_argument('--'+name,type=Path,required=True)
+    parser.add_argument('--producer-identity',type=Path)
     args=parser.parse_args(argv)
     try:
         result=create(source_root=args.source_root,parent=args.parent,manifest=args.manifest,admission=args.admission,
-                      output=args.output,image=json.loads(args.image.read_bytes()))
+                      output=args.output,image=json.loads(args.image.read_bytes()),
+                      producer_identity=json.loads(args.producer_identity.read_bytes()) if args.producer_identity else None)
         print(json.dumps({'outcome':'created_controlled_fault','candidate_mlflow':result['candidate_mlflow'],
             'model_sha256':result['candidate_model_sha256'],'fit_events':0}));return 0
     except Exception:
