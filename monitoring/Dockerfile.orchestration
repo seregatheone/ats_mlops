@@ -1,0 +1,10 @@
+# Narrow source overlay of the already verified, locked Airflow/ML runtime.
+# No apt/pip/lock/environment changes; preserve the original digest for rollback.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+RUN rm -rf /opt/project/src
+COPY src/ /opt/project/src/
+ARG SOURCE_SHA
+LABEL org.opencontainers.image.revision=${SOURCE_SHA}
+USER airflow
