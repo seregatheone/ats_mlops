@@ -105,7 +105,8 @@ for p in Path('/fixture/bundle').rglob('*'):
             transient["parameters"] = {**params, "model": {"classifier": {"max_iter": 1100}}}
             transient["params_hash"] = digest(transient["parameters"])
             exhausted = conf("exhausted")
-            (self.state / "faults.json").write_text(json.dumps({transient["request_id"]: 1, exhausted["request_id"]: 3}))
+            fault_plan = json.dumps({transient["request_id"]: 1, exhausted["request_id"]: 3})
+            self.exec("python", "-c", "from pathlib import Path;Path('/state/faults.json').write_text(" + repr(fault_plan) + ")")
             self.trigger(transient, "transient", "success")
             attempts = self.attempts(transient)
             self.assertEqual([row["attempt"] for row in attempts], [1, 2])

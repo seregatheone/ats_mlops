@@ -142,8 +142,8 @@ services:
       ATS_SOURCE_REPO: /source-repository
       ATS_WORK_ROOT: /work
       ATS_STATE_ROOT: /state
-      ATS_RUNTIME_IMAGE_FILE: /runtime/image.json
-      ATS_ORCHESTRATION_FAULT_FILE: /runtime/faults.json
+      ATS_RUNTIME_IMAGE_FILE: /state/image.json
+      ATS_ORCHESTRATION_FAULT_FILE: /state/faults.json
       AWS_ACCESS_KEY_ID: ${DVC_ACCESS_KEY_ID:?required}
       AWS_SECRET_ACCESS_KEY: ${DVC_SECRET_ACCESS_KEY:?required}
       AWS_DEFAULT_REGION: us-east-1
@@ -154,8 +154,6 @@ services:
     command: standalone
     volumes:
       - ${ATS_ORCHESTRATION_GIT:-./.local/orchestration/source.git}:/source-repository:ro
-      - ${ATS_ORCHESTRATION_IMAGE_FILE:-./.local/orchestration/image.json}:/runtime/image.json:ro
-      - ${ATS_ORCHESTRATION_FAULT_FILE:-./.local/orchestration/faults.json}:/runtime/faults.json:ro
       - orchestration-work:/work
       - orchestration-state:/state
       - orchestration-auth:/auth
@@ -178,6 +176,8 @@ services:
     command: [python, /opt/orchestration/init.py]
     volumes:
       - ${ATS_ORCHESTRATION_PASSWORD_FILE:-./.local/orchestration/passwords.json}:/bootstrap/passwords.json:ro
+      - ${ATS_ORCHESTRATION_IMAGE_FILE:-./.local/orchestration/image.json}:/bootstrap/image.json:ro
+      - ${ATS_ORCHESTRATION_FAULT_FILE:-./.local/orchestration/faults.json}:/bootstrap/faults.json:ro
       - orchestration-work:/work
       - orchestration-state:/state
       - orchestration-auth:/auth
