@@ -99,12 +99,17 @@ create no duplicate requests/runs/versions. Report the scenario-specific outcome
 even if the predeclared perturbation fails to produce the intended signal.
 
 Before E4, predeclare a genuine child of S1's v2 reservation: seed20261027,
-62 groups (the 60-group parent plus2), fixed namespace/config/source and exact
+64 groups (the 60-group parent plus4), fixed namespace/config/source and exact
 parent/root/bundle/approval identities. Preflight must find new semantic TRAIN
 labels compared with all parent train/validation labels; renamed IDs or only new
 validation labels do not qualify. Retain structural admission failures and resolve
 them before freeze, without observing/tuning model quality. Pin the admitted child
 inventory before any E4 metrics; this carrier never changes the E5 candidate.
+The earlier62-group structural fixture passed GX but had zero new TRAIN labels
+and was rejected. Its failure remains retained. Root predeclared64 with unchanged
+seed/namespace/parent/splits before any model metrics; actual admission produced
+40 new TRAIN semantic labels. Reuse that exact admitted carrier and its generation
+source a9a2868, separately from the later application source; do not regenerate it.
 
 ## E5 — one attempted final synthetic holdout evaluation
 

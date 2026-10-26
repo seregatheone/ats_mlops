@@ -105,7 +105,8 @@ class Campaign:
         plan=document(self.settings["child_plan"]);child=Path(self.settings["approved_bundle"])
         parent_manifest=read(self.bundle/"data_manifest.json");child_manifest=read(child/"data_manifest.json")
         require(plan["source_git_sha"]==self.spec["source_git_sha"] and plan["seed"]==20261027
-            and plan["config"]["vacancy_groups"]==62 and plan["config"]["seed"]==20261027
+            and type(plan["config"]["vacancy_groups"]) is int and plan["config"]["vacancy_groups"]==64 and plan["config"]["seed"]==20261027
+            and plan["config"]["namespace"]=="ats-t18-e4-child-v2"
             and parent_manifest["generator"]["config"]["vacancy_groups"]==60
             and plan["parent_manifest_sha256"]==sha((self.bundle/"data_manifest.json").read_bytes())
             and plan["parent_bundle_sha256"]==self.config["bundle_sha256"]
@@ -273,8 +274,9 @@ print(json.dumps({name:base64.b64encode(Path('/tmp/export',name).read_bytes()).d
         # Upload only the admitted train/validation carrier. Credentials are the
         # private core's local env-file; neither values nor config are logged.
         secret=Path(self.settings["dvc_env_file"])
+        expected=(self.root.parent/"S1/core/dvc.env").resolve()
         require(secret.is_file() and not secret.is_symlink() and secret.stat().st_mode & 0o077==0
-                and ".local/core" not in str(secret) and self.config["project"] in str(secret.parent),"private_core_credentials_required")
+                and ".local/core" not in str(secret) and secret.resolve()==expected,"private_core_credentials_required")
         prefix=self.settings["bundle_uri"].removeprefix("s3://ats-dvc/").removesuffix("/bundle.json")
         code="""import boto3,json,sys
 from pathlib import Path

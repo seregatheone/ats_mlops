@@ -867,18 +867,14 @@ def e3(spec, root):
 
 
 def declare_monitoring_child(spec, output):
-    """Pin seed27/+2 groups BEFORE admission or E4 metrics; no generator call."""
+    """Bind the accepted structural child; never regenerate or select by quality."""
     config = environment(spec,series="E4")
     parent = read(Path(config["bundle"])/"data_manifest.json")
-    parameters = deepcopy(parent["generator"]["config"])
-    require(type(parameters["vacancy_groups"]) is int and parameters["vacancy_groups"]==60
-            and parameters["seed"]==20261027,"E4_parent_fixture_must_be_v2_60_groups")
-    parameters.update(vacancy_groups=62,seed=20261027,namespace="e4-"+sha(config["project"].encode())[:20])
-    value={"schema_version":1,"scope":"predeclared_E4_independent_synthetic_child","source_git_sha":spec["source_git_sha"],
-        "seed":20261027,"config":parameters,"config_sha256":sha(canonical(parameters)),
-        "parent_bundle_sha256":config["bundle_sha256"],"parent_manifest_sha256":sha((Path(config["bundle"])/"data_manifest.json").read_bytes()),
-        "parent_policy_sha256":parent["reservation"]["policy"]["sha256"],"root_policy_sha256":spec["bindings"]["root_policy_sha256"],
-        "criterion":"genuine schema2 admission and >0 new TRAIN semantic labels before any E4 metrics; preserve any structural rejection"}
+    value=document(config["E4"]["child_plan"])
+    require(value["source_git_sha"]==spec["source_git_sha"] and value["seed"]==20261027
+            and type(value["config"]["vacancy_groups"]) is int and value["config"]["vacancy_groups"]==64
+            and value["config"]["namespace"]=="ats-t18-e4-child-v2" and value["parent_bundle_sha256"]==config["bundle_sha256"]
+            and value["parent_policy_sha256"]==parent["reservation"]["policy"]["sha256"],"accepted_E4_child_binding_required")
     immutable(Path(output),value)
     return value
 
