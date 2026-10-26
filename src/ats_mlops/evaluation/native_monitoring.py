@@ -65,6 +65,25 @@ def fixture_launch_document(config, image_id, package_path):
             "config_sha256":sha(release_canonical(config))}
 
 
+def cohort_intervals(events, request_groups, cutoff):
+    """Partition acknowledged requests using only the event store's UTC clock."""
+    from ats_mlops.monitoring.feedback import utc
+    require(isinstance(request_groups,list) and len(request_groups)==2
+            and all(isinstance(group,list) and group for group in request_groups),"E4_request_partition_required")
+    planned=[identifier for group in request_groups for identifier in group]
+    observed={event["request_id"]:utc(event["event_time"]) for event in events}
+    require(len(planned)==len(set(planned)) and len(observed)==len(events)
+            and set(observed)==set(planned),"E4_full_request_inventory_changed")
+    limit=utc(cutoff);starts=[min(observed[identifier] for identifier in group) for group in request_groups]
+    intervals=[]
+    for group,start,end in zip(request_groups,starts,[starts[1],limit]):
+        require(start<end and max(observed[identifier] for identifier in group)<end
+                and {identifier for identifier,stamp in observed.items() if start<=stamp<end}==set(group),
+                "E4_event_clock_partition_not_disjoint")
+        intervals.append({"start":start.isoformat(),"end":end.isoformat()})
+    return intervals
+
+
 class Campaign:
     def __init__(self, spec, config, commands):
         # These modules exist only after the reviewed T17 dependency is merged.
@@ -211,7 +230,7 @@ class Campaign:
         launch = {**active,"package_path":"release/package","launch_path":"fixture-launch.json"}
         copied = fixture.root / "release/package";copied.parent.mkdir(parents=True);shutil.copytree(package,copied)
         immutable(fixture.root / "fixture-launch.json", fixture_launch_document(fixture.config,active["image_id"],launch["package_path"]))
-        intervals=[]
+        request_groups=[]
         try:
             fixture.runtime.launch(launch)
             fixture.runtime.wait(launch)
@@ -226,29 +245,34 @@ class Campaign:
                 except Exception:pass
                 require(time.monotonic()<deadline,"E4_private_API_not_ready");time.sleep(.2)
             require(metadata["release_id"]==active["release_id"] and metadata["model_version"]==record["mlflow"]["model_version"],"E4_fixture_model_changed")
-            start=datetime.now(timezone.utc).isoformat()
             for index,mode in enumerate(expected_modes(scenario)):
-                for payload in payloads(rows,mode=mode,seed=self.spec["E4"]["seed"],prefix=self.config["project"]+"-"+scenario+str(index)):
+                requests=payloads(rows,mode=mode,seed=self.spec["E4"]["seed"],prefix=self.config["project"]+"-"+scenario+str(index))
+                request_groups.append([payload["request_id"] for payload in requests])
+                for payload in requests:
                     response=post("/rank",payload)
-                    require(response["release_id"]==active["release_id"] and len(response["ranking"])==3,"E4_rank_contract_changed")
-                end=datetime.now(timezone.utc).isoformat();intervals.append({"start":start,"end":end});start=end
-            cutoff=datetime.now(timezone.utc).isoformat()
+                    require(response["request_id"]==payload["request_id"] and response["release_id"]==active["release_id"]
+                            and len(response["ranking"])==3,"E4_rank_contract_changed")
             code="""import sys,json,base64
+from datetime import datetime,timezone
 from pathlib import Path
 sys.path.insert(0,'/source/src')
 from ats_mlops.monitoring.feedback import export_events
-export_events('/events/predictions.sqlite3','/tmp/export',sys.argv[1])
+export_events('/events/predictions.sqlite3','/tmp/export',datetime.now(timezone.utc).isoformat())
 print(json.dumps({name:base64.b64encode(Path('/tmp/export',name).read_bytes()).decode() for name in ('events.jsonl','export.json')}))
 """
             output=self.commands.run(["docker","run","--rm","--pull=never","--network","none","--read-only","--cpus",".5","--memory","512m",
                 "--user","50000:50000","--tmpfs","/tmp:rw,size=64m,mode=1777",
                 "--mount",f"type=volume,source={fixture.config['events_volume']},target=/events",
                 "--mount",f"type=bind,source={Path(self.config['repo']).resolve()},target=/source,readonly",
-                "--entrypoint","/opt/ml-venv/bin/python",self.settings["batch"]["packager_image"],"-I","-B","-c",code,cutoff])
+                "--entrypoint","/opt/ml-venv/bin/python",self.settings["batch"]["packager_image"],"-I","-B","-c",code])
             exported=json.loads(output.stdout);directory=case / "export";directory.mkdir()
             require(set(exported)=={"events.jsonl","export.json"},"E4_invalid_export")
             for name,content in exported.items():(directory/name).write_bytes(base64.b64decode(content,validate=True))
-            load_export(directory)
+            events,export_manifest=load_export(directory);cutoff=export_manifest["cutoff"]
+            intervals=cohort_intervals(events,request_groups,cutoff)
+            immutable(case/"cohort-partition.json",{"schema_version":1,"clock_domain":"serving_event_store_Docker_VM",
+                "events_sha256":export_manifest["events_sha256"],"cutoff":cutoff,
+                "windows":[{**interval,"request_ids":group} for interval,group in zip(intervals,request_groups)]})
         finally:
             _cleanup_release(fixture,self.commands)
         admit_feedback(case/"export",[],case/"feedback",configuration(settings)["label_sources"],ledger=self.root/"feedback.sqlite3")
