@@ -1,0 +1,73 @@
+services:
+  collector:
+    image: python@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce
+    read_only: true
+    user: "0:0"
+    cap_drop: [ALL]
+    cap_add: [DAC_READ_SEARCH]
+    security_opt: ["no-new-privileges:true"]
+    entrypoint: ["python", "-I", "-B", "/collector/technical.py"]
+    volumes:
+      - ${ATS_MONITORING_SOURCE:?}/src/ats_mlops/monitoring/technical.py:/collector/technical.py:ro
+      - ${ATS_RELEASE_STATE:?}:/releases:ro
+      - orchestration-state:/orchestration:ro
+    cpus: 0.25
+    mem_limit: 128m
+    restart: unless-stopped
+    networks: [monitoring]
+  prometheus:
+    image: ${ATS_PROMETHEUS_IMAGE:?}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=7d", "--storage.tsdb.retention.size=256MB", "--web.listen-address=0.0.0.0:9090"]
+    ports: ["127.0.0.1:9090:9090"]
+    volumes:
+      - ${ATS_MONITORING_SOURCE:?}/monitoring/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - ${ATS_MONITORING_STATE:?}/targets:/etc/prometheus/targets:ro
+      - prometheus-data:/prometheus
+    cpus: 0.5
+    mem_limit: 256m
+    restart: unless-stopped
+    networks: [monitoring, serving]
+  grafana:
+    image: ${ATS_GRAFANA_IMAGE:?}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    ports: ["127.0.0.1:3001:3000"]
+    environment:
+      GF_SECURITY_ADMIN_USER: operator
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/credentials/admin-password
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_LOG_LEVEL: warn
+    tmpfs: ["/tmp"]
+    volumes:
+      - ${ATS_MONITORING_SOURCE:?}/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ${ATS_MONITORING_SOURCE:?}/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+      - grafana-auth:/run/credentials:ro
+    cpus: 0.5
+    mem_limit: 256m
+    restart: unless-stopped
+    networks: [monitoring]
+networks:
+  monitoring:
+    name: ats-monitoring-network
+  serving:
+    external: true
+    name: ats-serving-network
+volumes:
+  orchestration-state:
+    external: true
+    name: ats-core_orchestration-state
+  prometheus-data:
+  grafana-data:
+  grafana-auth:
+    external: true
+    name: ats-monitoring-auth

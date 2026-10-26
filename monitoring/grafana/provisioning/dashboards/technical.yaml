@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  - name: ATS technical
+    orgId: 1
+    folder: ATS
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 10
+    options:
+      path: /var/lib/grafana/dashboards
