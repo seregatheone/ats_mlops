@@ -88,7 +88,9 @@ def render(reference, current, config, threshold, output, *, timestamp):
     output = Path(output)
     snapshot.save_json(str(output / "evidently.json"))
     snapshot.save_html(str(output / "evidently.html"))
-    return normalize_evidently(snapshot.dict(), columns, config, threshold, fixed)
+    # The released dict() contains numpy.float64 values. Cross the actual JSON
+    # interface before enforcing the same strict JSON-number contract as inputs.
+    return normalize_evidently(decode_json(snapshot.json()), columns, config, threshold, fixed)
 
 
 def normalize_evidently(value, columns, config, threshold, fixed):
@@ -96,7 +98,7 @@ def normalize_evidently(value, columns, config, threshold, fixed):
     require(isinstance(value, dict) and isinstance(value.get("metrics"), list), "evidently_result_schema")
     distances = {}
     shares, counts = [], []
-    require(len(value["metrics"]) == len(columns) + 1 and isinstance(value.get("tests"), list)
+    require(len(value["metrics"]) == len(columns) + 1 and isinstance(value.get("tests"), list) and value["tests"]
             and all(test.get("status") in ("SUCCESS", "FAIL") for test in value["tests"]), "undefined_evidently_tests")
     for metric in value["metrics"]:
         name = metric.get("metric_name", "")

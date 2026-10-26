@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import shutil
 import tempfile
 import uuid
 from urllib.parse import quote
@@ -143,7 +144,15 @@ def publication(output):
     with tempfile.TemporaryDirectory(prefix=".monitoring-", dir=output.parent) as directory:
         staging = Path(directory) / "complete"
         staging.mkdir()
-        yield staging
+        try:
+            yield staging
+        except BaseException:
+            # Keep real failed Report JSON/HTML privately, without publishing a
+            # completed card or overwriting any earlier successful snapshot.
+            if any(staging.iterdir()):
+                failed = output.with_name(output.name + ".failed-" + uuid.uuid4().hex[:12])
+                shutil.copytree(staging, failed)
+            raise
         for path in staging.rglob("*"):
             require(not path.is_symlink(), "invalid_output_tree")
             if path.is_file():

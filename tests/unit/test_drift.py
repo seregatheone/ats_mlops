@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from ats_mlops.monitoring import drift
 from ats_mlops.monitoring.feedback import (NUMERIC, admit_feedback, canonical, checked_bytes, decode_json,
-    export_events, sha)
+    export_events, publication, sha)
 from tests.unit.test_monitoring import complete, request, SOURCES
 from service.events import EventStore
 
@@ -85,7 +85,7 @@ class DriftBoundaryTests(unittest.TestCase):
                              {"metric_name": "DriftedColumnsCount", "value": {"share": 1., "count": 1.}}],
                  "tests": [{"status": "FAIL"}]}
         self.assertTrue(drift.normalize_evidently(value, ["score"], config, .1, {})["detected"])
-        for changed in (dict(value, tests=[{"status": "ERROR"}]), dict(value, metrics=[])):
+        for changed in (dict(value, tests=[{"status": "ERROR"}]), dict(value, tests=[]), dict(value, metrics=[])):
             with self.assertRaises(ValueError):drift.normalize_evidently(changed, ["score"], config, .1, {})
         changed = deepcopy(value);changed["metrics"][0]["value"] = float("nan")
         with self.assertRaises(ValueError):drift.normalize_evidently(changed, ["score"], config, .1, {})
@@ -98,6 +98,18 @@ class DriftBoundaryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "immutable_output_exists"):
                 admit_feedback(root / "missing-export", [], output, SOURCES, ledger=root / "ledger")
             self.assertFalse((root / "ledger").exists())
+
+    def test_failed_numeric_artifacts_retained_without_completed_card(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "calibration"
+            with self.assertRaisesRegex(ValueError, "report_failed"):
+                with publication(output) as staging:
+                    (staging / "evidently.json").write_bytes(b'{"metrics":[]}')
+                    raise ValueError("report_failed")
+            self.assertFalse(output.exists())
+            failed = list(Path(folder).glob("calibration.failed-*"))
+            self.assertEqual(1, len(failed))
+            self.assertEqual(b'{"metrics":[]}', (failed[0] / "evidently.json").read_bytes())
 
     def test_ordinary_import_never_imports_evidently(self):
         import subprocess, sys

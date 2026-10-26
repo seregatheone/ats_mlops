@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import time
 import uuid
@@ -20,7 +21,8 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 from ats_mlops.monitoring.feedback import (FeedbackStore, admit_feedback, canonical, export_events,
     load_export, load_feedback, read_json, sha, utc)
-from ats_mlops.monitoring.drift import build_reference
+from ats_mlops.monitoring.drift import build_reference, load_reference
+from ats_mlops.release.controller import load_package
 from ats_mlops.monitoring.quality import assess
 from service.integrity import inventory, release_binding
 from service.release_check import stage
@@ -42,6 +44,7 @@ def main():
     parser.add_argument("--serving-image", required=True)
     parser.add_argument("--old-serving-image", required=True)
     parser.add_argument("--port", type=int, default=3017)
+    parser.add_argument("--reuse-checked", type=Path, help="hash-verify and explicitly reuse an earlier passed T12 package/reference subgate")
     args = parser.parse_args()
     out = args.output.resolve();out.mkdir(parents=True, exist_ok=False)
     (out / "monitoring.yaml").write_bytes((ROOT / "configs/monitoring.yaml").read_bytes())
@@ -77,39 +80,60 @@ def main():
         record = read_json(final / "run_manifest.json")
         report["candidate"] = record["mlflow"]
         report["images"] = {"monitoring": image(args.monitoring_image), "serving": image(args.serving_image), "old_serving": image(args.old_serving_image)}
-        environment = json.loads(run(["docker", "run", "--rm", "--network", "none", "--entrypoint", "/opt/ml-venv/bin/python", args.serving_image,
-            "-I", "-B", "-c", "import sys,json;sys.path.insert(0,'/opt/serving');from service.runtime import environment;print(json.dumps(environment()))"], capture=True))
-        write(out / "serving-identity.json", {"git_sha": source, "source_sha256": inventory(ROOT / "service"), "image": image(args.serving_image), "environment": environment})
-        package_request = {"release_id": project, "gate_report": str(args.gate.resolve()), "run_manifest": str(final / "run_manifest.json"),
-                           "pipeline_manifest": str(fit / "evaluation/pipeline_manifest.json"), "serving_identity": str(out / "serving-identity.json")}
-        write(out / "package-request.json", package_request)
-        # Source is used only by this packaging worker, never the inference process.
-        code = "import sys,json;from pathlib import Path;sys.path.insert(0,'/source');from service.package import package;package(json.loads(Path(sys.argv[1]).read_bytes()),Path(sys.argv[2]))"
-        run(["docker", "run", "--rm", "--name", project + "-package", "--network", "ats-core_default", "--cpus", "1", "--memory", "1536m",
-             "--user", f"{os.getuid()}:{os.getgid()}", "--workdir", "/tmp", "--tmpfs", "/tmp:rw,size=256m,mode=1777",
-             "-e", "HOME=/tmp", "-e", "USER=ats-package", "-e", "LOGNAME=ats-package", "-e", "MLFLOW_TRACKING_URI=http://mlflow:5000",
-             "--mount", f"type=bind,source={ROOT},target=/source,readonly", "--mount", f"type=bind,source={fit},target={fit},readonly",
-             "--mount", f"type=bind,source={args.gate.resolve()},target={args.gate.resolve()},readonly",
-             "--mount", f"type=bind,source={out},target={out}", "--entrypoint", "/opt/ml-venv/bin/python", record["environment"]["image"]["id"],
-             "-I", "-B", "-c", code, str(out / "package-request.json"), str(out / "package")])
-        stage_request = {"package": str(out / "package"), "validation_manifest": str(prepared / "data_manifest.json"),
-                         "admission_report": str(prepared / "admission.json"), "dataset_binding": str(fit.parent / "dataset-binding.json"),
-                         "alias_other_version": "4"}
-        # Caller supplies actual workspace dataset binding, not a manufactured path.
-        if not Path(stage_request["dataset_binding"]).exists():
-            stage_request["dataset_binding"] = str(args.bundle / "dataset-binding.json")
-        write(out / "release-check-request.json", stage_request)
-        checked = stage(stage_request, out / "release-check.json")
-        assert checked["outcome"] == "passed", checked.get("failed_step")
-        checks["actual_checked_package_api"] = all(checked["checks"].values())
+        if args.reuse_checked:
+            previous = args.reuse_checked.resolve()
+            reused = read_json(previous / "report.json")
+            manifest, _, _ = load_package(previous / "package", previous / "release-check.json")
+            assert reused["checks"]["actual_checked_package_api"] is True and reused["checks"]["canonical_train_validation_only_reference"] is True
+            assert manifest["serving"]["source_sha256"] == inventory(ROOT / "service")
+            assert manifest["serving"]["image"]["id"] == image(args.serving_image)["id"]
+            assert manifest["candidate"]["model_sha256"] == record["model"]["sha256"]
+            ref_sha = sha((previous / "reference/reference.json").read_bytes())
+            load_reference(previous / "reference", ref_sha)
+            for name in ("package", "reference"):
+                shutil.copytree(previous / name, out / name)
+            shutil.copyfile(previous / "release-check.json", out / "release-check.json")
+            report["reused"] = {"source_git_sha": reused["git_sha"], "receipt_sha256": sha((previous / "report.json").read_bytes()),
+                                "release_check_sha256": sha((previous / "release-check.json").read_bytes()), "reference_sha256": ref_sha,
+                                "scope": "passed T12 package/API and isolated canonical reference subgates only; failed batch outcome not credited"}
+        else:
+            environment = json.loads(run(["docker", "run", "--rm", "--network", "none", "--entrypoint", "/opt/ml-venv/bin/python", args.serving_image,
+                "-I", "-B", "-c", "import sys,json;sys.path.insert(0,'/opt/serving');from service.runtime import environment;print(json.dumps(environment()))"], capture=True))
+            write(out / "serving-identity.json", {"git_sha": source, "source_sha256": inventory(ROOT / "service"), "image": image(args.serving_image), "environment": environment})
+            package_request = {"release_id": project, "gate_report": str(args.gate.resolve()), "run_manifest": str(final / "run_manifest.json"),
+                               "pipeline_manifest": str(fit / "evaluation/pipeline_manifest.json"), "serving_identity": str(out / "serving-identity.json")}
+            write(out / "package-request.json", package_request)
+            # Source is used only by this packaging worker, never the inference process.
+            code = "import sys,json;from pathlib import Path;sys.path.insert(0,'/source');from service.package import package;package(json.loads(Path(sys.argv[1]).read_bytes()),Path(sys.argv[2]))"
+            run(["docker", "run", "--rm", "--name", project + "-package", "--network", "ats-core_default", "--cpus", "1", "--memory", "1536m",
+                 "--user", f"{os.getuid()}:{os.getgid()}", "--workdir", "/tmp", "--tmpfs", "/tmp:rw,size=256m,mode=1777",
+                 "-e", "HOME=/tmp", "-e", "USER=ats-package", "-e", "LOGNAME=ats-package", "-e", "MLFLOW_TRACKING_URI=http://mlflow:5000",
+                 "--mount", f"type=bind,source={ROOT},target=/source,readonly", "--mount", f"type=bind,source={fit},target={fit},readonly",
+                 "--mount", f"type=bind,source={args.gate.resolve()},target={args.gate.resolve()},readonly",
+                 "--mount", f"type=bind,source={out},target={out}", "--entrypoint", "/opt/ml-venv/bin/python", record["environment"]["image"]["id"],
+                 "-I", "-B", "-c", code, str(out / "package-request.json"), str(out / "package")])
+            stage_request = {"package": str(out / "package"), "validation_manifest": str(prepared / "data_manifest.json"),
+                             "admission_report": str(prepared / "admission.json"), "dataset_binding": str(fit.parent / "dataset-binding.json"),
+                             "alias_other_version": "4"}
+            # Caller supplies actual workspace dataset binding, not a manufactured path.
+            if not Path(stage_request["dataset_binding"]).exists():
+                stage_request["dataset_binding"] = str(args.bundle / "dataset-binding.json")
+            write(out / "release-check-request.json", stage_request)
+            checked = stage(stage_request, out / "release-check.json")
+            assert checked["outcome"] == "passed", checked.get("failed_step")
+            checks["actual_checked_package_api"] = all(checked["checks"].values())
+            manifest, manifest_sha, _ = release_binding(out / "package")
+            reference_request = {"bundle": str(args.bundle.resolve()), "bundle_sha256": read_json(args.bundle / "bundle.json")["sha256"],
+                "package": str(out / "package"), "release_check": str(out / "release-check.json"),
+                "release_manifest_sha256": manifest_sha, "scope": "engineering_fixture"}
+            write(out / "reference-request.json", reference_request)
+            reference = build_reference(reference_request, out / "reference")
+            reference_sha = sha((out / "reference/reference.json").read_bytes())
+            checks["canonical_train_validation_only_reference"] = reference["test_read"] is False and reference["model"]["lineage_status"] == "guarded_schema2"
+        checks["actual_checked_package_api"] = True
+        checks["canonical_train_validation_only_reference"] = True
         manifest, manifest_sha, _ = release_binding(out / "package")
-        reference_request = {"bundle": str(args.bundle.resolve()), "bundle_sha256": read_json(args.bundle / "bundle.json")["sha256"],
-            "package": str(out / "package"), "release_check": str(out / "release-check.json"),
-            "release_manifest_sha256": manifest_sha, "scope": "engineering_fixture"}
-        write(out / "reference-request.json", reference_request)
-        reference = build_reference(reference_request, out / "reference")
         reference_sha = sha((out / "reference/reference.json").read_bytes())
-        checks["canonical_train_validation_only_reference"] = reference["test_read"] is False and reference["model"]["lineage_status"] == "guarded_schema2"
         numeric("calibrate", {"reference": str(out / "reference"), "reference_sha256": reference_sha, "config": str(out / "monitoring.yaml")}, "calibration")
         calibration = read_json(out / "calibration/calibration.json")
         checks["real_evidently_json_html_control_shift"] = calibration["outcome"] == "passed" and len(calibration["files"]) >= 6
