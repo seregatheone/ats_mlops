@@ -409,6 +409,29 @@ def phase_attestations(artifacts, receipt, source_sha):
     return len(phases)
 
 
+def validate_negative_producer(artifacts, inputs, current_files, *, source_sha, repository, required):
+    """The external fault producer is a component, never the model source."""
+    documents = [artifacts.document(inputs[key]) for key in ("candidate_run", "candidate_pipeline", "fault_provenance")]
+    require(isinstance(inputs.get("candidate_files"), dict)
+            and "extra_files/input-provenance.json" in inputs["candidate_files"], "negative_producer_embedded_provenance_missing")
+    documents.append(artifacts.document(inputs["candidate_files"]["extra_files/input-provenance.json"]))
+    present = ["artifact_producer" in item for item in documents]
+    if not any(present):
+        require(not required, "historical_negative_producer_required")
+        return None
+    producer = documents[0].get("artifact_producer")
+    require(all(present) and isinstance(producer, dict)
+            and all(item["artifact_producer"] == producer for item in documents)
+            and set(producer) == {"schema_version", "source_git_sha", "repository_path", "file_sha256"}
+            and type(producer["schema_version"]) is int and producer["schema_version"] == 1
+            and hash_value(producer["source_git_sha"], 40) and hash_value(producer["file_sha256"])
+            and producer["repository_path"] == "src/ats_mlops/evaluation/negative_model.py", "negative_producer_identity_mismatch")
+    content = _git(repository, "show", producer["source_git_sha"] + ":" + producer["repository_path"])
+    require(digest(content) == producer["file_sha256"] == current_files[producer["repository_path"]]["sha256"], "negative_producer_Git_bytes_mismatch")
+    _git(repository, "merge-base", "--is-ancestor", producer["source_git_sha"], source_sha)
+    return producer
+
+
 def inspect_scenarios(directory, references, *, source_sha, spec_sha, validators, execution_sources=None):
     """No implicit default validator, skipped case or historical leaf substitution.
 
@@ -560,4 +583,7 @@ def validate_freeze(path, expected_sha256):
     require(negative["parent_run_manifest_sha256"]==s1_inputs["run"]["sha256"]
         and negative["parent_model_sha256"]==selected["model_artifact_sha256"]
         and negative["incumbent_release_id"]==artifacts.document(s1_inputs["startup"])["release_id"],"negative_fixture_not_derived_from_selected_S1")
+    s3_inputs=artifacts.document(value["scenarios"]["S3"])["native"]
+    validate_negative_producer(artifacts,s3_inputs,files,source_sha=spec["source_git_sha"],repository=environment["repo"],
+        required=spec["qualified_model_source_git_sha"]!=spec["source_git_sha"])
     return value
