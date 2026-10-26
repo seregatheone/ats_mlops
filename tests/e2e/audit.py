@@ -6,11 +6,13 @@ This module never starts services, fits a model, triggers a DAG or reads test ro
 from __future__ import annotations
 
 from datetime import datetime
+import ast
 import hashlib
 import json
 import math
 from pathlib import Path
 import re
+import subprocess
 
 SCENARIOS = {
     "S1": ("clean_startup", ("R-1", "R-3", "R-4", "R-5")),
@@ -206,7 +208,205 @@ def compare_recomputations(artifacts, replicas, *, source_sha):
             "scope": "T18 engineering acceptance; not the E1 experiment series"}
 
 
-def inspect_scenarios(directory, references, *, source_sha, spec_sha, validators):
+_SOURCE_REQUIRED = {"src/ats_mlops/evaluation/native.py", "src/ats_mlops/evaluation/native_monitoring.py",
+    "src/ats_mlops/evaluation/negative_model.py", "src/ats_mlops/evaluation/holdout_worker.py",
+    "src/ats_mlops/evaluation/experiment.py", "tests/e2e/audit.py", "tests/e2e/native.py", "tests/e2e/driver.py",
+    "configs/experiment.template.json", "configs/monitoring.yaml", "configs/quality.yaml", "requirements-ml.lock",
+    "requirements-monitoring.lock", "requirements-build.lock", "docs/experiment-protocol.md"}
+_SOURCE_CHANGES = {"src/ats_mlops/evaluation/native_monitoring.py", "src/ats_mlops/evaluation/negative_model.py",
+    "tests/e2e/audit.py", "tests/e2e/driver.py", "tests/unit/test_negative_model_contract.py",
+    "tests/unit/test_monitoring_launch_contract.py", "tests/unit/test_acceptance_execution_sources.py"}
+_AUDIT_SEMANTICS = ("SCENARIOS", "EvidenceError", "require", "Artifacts", "canonical", "digest", "hash_value",
+    "decode", "finite", "utc", "derive_holdout_lineage", "execution", "compare_recomputations")
+_DRIVER_SEMANTICS = ("PHASES", "authorize", "phase", "Collector.target", "Collector.copy", "Collector.commands")
+
+
+def _git(repository, *arguments):
+    result = subprocess.run(["git", *arguments], cwd=repository, capture_output=True, timeout=15)
+    require(result.returncode == 0, "missing_or_invalid_execution_Git_object")
+    return result.stdout
+
+
+def _source_snapshot(artifacts, snapshot, source_sha, repository):
+    require(isinstance(snapshot, dict) and set(snapshot) == {"head", "status", "files"}, "invalid_execution_source_snapshot")
+    require(artifacts.content(snapshot["head"]) == (source_sha + "\n").encode()
+            and artifacts.content(snapshot["status"]) == b"", "execution_source_was_not_clean")
+    require(isinstance(snapshot["files"], dict) and _SOURCE_REQUIRED <= set(snapshot["files"]), "incomplete_execution_source_snapshot")
+    for name, reference in snapshot["files"].items():
+        require(isinstance(name, str) and name, "unsafe_execution_source_path")
+        relative = Path(name)
+        require("\\" not in name and not relative.is_absolute()
+                and relative.as_posix() == name and ".." not in relative.parts
+                and relative.name not in {"test.jsonl", "source.jsonl", "corpus.jsonl", "split.json"}, "unsafe_execution_source_path")
+        require(artifacts.content(reference) == _git(repository, "show", source_sha + ":" + name), "execution_Git_source_bytes_mismatch")
+
+
+def _node_bytes(content, name):
+    text = content.decode(); body = ast.parse(text).body
+    for part in name.split("."):
+        nodes = [node for node in body if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name == part
+                 or isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == part for target in node.targets)]
+        require(len(nodes) == 1, "missing_preserved_source_node")
+        node = nodes[0]; body = getattr(node, "body", [])
+    return ast.get_source_segment(text, node).encode()
+
+
+def validate_execution_sources(artifacts, mapping, historical, *, source_sha, qualified_sha, repository):
+    """Only the selected ancestor and a narrow verified code carry-forward."""
+    require(hash_value(source_sha, 40) and hash_value(qualified_sha, 40)
+            and isinstance(mapping, dict) and set(mapping) == set(SCENARIOS), "invalid_execution_source_map")
+    expected = {key: qualified_sha if key in {"S1", "S2", "S3", "S4", "S5"} else source_sha for key in SCENARIOS}
+    require(mapping == expected and isinstance(historical, dict)
+            and set(historical) == (set() if source_sha == qualified_sha else {qualified_sha}), "misassigned_execution_source")
+    if source_sha == qualified_sha:
+        return mapping
+    _source_snapshot(artifacts, historical[qualified_sha], qualified_sha, repository)
+    _git(repository, "merge-base", "--is-ancestor", qualified_sha, source_sha)
+    changes = _git(repository, "diff", "--no-renames", "--name-status", qualified_sha, source_sha, "--").decode().splitlines()
+    for line in changes:
+        status, name = line.split("\t", 1)
+        require(name in _SOURCE_CHANGES and status in {"A", "M"}
+                and (not name.startswith("tests/unit/") or status == "A"), "historical_runtime_code_changed")
+    for name, preserved in (("tests/e2e/audit.py", _AUDIT_SEMANTICS), ("tests/e2e/driver.py", _DRIVER_SEMANTICS)):
+        old, current = (_git(repository, "show", sha + ":" + name) for sha in (qualified_sha, source_sha))
+        require(all(_node_bytes(old, key) == _node_bytes(current, key) for key in preserved), "historical_semantic_checks_changed")
+    return mapping
+
+
+def _attested_commands(artifacts, attestation, receipt_commands, selected):
+    aggregate = artifacts.document(attestation["commands"])
+    require(type(aggregate.get("schema_version")) is int and aggregate["schema_version"] == 1
+            and isinstance(aggregate.get("commands"), list) and aggregate["commands"], "invalid_phase_commands")
+    fields = [key for key in ("evidence_sha256", "command_evidence_sha256") if key in selected]
+    require(len(fields) == 1 and selected[fields[0]] == attestation["commands"]["sha256"], "phase_command_aggregate_not_bound")
+    ids = attestation["command_ids"]
+    require(isinstance(ids, list) and len(ids) == len(aggregate["commands"]) and len(set(ids)) == len(ids)
+            and all(isinstance(value, str) and value in receipt_commands for value in ids), "invalid_phase_command_ids")
+    positions = [receipt_commands[value][0] for value in ids]
+    require(positions == sorted(positions), "phase_command_order_changed")
+    captured_stdout = []
+    for raw, identifier in zip(aggregate["commands"], ids, strict=True):
+        captured = receipt_commands[identifier][1]
+        require(isinstance(raw, dict) and set(raw) == {"argv", "exit_code", "accepted_exit_codes", "stdout", "stderr"}
+                and all(raw[key] == captured[key] for key in ("argv", "exit_code", "accepted_exit_codes")), "phase_command_record_changed")
+        for stream in ("stdout", "stderr"):
+            reference = raw[stream]
+            require(isinstance(reference, dict) and set(reference) == {"path", "sha256"}
+                    and hash_value(reference["sha256"]) and reference["sha256"] == captured[stream]["sha256"], "phase_command_stream_changed")
+            content = artifacts.content(captured[stream])
+            if stream == "stdout": captured_stdout.append(content)
+    return set(ids), captured_stdout
+
+
+def _attested_phase(artifacts, attestation, receipt, source_sha, commands):
+    keys = {"phase", "intent", "spec", "environment", "authorization", "commands", "command_ids", "result_index", "leaves"}
+    require(isinstance(attestation, dict) and set(attestation) == keys, "invalid_phase_attestation")
+    phase, intent, spec, environment, authorization = [artifacts.document(attestation[key]) for key in
+        ("phase", "intent", "spec", "environment", "authorization")]
+    require(type(phase.get("schema_version")) is int and phase["schema_version"] == 1 and phase.get("outcome") == "completed"
+            and type(intent.get("schema_version")) is int and intent["schema_version"] == 1
+            and phase.get("source_git_sha") == intent.get("source_git_sha") == spec.get("source_git_sha") == source_sha
+            and phase.get("phase") == intent.get("phase") and phase["started_at"] == intent["started_at"]
+            and utc(receipt["started_at"]) <= utc(phase["started_at"]) < utc(phase["finished_at"]) <= utc(receipt["finished_at"]), "phase_identity_or_interval_mismatch")
+    name = phase["phase"]
+    from ats_mlops.evaluation.experiment import validate_spec
+    from .driver import PHASES
+    validate_spec(spec, template=name == "S1")
+    require(attestation["spec"]["sha256"] == digest(canonical(spec)) == intent.get("input_spec_sha256")
+            and spec["bindings"]["environment_sha256"] == attestation["environment"]["sha256"], "phase_spec_or_environment_changed")
+    require(set(authorization) == {"schema_version", "scope", "actor", "source_git_sha", "project", "input_spec_sha256", "phases"}
+            and type(authorization["schema_version"]) is int and authorization["schema_version"] == 1
+            and authorization["scope"] == "T18_private_qualification" and authorization["actor"] == "root-coordinator"
+            and authorization["source_git_sha"] == source_sha and authorization["project"] == environment["project"]
+            and authorization["input_spec_sha256"] == attestation["spec"]["sha256"]
+            and isinstance(authorization["phases"], list) and name in authorization["phases"]
+            and all(isinstance(item, str) for item in authorization["phases"])
+            and set(authorization["phases"]) <= set(PHASES)
+            and intent.get("authorization_sha256") == attestation["authorization"]["sha256"], "phase_authorization_changed")
+    if "input_spec_sha256" in phase:
+        require(phase["input_spec_sha256"] == intent["input_spec_sha256"], "phase_result_spec_changed")
+    if "intent_sha256" in phase:
+        require(phase["intent_sha256"] == attestation["intent"]["sha256"], "phase_result_intent_changed")
+    index = attestation["result_index"]; selected = phase["result"]
+    if index is not None:
+        require(name == "S2" and type(index) is int and 0 <= index <= 2 and isinstance(selected, list) and len(selected) == 3, "invalid_phase_result_index")
+        selected = selected[index]
+    else:
+        require(name != "S2", "indexed_S2_phase_required")
+    require(isinstance(selected, dict), "object_phase_result_required")
+    ids, stdout = _attested_commands(artifacts, attestation, commands, selected)
+    leaves = attestation["leaves"]
+    require(isinstance(leaves, dict) and set(leaves) <= {"result", "observations", "fault", "receipt", "stdout_json", "input_request", "bad_gate"}, "invalid_phase_leaf")
+    values = {key: artifacts.document(reference) for key, reference in leaves.items()}
+    for key, value in values.items():
+        if key == "result": require(value == selected, "phase_result_leaf_changed")
+        elif key == "observations": require(value == selected["observations"], "phase_observations_leaf_changed")
+        elif key == "fault": require(leaves[key]["sha256"] == selected["observations"]["fault_receipt_sha256"], "phase_fault_leaf_changed")
+        elif key == "receipt": require(leaves[key]["sha256"] == selected["native_receipt_sha256"], "phase_native_receipt_changed")
+        elif key == "input_request":
+            require(leaves[key]["sha256"] == environment["fixtures"]["bad_candidate_request"]["sha256"], "phase_bad_request_changed")
+        elif key == "stdout_json":
+            matched = False
+            for output in stdout:
+                try: matched = matched or decode(output.strip().splitlines()[-1]) == value
+                except (EvidenceError, IndexError): pass
+            require(matched, "phase_stdout_json_not_observed")
+    return {"name": name, "index": index, "leaves": leaves, "values": values, "selected": selected, "spec": spec, "command_ids": ids}
+
+
+def phase_attestations(artifacts, receipt, source_sha):
+    """Bind historical leaves to their original authorized phase and raw logs."""
+    value = receipt.get("phase_attestations")
+    require(isinstance(value, list) and value, "historical_phase_attestations_required")
+    commands = {command["id"]: (index, command) for index, command in enumerate(receipt["commands"])}
+    phases = [_attested_phase(artifacts, item, receipt, source_sha, commands) for item in value]
+    ids = [identifier for phase in phases for identifier in phase["command_ids"]]
+    require(len(ids) == len(set(ids)) and set(ids) == set(commands), "unattested_or_reused_scenario_commands")
+    native = receipt["native"]; scenario = receipt["scenario"]
+    def exact(phase, name, leaves):
+        require(phase["name"] == name and phase["index"] is None and phase["leaves"] == leaves, "historical_phase_coverage_mismatch")
+    if scenario == "S1":
+        require(len(phases) == 1, "S1_phase_coverage_mismatch")
+        exact(phases[0], "S1", {"result": native["startup"]})
+    elif scenario == "S2":
+        require(len(phases) == 3 and {phase["index"] for phase in phases} == {0, 1, 2}, "S2_phase_coverage_mismatch")
+        for phase in phases:
+            require(phase["name"] == "S2" and set(phase["leaves"]) == {"observations"}, "S2_observations_required")
+            replica = native["replicas"][phase["index"]]; observed = phase["values"]["observations"]
+            run, features, scores, metrics = [artifacts.document(replica[key]) for key in ("run", "features", "scores", "metrics")]
+            require(observed["source_git_sha"] == source_sha and observed["workspace_id"] == replica["workspace_id"]
+                    and observed["training_run_id"] == run["mlflow"]["run_id"] and observed["model_version"] == run["mlflow"]["model_version"]
+                    and observed["data_sha256"] == run["data_manifest_sha256"] and observed["split_sha256"] == run["split_sha256"]
+                    and observed["features_sha256"] == run["features_sha256"]
+                    and observed["coordinates_sha256"] == digest(canonical(phase["spec"]["bindings"]))
+                    and observed["vocabulary_sha256"] == digest(canonical({key: features[key] for key in ("vocabulary", "idf", "transformed_sha256")}))
+                    and observed["scores"] == [{"group_id": row["vacancy_id"], "candidate_id": row["candidate_id"], "score": row["score"]} for row in scores["rows"]]
+                    and observed["metrics"] == {key: metrics[key] for key in ("ndcg_at_10", "recall_at_10")}, "S2_phase_numeric_inputs_changed")
+    elif scenario == "S3":
+        require(len(phases) == 3 and {phase["name"] for phase in phases} == {"schema", "fault-corrupt_data", "fault-bad_candidate"}, "S3_phase_coverage_mismatch")
+        for phase in phases:
+            if phase["name"] == "schema": exact(phase, "schema", {"receipt": native["schema"]})
+            elif phase["name"] == "fault-corrupt_data": exact(phase, "fault-corrupt_data", {"stdout_json": native["guard"]})
+            else:
+                require(phase["index"] is None and set(phase["leaves"]) == {"input_request", "bad_gate", "observations", "fault"}
+                        and phase["leaves"]["bad_gate"] == native["bad_gate"]
+                        and phase["values"]["observations"]["fault"] == phase["values"]["fault"]["fault"] == "bad_candidate", "S3_bad_retry_not_bound")
+    elif scenario == "S4":
+        require(len(phases) == 1, "S4_phase_coverage_mismatch")
+        exact(phases[0], "managed", {"receipt": native["managed"]})
+    elif scenario == "S5":
+        require(len(phases) == 5 and {phase["name"] for phase in phases} == {"registry", *("fault-" + name for name in native["faults"])}, "S5_phase_coverage_mismatch")
+        for phase in phases:
+            if phase["name"] == "registry": exact(phase, "registry", {"receipt": native["registry"]})
+            else:
+                name = phase["name"].removeprefix("fault-"); expected = native["faults"][name]
+                exact(phase, phase["name"], {"observations": expected["observations"], "fault": expected["fault"]})
+    else:
+        raise EvidenceError("unexpected_historical_scenario")
+    return len(phases)
+
+
+def inspect_scenarios(directory, references, *, source_sha, spec_sha, validators, execution_sources=None):
     """No implicit default validator, skipped case or historical leaf substitution.
 
     Each adapter must validate its existing native report schemas. During early
@@ -216,6 +416,11 @@ def inspect_scenarios(directory, references, *, source_sha, spec_sha, validators
     require(hash_value(source_sha, 40) and hash_value(spec_sha), "invalid_qualification_identity")
     require(isinstance(references, dict) and set(references) <= set(SCENARIOS), "unknown_scenario")
     require(isinstance(validators, dict) and set(validators) <= set(SCENARIOS), "unknown_scenario_adapter")
+    if execution_sources is not None:
+        require(isinstance(execution_sources, dict) and set(execution_sources) == set(SCENARIOS)
+                and hash_value(execution_sources["S1"], 40)
+                and all(execution_sources[key] == (execution_sources["S1"] if key in {"S1", "S2", "S3", "S4", "S5"} else source_sha)
+                        for key in SCENARIOS), "invalid_scenario_execution_source")
     artifacts = Artifacts(directory)
     results = {}
     for identifier, (name, requirements) in SCENARIOS.items():
@@ -223,11 +428,14 @@ def inspect_scenarios(directory, references, *, source_sha, spec_sha, validators
             results[identifier] = {"outcome": "blocked", "reason": "missing_actual_receipt"}
             continue
         try:
-            receipt = execution(artifacts.document(references[identifier]), source_sha, spec_sha)
+            actual_source = source_sha if execution_sources is None else execution_sources[identifier]
+            receipt = execution(artifacts.document(references[identifier]), actual_source, spec_sha)
             require(receipt.get("scenario") == identifier and receipt.get("name") == name, "scenario_identity_mismatch")
             for command in receipt["commands"]:
                 artifacts.content(command["stdout"])
                 artifacts.content(command["stderr"])
+            if actual_source != source_sha:
+                phase_attestations(artifacts, receipt, actual_source)
             require(identifier in validators, "native_adapter_not_frozen")
             result = validators[identifier](artifacts, receipt)
             require(isinstance(result, dict) and result.get("outcome") == "passed"
@@ -262,8 +470,9 @@ def validate_freeze(path, expected_sha256):
     content=path.read_bytes();require(digest(content)==expected_sha256,"freeze_hash_mismatch")
     value=decode(content)
     keys={"schema_version","outcome","spec_sha256","source_git_sha","source_clean","inputs","spec","environment",
-          "source","holdout","scenarios","checks","scope","E2","independent_real_corpus","open_blocking_defects"}
-    require(isinstance(value,dict) and set(value)==keys and type(value["schema_version"]) is int and value["schema_version"]==1
+          "source","holdout","scenarios","checks","scope","E2","independent_real_corpus","open_blocking_defects",
+          "execution_sources","historical_sources"}
+    require(isinstance(value,dict) and set(value)==keys and type(value["schema_version"]) is int and value["schema_version"]==2
         and value["outcome"]=="passed" and value["source_clean"] is True
         and value["scope"]=="T18_readiness_before_E1_E5" and value["E2"]=="not_run"
         and value["independent_real_corpus"] is False and value["open_blocking_defects"]==[] ,"final_freeze_not_qualified")
@@ -317,8 +526,11 @@ def validate_freeze(path, expected_sha256):
         expected_function="ingest_human_measurement" if series=="E2" else "evaluate_e5" if series=="E5" else series.lower()
         name="src/"+expected_module.replace(".","/")+".py"
         require(descriptor=={"entrypoint":expected_module+":"+expected_function,"source_sha256":files[name]["sha256"]},"unfrozen_native_adapter")
+    sources=validate_execution_sources(artifacts,value["execution_sources"],value["historical_sources"],
+        source_sha=spec["source_git_sha"],qualified_sha=spec["qualified_model_source_git_sha"],repository=environment["repo"])
     require(set(value["scenarios"])==set(SCENARIOS),"eight_actual_scenarios_required")
-    result=inspect_scenarios(path.parent,value["scenarios"],source_sha=spec["source_git_sha"],spec_sha=value["spec_sha256"],validators=VALIDATORS)
+    result=inspect_scenarios(path.parent,value["scenarios"],source_sha=spec["source_git_sha"],spec_sha=value["spec_sha256"],
+        validators=VALIDATORS,execution_sources=sources)
     require(result["outcome"]=="passed" and set(value["checks"])==set(result["requirements"])
         and all(item is True for item in value["checks"].values()),"actual_acceptance_incomplete")
     s1=result["scenarios"]["S1"]["validation"]
