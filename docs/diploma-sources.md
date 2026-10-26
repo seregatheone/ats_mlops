@@ -52,6 +52,33 @@ Timnit Gebru, Jamie Morgenstern, Briana Vecchione, Jennifer Wortman Vaughan, Han
 
 Материалы читаются вместе с [границами #36](https://github.com/seregatheone/ats_mlops/blob/034f5371b297076fe2f6f7f82defba626fb8ea44/docs/semantic-reservations.md), [описанием T-16](https://github.com/seregatheone/ats_mlops/blob/034f5371b297076fe2f6f7f82defba626fb8ea44/docs/drift.md) и [описанием actual T-17](https://github.com/seregatheone/ats_mlops/blob/034f5371b297076fe2f6f7f82defba626fb8ea44/docs/retraining-evidence.md). Source887 с неудачным macOS publish и ранние частично успешные попытки T-16 сохраняют свои исходы; успешный поздний запуск не переименовывает их в PASS. Исторические4/5 пригодны для инженерной демонстрации, но не для независимого E-5 качества; новые13/14 также не превращаются в заранее выбранный финальный E-5 кандидат без T-18 freeze.
 
+## Принятая T18 приёмка
+
+Main commit `2df2657b5d9ceac1defd7ee1039d4131e5dfd6e1` публикует
+[описание приёмки](https://github.com/seregatheone/ats_mlops/blob/2df2657b5d9ceac1defd7ee1039d4131e5dfd6e1/docs/acceptance.md),
+[summary](https://github.com/seregatheone/ats_mlops/blob/2df2657b5d9ceac1defd7ee1039d4131e5dfd6e1/reports/acceptance/t18/summary.json),
+[native audit](https://github.com/seregatheone/ats_mlops/blob/2df2657b5d9ceac1defd7ee1039d4131e5dfd6e1/reports/acceptance/t18/raw/acceptance-audit.json)
+и [public hash map](https://github.com/seregatheone/ats_mlops/blob/2df2657b5d9ceac1defd7ee1039d4131e5dfd6e1/reports/acceptance/t18/public-hashmap.json).
+Восемь cases S1–S8 имеют PASS. Private freeze SHA256 —
+`3d081dba7f13ee46366b10417b1a8f7472da64bbe62220bb5c9de090807d6481`;
+публичная проекция не заменяет полный private backing graph.
+
+Пять qualification fits (1 S1 + 3 S2 + 1 S6) не являются formal T19.
+FIRST S1 model1 private backend/run `4be0804b65034beba65023b7f8572167`
+сохраняет training source `01ccf13d123857ea7b0c8c36fef6c29a13935b78`.
+S1–S5 используют этот execution source, S6–S8 —
+`14be8edffb68a2320404e8e1a03f37a740694466`. Native audit проверяет historical
+Git bytes/ancestry и original phase/spec/environment/authorization bindings;
+исправленный negative producer атрибутирован отдельным component. Publication
+commit не является новым training source. При freeze E1–E5 были `not_run`.
+
+Основание преемственности курсовой: редакция `NIR-2_с_матрицами.docx`, SHA256
+`ef5a44e18bd28cb207b9e52ea84deece47b0890f47b6fc6e9e3cbf7d22983219`,
+XML-абзац265 (ядро5) и 836/841 (следующая экспериментальная проверка).
+Это координаты разбора, не страницы. Расширенные заметки по четырнадцати
+функциональным классам остаются отдельным основанием; их выводы не приписываются
+одному сравнению DOCX. Библиографические реквизиты курсовой не выдумываются.
+
 ## Внутренние основания и следующий этап
 
-[Требования](requirements.md), [решения](decisions.md), [контракт данных](data-contract.md), [протокол](experiment-protocol.md) и [исходный план](plans/reproducible-ml-ats/plan.md) задают постановку и критерии работы. Они не заменяют первичные результаты. Происхождение ядра курсовой и расширенных заметок различено в плане; их библиографические реквизиты здесь не придуманы. Таблица преемственности черновика опирается на эти материалы, а не на новое чтение или переоценку ELECTRE II. Перед окончательным оформлением требуется подтвердить цитируемую редакцию курсовой. T-18 ещё готовит общую приёмку и frozen inputs; E-1–E-5 остаются `not_run`, человеческие E-2 наблюдения отсутствуют. После допустимого исполнения список внутренних свидетельств дополняется exact raw/results/rebuild связями, без изменения смысла уже выполненных опытов. Этот checkpoint не завершает T-19/T-20 и не является окончательным дипломом.
+[Требования](requirements.md), [решения](decisions.md), [контракт данных](data-contract.md), [протокол](experiment-protocol.md) и [исходный план](plans/reproducible-ml-ats/plan.md) задают постановку и критерии работы. Они не заменяют первичные результаты. Архитектура описана в [architecture.md](architecture.md), границы и будущая публикация формальных измерений — в [results.md](results.md). Подтверждённые T19 raw/numeric ещё должны быть перенесены в эту редакцию; human E2 отсутствует. Следующее дополнение связывает каждое значение с exact raw/results/rebuild, сохраняя исходы старых опытов. Этот checkpoint не завершает T19/T20 и не является окончательным дипломом.

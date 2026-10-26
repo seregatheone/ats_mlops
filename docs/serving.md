@@ -7,11 +7,15 @@ check являются разными проверками; approve/activate п�
 
 ## Упаковка
 
-После clean commit/push serving source построить image из cached pinned base:
+После clean committed serving source построить image из проверенного ML base.
+Для нового clone base создаёт `scripts/bootstrap_core.py up`; записать его
+resolved image identity, platform и lock, как показано в [demo.md](demo.md).
+Исторический ID `574c48…` относится к прежнему actual run и не является условием
+успеха новой локальной сборки. На общем host не перетегировать чужой base.
 
 ```sh
-test "$(docker image inspect --format '{{.Id}}' ats-core-ml:t4)" = sha256:574c48deb107cba3f0bdc982d3aa0ab1500de58ab1694052bb92efbcab13ec91
-docker build --pull=false --network=none -f docker/serving/Dockerfile --build-arg SOURCE_SHA="$(git rev-parse HEAD)" -t ats-serving:t12 .
+test "$(docker image inspect --format '{{.Id}}' ats-core-ml:t4)" = "$RECORDED_ML_IMAGE_ID"
+docker build --pull=false --network=none -f docker/serving/Dockerfile --build-arg BASE_IMAGE=ats-core-ml:t4 --build-arg SOURCE_SHA="$(git rev-parse HEAD)" -t ats-serving:demo .
 ```
 
 Не добавляются зависимости, registry или службы. Получить resolved image ID,
@@ -71,6 +75,18 @@ input hash включают top_k. Same ID/hash возвращает original mo
 Staging request: `package`, `validation_manifest`, `admission_report`,
 `dataset_binding`, `alias_other_version` (другая уже существующая numeric version).
 Host environment `PYTHONPATH=src` используется только coordinator, не model worker.
+
+Прямой публичный check CLI, без обязательного запуска integration gate:
+
+```sh
+PYTHONPATH=src:. python3 -B -m service.release_check --request /private/check-request.json --output /private/new-check.json
+```
+
+`registry_transport`, если задан, имеет ровно `{network,tracking_uri}` для своего
+core. Один первый fit в пустом backend не даёт `alias_other_version`; demo явно
+готовит два заранее назначенных fitted artifacts и берёт версии из их manifests.
+Не подставлять авторские номера моделей и не объявлять второй version новым fit
+без соответствующего training receipt.
 
 ```sh
 PYTHONPATH=src:. ATS_RUN_RANK_API=1 ATS_T12_REQUEST=/absolute/private/stage-request.json \
