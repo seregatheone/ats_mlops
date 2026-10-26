@@ -248,7 +248,30 @@ def _node_bytes(content, name):
                  or isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == part for target in node.targets)]
         require(len(nodes) == 1, "missing_preserved_source_node")
         node = nodes[0]; body = getattr(node, "body", [])
-    return ast.get_source_segment(text, node).encode()
+    first = min([node.lineno, *(decorator.lineno for decorator in getattr(node, "decorator_list", []))])
+    return b"".join(content.splitlines(keepends=True)[first - 1:node.end_lineno])
+
+
+def _driver_without_envelope(content, *, historical):
+    """Only a non-decorated metadata method may differ in the whole driver."""
+    module = ast.parse(content.decode(), type_comments=True)
+    classes = [node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "Collector"]
+    require(len(classes) == 1, "invalid_collector_class")
+    methods = [node for node in classes[0].body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "envelope"]
+    require(len(methods) == 1 and isinstance(methods[0], ast.FunctionDef), "invalid_collector_envelope")
+    method = methods[0]; arguments = method.args
+    expected_keywords = [] if historical else ["execution_source", "phase_attestations"]
+    require(not method.decorator_list and method.returns is None and method.type_comment is None
+            and not arguments.posonlyargs and [arg.arg for arg in arguments.args] ==
+                ["self", "scenario", "spec", "started", "finished", "native_refs", "commands"]
+            and not arguments.defaults and arguments.vararg is None and arguments.kwarg is None
+            and [arg.arg for arg in arguments.kwonlyargs] == expected_keywords
+            and all(arg.annotation is None and arg.type_comment is None for arg in [*arguments.args, *arguments.kwonlyargs])
+            and len(arguments.kw_defaults) == len(expected_keywords)
+            and all(isinstance(value, ast.Constant) and value.value is None for value in arguments.kw_defaults),
+            "unsafe_collector_envelope_definition")
+    lines = content.splitlines(keepends=True)
+    return b"".join([*lines[:method.lineno - 1], b"    <collector-envelope-metadata>\n", *lines[method.end_lineno:]])
 
 
 def validate_execution_sources(artifacts, mapping, historical, *, source_sha, qualified_sha, repository):
@@ -267,9 +290,11 @@ def validate_execution_sources(artifacts, mapping, historical, *, source_sha, qu
         status, name = line.split("\t", 1)
         require(name in _SOURCE_CHANGES and status in {"A", "M"}
                 and (not name.startswith("tests/unit/") or status == "A"), "historical_runtime_code_changed")
-    for name, preserved in (("tests/e2e/audit.py", _AUDIT_SEMANTICS), ("tests/e2e/driver.py", _DRIVER_SEMANTICS)):
-        old, current = (_git(repository, "show", sha + ":" + name) for sha in (qualified_sha, source_sha))
-        require(all(_node_bytes(old, key) == _node_bytes(current, key) for key in preserved), "historical_semantic_checks_changed")
+    old, current = (_git(repository, "show", sha + ":tests/e2e/audit.py") for sha in (qualified_sha, source_sha))
+    require(all(_node_bytes(old, key) == _node_bytes(current, key) for key in _AUDIT_SEMANTICS), "historical_semantic_checks_changed")
+    old, current = (_git(repository, "show", sha + ":tests/e2e/driver.py") for sha in (qualified_sha, source_sha))
+    require(_driver_without_envelope(old, historical=True) == _driver_without_envelope(current, historical=False),
+            "historical_driver_changed_outside_envelope")
     return mapping
 
 
