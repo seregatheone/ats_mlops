@@ -30,7 +30,8 @@ class Files:
 class SourceGraphs(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.seed = {name: subprocess.check_output(["git", "show", ORIGINAL + ":" + name], cwd=PROJECT)
+        cls.seed = {name: subprocess.check_output(["git", "-c", "safe.directory=" + str(PROJECT),
+                                                  "show", ORIGINAL + ":" + name], cwd=PROJECT)
                     for name in audit._SOURCE_REQUIRED}
         cls.current = {name: (PROJECT / name).read_bytes() for name in ("tests/e2e/audit.py", "tests/e2e/driver.py")}
 
